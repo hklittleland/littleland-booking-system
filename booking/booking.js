@@ -2,6 +2,7 @@
   'use strict';
 
   const DRAFT_KEY = 'littleland_booking_draft_v1';
+  const TERMS_URL = 'https://www.hklittleland.com/%E5%B0%8F%E5%AF%B5%E7%89%A9%E9%85%92%E5%BA%97%E6%9C%8D%E5%8B%99';
   const AVAILABILITY = Object.freeze({
     checking: '查詢中',
     available: '可預訂',
@@ -91,6 +92,7 @@
       }
       fresh.pets = Array.isArray(saved.pets) ? saved.pets.slice(0, 8).map(normalizePet) : [];
       if (!Object.prototype.hasOwnProperty.call(SPECIES, fresh.species)) fresh.species = '';
+      if (fresh.species === 'hamster') fresh.feeding = '';
       if (typeof fresh.quantity !== 'string' && typeof fresh.quantity !== 'number') fresh.quantity = '1';
       fresh.quantity = String(fresh.quantity);
       if (!['none', 'once', 'twice'].includes(fresh.medicine)) fresh.medicine = 'none';
@@ -270,6 +272,9 @@
         <div class="field"><label for="checkinTime">入住時段 <span class="required-mark">*</span></label><select id="checkinTime" data-field="checkinTime" required>${selectOptions(['14:30–15:30', '15:30–16:30', '16:30–17:00'], state.form.checkinTime)}</select></div>
         <div class="field"><label for="checkoutTime">退房時段 <span class="required-mark">*</span></label><select id="checkoutTime" data-field="checkoutTime" required>${selectOptions(['14:30–15:30', '15:30–16:30', '16:30–17:00'], state.form.checkoutTime)}</select></div>
       </div>
+      <div id="weekendSurchargeNotice" class="notice notice-yellow weekend-surcharge-notice" role="status" aria-live="polite" hidden>
+        <span class="notice-icon" aria-hidden="true">!</span><div><strong>週末入住附加費提醒</strong><div id="weekendSurchargeMessage"></div></div>
+      </div>
       <div class="field-grid" style="margin-top:15px">
         <div class="toggle-line"><div class="toggle-copy"><strong>提早入住安排</strong><small>一次性附加費 HK$200；時間另行確認</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇提早入住"><input type="checkbox" data-field="earlyCheckin" ${state.form.earlyCheckin ? 'checked' : ''}><span></span></label></div>
         <div class="toggle-line"><div class="toggle-copy"><strong>延遲退房安排</strong><small>17:00 後，一次性附加費 HK$200</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇延遲退房"><input type="checkbox" data-field="lateCheckout" ${state.form.lateCheckout ? 'checked' : ''}><span></span></label></div>
@@ -364,10 +369,10 @@
       <div class="field-grid">
         <div class="field"><label for="foodMain">主糧 <span class="optional-label">按需要選擇</span></label><select id="foodMain" data-field="foodMain">${selectOptions(mainOptions, state.form.foodMain, '請選擇主糧安排')}</select></div>
         ${hamster ? '' : `<div class="field"><label for="hay">牧草 <span class="optional-label">按需要選擇</span></label><select id="hay" data-field="hay">${selectOptions(HAY, state.form.hay, '請選擇牧草安排')}</select></div>`}
-        <div class="field"><label for="feeding">餵食頻率 <span class="optional-label">按需要選擇</span></label><select id="feeding" data-field="feeding">${selectOptions(['每日一次', '每日兩次／早晚各一次'], state.form.feeding, '請選擇')}</select></div>
+        ${hamster ? '' : `<div class="field"><label for="feeding">餵食頻率 <span class="optional-label">按需要選擇</span></label><select id="feeding" data-field="feeding">${selectOptions(['每日一次', '每日兩次／早晚各一次'], state.form.feeding, '請選擇')}</select></div>`}
         ${hamster ? '' : `<div class="field"><label for="vegetables">新鮮蔬菜 <span class="optional-label">按需要選擇</span></label><select id="vegetables" data-field="vegetables">${selectOptions(['是', '否'], state.form.vegetables, '請選擇')}</select></div>`}
       </div>
-      ${notice('yellow', '🌼', '逢星期日或假期只能餵一次，但會提供雙倍份量。飲食選項未標示必填，可按毛孩習慣填寫。')}
+      ${hamster ? notice('blue', '🐹', '倉鼠採長擺糧方式，無需選擇餵食次數。') : notice('yellow', '🌼', '逢星期日或假期只能餵一次，但會提供雙倍份量。飲食選項未標示必填，可按毛孩習慣填寫。')}
     </section>`;
     const serviceSection = `<section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🫧</span>額外服務 <span class="optional-label">選填</span></h3>
       <div class="field-grid">
@@ -440,7 +445,7 @@
       <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🧾</span>預約內容確認</h3><div class="review-summary">${reviewTiles()}</div>${healthReview ? notice('yellow', '🔔', '健康資料需由 LittleLand 人工確認（HEALTH_REVIEW_REQUIRED）。') : ''}<div class="quote-box" id="detailedQuote">${detailedQuoteMarkup()}</div>
         ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong>')}
       </section>
-      <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🤍</span>提交前請確認</h3><p class="field-help">六項同意都需要勾選，才能繼續。</p><div class="terms-list">${TERMS.map((term, index) => `<label class="term-item"><input type="checkbox" data-term-index="${index}" ${state.terms[index] ? 'checked' : ''}><span>${escapeHtml(term)}</span></label>`).join('')}</div><p class="terms-error" id="termsError" ${state.terms.every(Boolean) ? 'hidden' : ''}>請勾選以上六項同意事項。</p></section>
+      <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🤍</span>提交前請確認</h3><p class="field-help">六項同意都需要勾選，才能繼續。</p><div class="terms-list">${TERMS.map((term, index) => `<div class="term-row"><label class="term-item"><input type="checkbox" data-term-index="${index}" ${state.terms[index] ? 'checked' : ''}><span>${escapeHtml(term)}</span></label>${index === 3 ? `<a class="term-service-link" href="${escapeHtml(TERMS_URL)}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁查看 LittleLand 小寵物酒店服務條款">查看「小寵物酒店服務」<span aria-hidden="true">↗</span></a>` : ''}</div>`).join('')}</div><p class="terms-error" id="termsError" ${state.terms.every(Boolean) ? 'hidden' : ''}>請勾選以上六項同意事項。</p></section>
       ${notice('blue', '💬', '提交後的下一頁是<strong>模擬完成畫面</strong>。本示範不會傳送任何預約資料、建立正式預約或處理付款。')}`;
   }
 
@@ -500,6 +505,16 @@
     if (checkoutInput) {
       const today = localDateValue(new Date());
       checkoutInput.min = state.form.checkin && state.form.checkin >= today ? state.form.checkin : today;
+    }
+    const weekendNotice = document.getElementById('weekendSurchargeNotice');
+    if (weekendNotice) {
+      const applies = state.step === 1 && !state.completed && datesAreValid() && price.weekendFee > 0;
+      weekendNotice.hidden = !applies;
+      if (applies) {
+        const dayNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+        const checkinDate = parseDate(state.form.checkin);
+        document.getElementById('weekendSurchargeMessage').textContent = `你選擇 ${formatDate(state.form.checkin)}（${dayNames[checkinDate.getDay()]}）入住 1 晚，將產生 HK$${price.weekendFee} 週末短住附加費。`;
+      }
     }
     const inlineQuote = document.getElementById('detailedQuote');
     if (inlineQuote && state.step === 5 && !state.completed) inlineQuote.innerHTML = detailedQuoteMarkup();
@@ -666,17 +681,24 @@
     const petDescription = `${petType} · ${price.quantity || '—'} 隻${names ? `（${names}）` : ''}`;
     const dateDescription = `${formatDate(state.form.checkin)} ${state.form.checkinTime} → ${formatDate(state.form.checkout)} ${state.form.checkoutTime} · ${price.nights} 晚`;
     const whatsappMessage = [
-      '你好 LittleLand！我已提交預約申請，麻煩盡快協助確認並告知訂金安排，謝謝。',
-      `預約申請編號：${state.mockBookingId}`,
-      `家長：${state.form.parentName}`,
-      `寵物：${petDescription}`,
-      `房型：${price.room ? price.room.name : '—'}`,
-      `入住：${formatDate(state.form.checkin)} ${state.form.checkinTime}`,
-      `退房：${formatDate(state.form.checkout)} ${state.form.checkoutTime}`,
-      `預計住宿總額：${money(price.estimatedTotal)}`,
-      `訂金：${money(price.depositAmount)}`,
-      `預計尾數（入住當日支付）：${money(price.remainingBalance)}`,
-      `現金備用金／按金：${money(price.cashDeposit)}（HK$1,000／隻，入住當日準備，不計入住宿總額）`
+      '🐾 LittleLand 預約申請',
+      '',
+      '你好，我已提交預約申請，以下是簡單摘要，麻煩協助確認：',
+      '',
+      `🧾 預約申請編號：${state.mockBookingId}`,
+      `👤 家長：${state.form.parentName}`,
+      `📞 聯絡電話：${state.form.phone}`,
+      `🐾 寵物：${petDescription}`,
+      `🏠 房型：${price.room ? price.room.name : '—'}`,
+      `📅 入住：${formatDate(state.form.checkin)} ${state.form.checkinTime}`,
+      `📅 退房：${formatDate(state.form.checkout)} ${state.form.checkoutTime}`,
+      '',
+      `💰 預計住宿總額：${money(price.estimatedTotal)}`,
+      `🌱 訂金：${money(price.depositAmount)}`,
+      `🧾 預計尾數（入住當日支付）：${money(price.remainingBalance)}`,
+      `💵 現金備用金／按金：${money(price.cashDeposit)}（HK$1,000／隻，入住當日準備，不計入住宿總額）`,
+      '',
+      '🙏 麻煩盡快協助確認預約並告知訂金付款安排，謝謝！'
     ].join('\n');
     const whatsappHref = `https://wa.me/85262886598?text=${encodeURIComponent(whatsappMessage)}`;
     return `<div class="completion-screen"><div class="completion-badge" aria-hidden="true">🎉</div>
@@ -760,6 +782,7 @@
       state.form.roomId = '';
       state.form.foodMain = '';
       state.form.hay = '';
+      state.form.feeding = '';
       state.form.vegetables = '';
       if (state.form.species === 'hamster') {
         state.form.pets.forEach((pet) => {

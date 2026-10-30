@@ -586,3 +586,15 @@ input:focus, select:focus, textarea:focus { border-color: #a684c4; box-shadow: 0
   .room-card { min-height: 198px; padding: 9px 9px 11px; }
   .room-photo-wrap { border-radius: 10px; }
 }
+
+
+/* Live date surcharge notice and standalone service-terms link. */
+.weekend-surcharge-notice { margin: 7px 0 12px; }
+.weekend-surcharge-notice strong { display: block; margin-bottom: 2px; }
+.weekend-surcharge-notice[hidden] { display: none; }
+.term-row { display: grid; min-width: 0; gap: 3px; }
+.term-service-link { display: inline-flex; align-items: center; gap: 7px; width: fit-content; min-height: 44px; margin-left: 40px; padding: 5px 9px; border-radius: 10px; color: var(--purple-dark); font-size: 12px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.term-service-link:hover { background: var(--lavender); }
+@media (max-width: 390px) {
+  .term-service-link { margin-left: 40px; font-size: 11px; }
+}
