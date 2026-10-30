@@ -17,20 +17,20 @@
   };
   const ROOMS = {
     rabbit: [
-      { id: 'DELUXE_ROOM', name: '豪華房', price: 178, max: 1, icon: '🛏️', note: '舒適小窩' },
-      { id: 'PRIVATE_SUITE', name: '獨立套房', price: 278, max: 2, icon: '🏠', note: '獨立套房空間' },
-      { id: 'DELUXE_SUITE', name: '豪華套房', price: 350, max: 3, icon: '🏡', note: '寬敞套房' },
-      { id: 'VERY_DELUXE_SUITE', name: '非常.豪華套房', price: 600, max: 3, icon: '✨', note: '超大舒適空間' }
+      { id: 'DELUXE_ROOM', name: '豪華房', price: 178, max: 1, icon: '🛏️', image: 'room-178.jpg', note: '舒適小窩' },
+      { id: 'PRIVATE_SUITE', name: '獨立套房', price: 278, max: 2, icon: '🏠', image: 'room-278.jpg', note: '獨立套房空間' },
+      { id: 'DELUXE_SUITE', name: '豪華套房', price: 350, max: 3, icon: '🏡', image: 'room-350.jpg', note: '寬敞套房' },
+      { id: 'VERY_DELUXE_SUITE', name: '非常.豪華套房', price: 600, max: 3, icon: '✨', image: 'room-600.jpg', note: '超大舒適空間' }
     ],
     guineaPig: [
-      { id: 'STANDARD_ROOM', name: '標準房', price: 98, max: 1, icon: '🧺', note: '可愛小房間' },
-      { id: 'DELUXE_ROOM', name: '豪華房', price: 178, max: 3, icon: '🛏️', note: '舒適小窩' },
-      { id: 'PRIVATE_SUITE', name: '獨立套房', price: 278, max: 3, icon: '🏠', note: '獨立套房空間' },
-      { id: 'DELUXE_SUITE', name: '豪華套房', price: 350, max: 5, icon: '🏡', note: '寬敞套房' },
-      { id: 'VERY_DELUXE_SUITE', name: '非常.豪華套房', price: 600, max: 5, icon: '✨', note: '超大舒適空間' }
+      { id: 'STANDARD_ROOM', name: '標準房', price: 98, max: 1, icon: '🧺', image: 'room-098.jpg', note: '可愛小房間' },
+      { id: 'DELUXE_ROOM', name: '豪華房', price: 178, max: 3, icon: '🛏️', image: 'room-178.jpg', note: '舒適小窩' },
+      { id: 'PRIVATE_SUITE', name: '獨立套房', price: 278, max: 3, icon: '🏠', image: 'room-278.jpg', note: '獨立套房空間' },
+      { id: 'DELUXE_SUITE', name: '豪華套房', price: 350, max: 5, icon: '🏡', image: 'room-350.jpg', note: '寬敞套房' },
+      { id: 'VERY_DELUXE_SUITE', name: '非常.豪華套房', price: 600, max: 5, icon: '✨', image: 'room-600.jpg', note: '超大舒適空間' }
     ],
     hamster: [
-      { id: 'STANDARD_ROOM', name: '標準房', price: 98, max: 1, icon: '🧺', note: '可愛小房間' },
+      { id: 'STANDARD_ROOM', name: '標準房', price: 98, max: 1, icon: '🧺', image: 'room-098.jpg', note: '可愛小房間' },
       { id: 'HAMSTER_BOX', name: '整理箱', price: 65, max: 1, icon: '📦', note: '整潔小天地' },
       { id: 'OWN_CAGE', name: '自備籠', price: 50, max: 1, icon: '🏕️', note: '入住自備籠' }
     ]
@@ -291,7 +291,7 @@
     const status = roomAvailabilityFor(datesAreValid());
     return `${sectionHeading('🏡', '挑選舒服的房間', `${SPECIES[state.form.species].label}適用房型 · 選擇一款最合適的小窩。`, 'STEP 03')}
       <div class="room-grid" role="radiogroup" aria-label="選擇房型">
-        ${rooms.map((room) => `<label class="room-card ${state.form.roomId === room.id ? 'is-selected' : ''}"><input type="radio" name="roomId" data-field="roomId" value="${room.id}" ${state.form.roomId === room.id ? 'checked' : ''}><div class="room-card-top"><span class="room-emoji" aria-hidden="true">${room.icon}</span><span class="room-check" aria-hidden="true">✓</span></div><strong>${room.name}</strong><span class="room-price">${money(room.price)} <small>/ 晚</small></span><span class="room-meta">最多 ${room.max} 隻 · ${room.note}</span><span class="room-status" data-status="${status}">${AVAILABILITY[status]}</span></label>`).join('')}
+        ${rooms.map((room) => `<label class="room-card ${state.form.roomId === room.id ? 'is-selected' : ''}"><input type="radio" name="roomId" data-field="roomId" value="${room.id}" ${state.form.roomId === room.id ? 'checked' : ''}><div class="room-photo-wrap">${room.image ? `<img class="room-photo" src="assets/${room.image}" alt="${room.name}房間實景" loading="lazy">` : `<span class="room-photo-fallback" aria-hidden="true">${room.icon}</span>`}<span class="room-check" aria-hidden="true">✓</span></div><strong>${room.name}</strong><span class="room-price">${money(room.price)} <small>/ 晚</small></span><span class="room-meta">最多 ${room.max} 隻 · ${room.note}</span><span class="room-status" data-status="${status}">${AVAILABILITY[status]}</span></label>`).join('')}
       </div>
       <div class="quantity-row"><div class="quantity-copy"><strong>入住毛孩數量 <span class="required-mark">*</span></strong><p>${state.form.roomId ? `此房型最多 ${selectedRoom()?.max || 0} 隻。` : '選擇房型後查看可入住數量。'}</p></div><div class="field"><label class="visually-hidden" for="quantity">毛孩數量</label><input type="number" id="quantity" data-field="quantity" min="1" max="${selectedRoom()?.max || 1}" step="1" inputmode="numeric" value="${escapeHtml(state.form.quantity)}" aria-describedby="quantityError"></div><p id="quantityError" class="quantity-error" ${quantityIsValid() || !state.form.roomId ? 'hidden' : ''}>${getQuantityError()}</p></div>
       ${notice('yellow', '🐾', '數量必須為整數，且不能超出所選房型上限。更改房型後請再次確認數量。')}`;
