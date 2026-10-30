@@ -248,11 +248,13 @@
   }
 
   function sectionHeading(icon, title, subtitle, count = '') {
-    return `<div class="section-heading"><div class="section-title-wrap"><span class="section-icon" aria-hidden="true">${icon}</span><div><h2>${title}</h2><p>${subtitle}</p></div></div>${count ? `<span class="section-count">${count}</span>` : ''}</div>`;
+    const stage = count.match(/\d+/)?.[0] || 'LL';
+    return `<div class="section-heading"><div class="section-title-wrap"><span class="section-icon" aria-hidden="true"><span>${stage}</span><i></i></span><div><h2>${title}</h2><p>${subtitle}</p></div></div>${count ? `<span class="section-count">${count}</span>` : ''}</div>`;
   }
 
   function notice(type, icon, text) {
-    return `<div class="notice notice-${type}"><span class="notice-icon" aria-hidden="true">${icon}</span><div>${text}</div></div>`;
+    const marker = { yellow: '!', blue: 'i', green: '✓', pink: '♡' }[type] || 'i';
+    return `<div class="notice notice-${type}"><span class="notice-icon" aria-hidden="true">${marker}</span><div>${text}</div></div>`;
   }
 
   function stepOne() {
