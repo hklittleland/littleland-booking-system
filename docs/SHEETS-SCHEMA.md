@@ -104,7 +104,7 @@ logId, createdAt, actorType, actorStaffId, action, entityType, entityId, request
 idempotencyKey, operation, payloadHash, state, bookingId, requestId, responseCode, responseSnapshotJson, createdAt, updatedAt
 ```
 
-相同 key 重送不得建立第二張訂單。`state` 是供未來後端處理流程使用的技術欄位，不在本次新增狀態政策。保留期限未由 V3.0 定義，不設定自動 TTL；本次不建立任何 key 或 booking。
+相同 key 重送不得建立第二張訂單。TEST Create Booking API 的 `state` 是技術狀態 `PROCESSING`／`COMPLETED`／`FAILED`，不與 Booking Status 混用；不設定自動 TTL 或刪除。完成請求重播精簡 response snapshot；可安全重試的 `FAILED` 請求須確認尚未開始 Booking／Pets／Logs 寫入，才可重用同一 key；任何部分寫入不確定性保持 `PROCESSING` 並交由人工 reconciliation。本階段只以 mock 測試，不建立任何實際 key 或 booking。
 
 ## `Staff` — 員工資料結構
 

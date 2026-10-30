@@ -129,3 +129,60 @@
 ## TASK-004 完成證據（2026-10-30）
 
 已在已授權 Google Workspace 帳戶的預設 My Drive 建立 `LittleLand_TEST`，timezone 為 `Asia/Hong_Kong`，未設定共享。讀回確認名稱與八個分頁完全符合規格；八張表的欄名均與版本化 initializer 一致；`Rooms` 有 12 筆固定主檔（10 個實體房、2 個虛擬房），其餘七表各只有標題列，沒有客人、寵物、付款、員工、Session 或 Idempotency 記錄。`InitializeTestSheets.gs` 通過 Node 語法檢查；mock 驗證首次初始化、重複執行冪等、TEST ID／名稱限制及表頭／分頁／房間資料異常時 fail-closed 並保留資料。此 Apps Script source 尚未部署；未建立預約、付款、Staff Login、Session、Inventory Engine、Availability API 或 Production 資料。
+
+
+# 最新進度更新（2026-10-30；本段取代前述舊階段界線）
+
+- TASK-001 Booking Frontend UI：完成並已接受。
+- TASK-002 Pricing Engine：完成並已驗收；Commit `6f002fd9ea921c313ecf90502091f1de051f332c`。
+- TASK-003 Frontend Validation：依使用者指示跳過；本次不重新開啟。
+- TASK-004 TEST Sheets Schema + Initialization：完成並已推送；`LittleLand_TEST` 只含八表表頭及 12 筆 Rooms 主檔。
+- TASK-005 Inventory Engine、TASK-006 Availability API、TASK-007 TEST Create Booking API + Idempotency：完成 Apps Script source 與 Node mock tests；60 項測試通過。沒有寫入 Google Sheets、建立 TEST 預約列、建立／部署 Apps Script Web App、接線前台或合併 `develop`／`main`。本組任務完成後停止並回報等候驗收。
+
+# TASK-005 — TEST Room Inventory／Physical Allocation Engine
+
+狀態：完成（房態、實體房分配及 fail-closed 行為已用 mock 驗證；無實表寫入）。
+
+- 新增 Apps Script inventory service，只讀 `Rooms`、`Bookings`，並只接受 Script Property `LITTLELAND_TEST_SPREADSHEET_ID` 指定且名稱精確為 `LittleLand_TEST` 的 Spreadsheet；request 不可指定其他 Spreadsheet ID。ID、名稱、必要分頁／表頭、狀態或 allocation 資料不符時 fail-closed，不能回報可用，也不能猜測、覆寫、取消或釋放房間。
+- 只把 `PENDING_DEPOSIT`、`CONFIRMED`、`CHECKED_IN` 視為佔房；`PENDING_CONFIRMATION`、`CANCELLED`、`CHECKED_OUT`、`COMPLETED` 不佔房。`PENDING_DEPOSIT` 沒有固定付款期限；不得自動倒數、自動取消或自動釋放房間。員工後續跟進留待 Staff 後台 Task。
+- 日期區間入住日含、退房日不含；有效訂單與新申請重疊 iff `newCheckout > existingCheckin && newCheckin < existingCheckout`；同日退房及下一位入住不視為重疊。
+- 房間主檔只包含 10 個實體房：獨立套房空間 `S1`,`S2`,`S3`；豪華房 `A1`,`A2`,`A3`；標準房 `B1`,`B2`；整理箱 `C1`；自備籠 `F1`。虛擬房 `SS1` 只能表示 `S1+S2` 或 `S2+S3`，禁止 `S1+S3`；`SSR1` 固定表示 `S1+S2+S3`。SS1／SSR1 不是額外實體房，實際 allocation JSON 只保存底層實體 ID。
+- 分配優先次序：獨立套房 `S1→S2→S3`；豪華套房 `S1+S2→S2+S3`；非常.豪華套房 `S1+S2+S3`；豪華房 `A1→A2→A3`；標準房 `B1→B2`；整理箱 `C1`；自備籠 `F1`。虛擬房任何組成的實體 ID 被同日期區間佔用，就不可再分配該組合。
+- 只使用以上實體房；佔房 Booking 缺失 allocation、allocation 含重複／未知／虛擬 ID、套房組合非法或日期資料無效時 fail-closed，回 V3.0 房間完整性 error code，不回 available。不得將 `SS1`／`SSR1` 當作可獨立佔用的實體房。
+- 新的 `PENDING_CONFIRMATION` Booking 可保存暫定 allocation，但此狀態按 V3.0 不佔房、暫定 allocation 不代表保留；之後員工把它轉至 `PENDING_DEPOSIT` 或 `CONFIRMED` 前，必須再次重查房態及分配。本 Task 不建立該 Staff 操作流程。
+
+# TASK-006 — TEST Availability API
+
+狀態：完成（`doGet?action=availability` 僅回安全 `available` 布林值及 V3.0 envelope；不部署）。
+
+- 新增 Apps Script `doGet?action=availability` endpoint，接受有效入住／退房日期及所查房型；每次查詢讀取最新 TEST inventory。V3.0 取消 5 秒 polling；查詢時機為完成日期選擇、更改日期、進入／返回房型頁及正式提交前。普通查詢可用 Cache，但本實作不使用 availability Cache；正式提交不得信任 Cache。
+- Availability 對客人只回傳安全布林 `available=true/false` 與 V3.0 API envelope，不回傳實體房 ID、虛擬房 ID、Booking ID、其他客人、待付訂金狀態、員工 follow-up 或不可預訂原因。無可用房是成功查詢中的 `available=false`；房間／Sheet／系統讀取錯誤回 `success:false`，不可誤報 `available=true`。客人可見的查詢中、可預訂、不可預訂、暫時無法確認文字映射留待 TASK-008 前台接線。
+- 成功 envelope 包含 `success:true`、`code:"OK"`、`message`、`requestId`、ISO `timestamp`、`data`；失敗 envelope 包含 `success:false`、穩定 `code`、`message`、`requestId`、`timestamp`、`retryable`。應用依 `code` 判斷，不依 message 文字判斷。不得為 Availability API 建立公開部署網址。
+
+# TASK-007 — TEST Create Booking API + Idempotency
+
+狀態：完成（`doPost`、後端重算、TEST-only allow-list 與 Idempotency 已完成；全部以 mock 驗證）。
+
+- 新增 Apps Script `doPost` Create Booking JSON endpoint；請求使用穩定 `idempotencyKey`、入住／退房日期與時段、物種／房型／數量、每隻 Pets 資料、家長聯絡、飲食、額外服務、六項 consent、client pricing snapshot。後端不可接受或信任呼叫端的 Spreadsheet ID、Booking ID、物理房間分配、Booking／付款狀態或價格。
+- 建單流程固定為 `Validate → Check Idempotency Key → Acquire Script Lock → Backend Price Recalculation → Read Latest Inventory → Check Availability Again → Allocate Physical Rooms → Create Booking ID → Save → Log → Clear Cache → Release Lock`；取得 `LockService.getScriptLock()` 後必須重新檢查 key。任何重要步驟失敗都不得回報成功。最後房態檢查及分配不可使用 Cache。
+- 日期使用真實 ISO `YYYY-MM-DD`；使用 `Asia/Hong_Kong` 判斷入住日不可早於當日；退房必須晚於入住、至少一晚。時段為入住／退房各 `14:30–15:30`、`15:30–16:30`、`16:30–17:00`；提早入住每次 HK$200、17:00 後延遲退房每次 HK$200，各自只可收一次。
+- 寵物種類只可 `rabbit`／`guineaPig`／`hamster`；同一 Booking 只可一個物種及一個房型。寵物數量整數且至少 1、不可超過既定上限，pets 陣列列數必須等於 quantity。已驗收物種／房型價格與上限必須完全一致：兔子 `DELUXE_ROOM` HK$178／晚、上限 1；`PRIVATE_SUITE` HK$278／晚、上限 2；`DELUXE_SUITE` HK$350／晚、上限 3；`VERY_DELUXE_SUITE` HK$600／晚、上限 3。天竺鼠 `STANDARD_ROOM` HK$98／晚、上限 1；`DELUXE_ROOM` HK$178／晚、上限 3；`PRIVATE_SUITE` HK$278／晚、上限 3；`DELUXE_SUITE` HK$350／晚、上限 5；`VERY_DELUXE_SUITE` HK$600／晚、上限 5。倉鼠 `STANDARD_ROOM` HK$98／晚、上限 1；`HAMSTER_BOX` HK$65／晚、上限 1；`OWN_CAGE` HK$50／晚、上限 1。資料庫只存 Room Type ID，不接受客戶自訂房價。
+- 年齡必須是數值與 `month`／`year` 單位，轉換並保存 `ageInMonths`；沿用已接受前台最新規則：兔子最低 3 個月、天竺鼠最低 3 個月、倉鼠最低 2 個月。低於最低年齡不建單。懷孕中的兔／天竺鼠及最近 30 日接受手術的毛孩不可一般預約；回 `PET_PREGNANT_NOT_ACCEPTED`／`PET_RECENT_SURGERY_NOT_ACCEPTED`，不得寫入預約。倉鼠不要求或保存絕育、懷孕、杜蝨欄位；男孩子不顯示／要求懷孕欄位。
+- 寵物必填名稱、品種、年齡、性別；按物種收取適用健康欄位。最近看獸醫、傳染病、慢性病、服藥選「是」時必須提供詳情；依使用者已確認的規則，允許提交，將 `Pets.healthReviewStatus` 設為 `HEALTH_REVIEW_REQUIRED`，Booking 維持 `PENDING_CONFIRMATION`，留待人工覆核；這不代表健康批准，不得用 `PET_HEALTH_REVIEW_REQUIRED` 阻止此類申請。特殊照顧欄按前台保存。倉鼠為長擺糧，不要求餵食次數或假期提醒。
+- 家長姓名、香港 8 位電話、Email、第 1 及第 2 位緊急聯絡人必填；指定獸醫／診所選填。六項 consent 全部必須 `true`：HK$1,000／隻現金備用金／按金、基本房費 50% 訂金及附加費於尾數收取、訂金不退款、同意入住須知及寄養條款、健康申報屬實、緊急獸醫診治及醫療／交通／陪診費；由伺服器記錄同意時間。
+- 飲食選項只接受既定值：兔糧 `Oxbow 成兔糧`／`Momi T（成兔）`／`Momi A（幼兔）`／自行攜帶；天竺鼠糧 `Oxbow 天竺鼠糧`／`Momi 天竺鼠糧`／自行攜帶；倉鼠糧 `BUNNY 倉鼠糧`／自行攜帶。兔／天竺鼠牧草 `Joy & Fibre 1st cut`／`Momi 1st cut`／`Chewbo 1st cut`／自行攜帶；餵食為每日一次或每日兩次，星期日／假期只能餵一次但雙倍份量；兔／天竺鼠可選新鮮蔬菜。倉鼠不帶餵食次數、假期提醒或不適用飲食欄位。
+- 後端只用已驗收 `booking/pricing.js` 的房價目錄與公式；建立 GAS V8 mirror，Node mock tests 必須檢查 mirror 與正式引擎輸出相同。`nights = checkout - checkin`；`baseRoomFee = roomPrice * nights`；`extraPetFee = Math.max(0, quantity - 1) * 50 * nights`；僅入住星期五／六／日且一晚時 `weekendFee = 250`，其他情況為 0；`serviceFees` 為所有選擇的服務費總和，其中單次梳毛 HK$70 一次、每日梳毛 HK$50 × nights、餵藥每日一次 HK$80 × nights、餵藥每日兩次 HK$150 × nights、提早入住 HK$200 一次、延遲退房 HK$200 一次；餵藥一次及兩次互斥。`totalSurcharges = extraPetFee + weekendFee + serviceFees`；`estimatedTotal = baseRoomFee + totalSurcharges`；`depositAmount = baseRoomFee * 0.5`，不可按 estimatedTotal 的 50% 計；`remainingBalance = estimatedTotal - depositAmount`；`cashDeposit = quantity * 1000`，絕不併入住宿總額、訂金或尾數。若 client price version 已過期回 `PRICE_VERSION_EXPIRED`；client quote 不符回 `PRICE_CLIENT_MISMATCH`；後端永遠保存後端重算結果。
+- Booking ID 使用唯一 `TEST-LL-<香港日期>-<UUID 短碼>`，不可使用 Sheets row number。成功建立狀態為 `PENDING_CONFIRMATION`，該狀態不佔房，已分配房間僅為暫定；房間正式保留須待後續確認／訂金流程，不可在成功頁或 API response 稱已正式確認。保存 Price Snapshot `roomPrice`、`priceVersion`、`policyVersion`、`roomRuleVersion` 及所有計費 snapshot。使用者同意健康覆核申請可提交並留待人工覆核。
+- 成功寫入一筆 `Bookings`、每隻毛孩一筆 `Pets`、一筆不含不必要個人資料的 `Logs` 及一筆 `IdempotencyKeys`；不建立 `Payments` 資料列、不處理付款。初始 `depositStatus=UNPAID`、`balanceStatus=UNPAID`、`cashDepositStatus=NOT_COLLECTED`。成功 API response 含 V3.0 `success:true`、`code:"OK"`、`message`、`requestId`、`timestamp`、`data`，只回 Booking ID、`PENDING_CONFIRMATION` 及計費摘要，不返回實體房 ID 或其他客人資料；失敗使用 `success:false`、穩定 error `code`、`message`、`requestId`、`timestamp`、`retryable`，客戶端依 `code` 判斷而非 message。
+- IdempotencyKeys 使用 `idempotencyKey`、`operation`、canonical `payloadHash`、技術狀態 `PROCESSING`／`COMPLETED`／`FAILED`、`bookingId`、`requestId`、`responseCode`、`responseSnapshotJson` 及時間；技術狀態不可混作 Booking Status，不設 TTL／不自動刪除。同 key + 同 operation + 同 hash 的已完成重送回放同一 response，不再建立第二 Booking／Pets／Logs 或重做房間分配；同 key 搭配不同 operation 或 payload 回 `DUPLICATE_REQUEST`；lock 逾時回 `LOCK_TIMEOUT`。Response snapshot 不含原始 request 或不必要個人資料。Sheets 多分頁並非資料庫交易；任何部分寫入故障保留 `PROCESSING` 及穩定 Booking ID、回錯誤不回成功，重送不得新增第二份；不自動刪除／猜測修復，交由人工 reconciliation。
+- 保持 V3.0 API errors：`VALIDATION_FAILED`、`DATE_INVALID_FORMAT`、`DATE_CHECKIN_IN_PAST`、`DATE_CHECKOUT_NOT_AFTER_CHECKIN`、`PET_QTY_INVALID`、`PET_QTY_EXCEEDS_LIMIT`、`PET_AGE_BELOW_MINIMUM`、`PET_PREGNANT_NOT_ACCEPTED`、`PET_RECENT_SURGERY_NOT_ACCEPTED`、`ROOM_TYPE_FULL`、`ROOM_COMBINATION_UNAVAILABLE`、`ROOM_NO_LONGER_AVAILABLE`、`ROOM_INVALID_ALLOCATION`、`ROOM_OVERLAP_DETECTED`、`ROOM_ALLOCATION_FAILED`、`PRICE_CLIENT_MISMATCH`、`PRICE_CALCULATION_FAILED`、`PRICE_VERSION_EXPIRED`、`PRICE_DUPLICATE_SERVICE`、`DUPLICATE_REQUEST`、`LOCK_TIMEOUT`、`SHEET_READ_FAILED`、`SHEET_WRITE_FAILED`、`QUOTA_EXCEEDED`、`EXECUTION_TIMEOUT`、`SYSTEM_UNAVAILABLE`、`INTERNAL_ERROR`。房態無房不可誤報可預訂；API 任何錯誤不可回成功；健康需人工覆核則依上方使用者核准規則允許建立待確認申請並設定標記。
+- 全部 Node `node:test` 使用 fake Sheets、Script Properties、LockService、Utilities、ContentService 等 mock；Availability cache 不啟用，故不呼叫 CacheService。不得讀寫實際 `LittleLand_TEST` 或 Production。使用者明確選擇本階段不寫入任何試算表 row、不建立 Apps Script 專案、不部署 Web App、不提供 API URL、不連接前台。後續若需實表測試／部署須另行授權。
+- 完成後同步到 `hklittleland/littleland-booking-system` 新 feature branch（建議 `feature/test-booking-api`）；不得推送內部 `origin`，不得合併 `develop`／`main`，不部署。此組 TASK-005／006／007 完成後停止並回報，等候使用者驗收，再開始其他任務。
+
+
+## TASK-005／006／007 完成證據（2026-10-30）
+
+- Apps Script modules：`TestSpreadsheetAccess.gs`（固定 TEST ID allow-list、精確名稱/schema 驗證與公式字串防護）、`PricingEngine.gs`（與已驗收 `booking/pricing.js` 完全一致）、`BookingValidation.gs`、`RoomAvailability.gs`、`IdempotencyService.gs`、`BookingApi.gs`。
+- 新增純記憶體 Node mock harness、Pricing parity、Room Availability 與 Idempotency/API 測試。`node --test`：60 passed、0 failed；所有 `.gs` 與測試 `.js` 通過 `node --check`；`git diff --check` 無錯誤。
+- 完成獨立只讀驗收，未發現阻斷問題。真實 Apps Script runtime、實際 Google Sheets、GAS 併發配額、部署及前台接線仍未測／未做，符合使用者指定的 code + mock-only 界線。
+- 本階段沒有新增或修改任何 Google Sheets 資料列、沒有建立真實預約／付款資料、沒有部署 Web App、沒有連接前台、沒有合併 `develop` 或 `main`。
