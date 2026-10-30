@@ -47,3 +47,38 @@
 
 - 本 Task 僅建立預約前端 UI + Mock Data；不建立／連接 Google Apps Script、Google Sheets、Staff Login、後台、API、真實提交、Production 或付款功能。
 - 本 Task 完成後停止、回報結果並等待使用者確認，不得開始 TASK-002 Pricing Engine。
+
+---
+
+# TASK-002 — Pricing Engine
+
+狀態：完成。獨立計價引擎及其測試已通過；本 Task 已停止並回報，等待使用者確認；不得開始 TASK-003。
+
+## 1. 獨立計價模組
+
+- 新增 `booking/pricing.js`，實作純 JavaScript、無副作用、無第三方依賴的 Pricing Engine，可於瀏覽器和 Node.js 使用；匯出房型目錄、`calculatePricing(input)` 和可機器辨識的 `PricingError`。
+- 輸入包括入住日、退房日、寵物種類、Room Type ID、寵物數量及服務選項；單價和上限只由引擎內建目錄查得，不接受呼叫端傳入或覆寫房價。
+- 使用 Room Type ID：`DELUXE_ROOM`、`PRIVATE_SUITE`、`DELUXE_SUITE`、`VERY_DELUXE_SUITE`、`STANDARD_ROOM`、`HAMSTER_BOX`、`OWN_CAGE`；中文名稱只作顯示名稱。
+- 房價／上限必須精確為：兔子：`DELUXE_ROOM` HK$178／晚、最多 1 隻；`PRIVATE_SUITE` HK$278／晚、最多 2 隻；`DELUXE_SUITE` HK$350／晚、最多 3 隻；`VERY_DELUXE_SUITE` HK$600／晚、最多 3 隻。天竺鼠：`STANDARD_ROOM` HK$98／晚、最多 1 隻；`DELUXE_ROOM` HK$178／晚、最多 3 隻；`PRIVATE_SUITE` HK$278／晚、最多 3 隻；`DELUXE_SUITE` HK$350／晚、最多 5 隻；`VERY_DELUXE_SUITE` HK$600／晚、最多 5 隻。倉鼠：`STANDARD_ROOM` HK$98／晚、最多 1 隻；`HAMSTER_BOX` HK$65／晚、最多 1 隻；`OWN_CAGE` HK$50／晚、最多 1 隻。
+- 接受有效的真實 ISO `YYYY-MM-DD` 日期；`nights` 依入住日含、退房日不含計算，退房必須晚於入住。計價核心不自行新增「不可預訂日期」或最早預約日規則。
+- 拒絕無效日期格式／不存在日期、退房不晚於入住、未知物種／房型、房型不屬於指定物種、數量非整數或小於 1、數量超過該物種房型上限、無效服務值、互斥餵藥服務同時選取及同一服務重複輸入；錯誤提供穩定錯誤碼，不以 UI 訊息作判斷。
+
+## 2. 計價規則與結果
+
+- `nights = checkout - checkin` 的曆日數；房費 `baseRoomFee = roomPrice * nights`。
+- `extraPetFee = Math.max(0, quantity - 1) * 50 * nights`。
+- 若入住日為星期五、星期六或星期日且 `nights === 1`，`weekendFee = 250`；否則 `weekendFee = 0`。
+- 服務費：單次梳毛 HK$70；每日梳毛 HK$50 × nights；每日餵藥 1 次 HK$80 × nights；每日餵藥 2 次 HK$150 × nights。提早入住一次性 HK$200；17:00 後延遲退房一次性 HK$200。早入住／延遲退房各只收一次；每日餵藥一次與兩次互斥。
+- `totalSurcharges = extraPetFee + weekendFee + serviceFees`；`estimatedTotal = baseRoomFee + totalSurcharges`。
+- `depositAmount = baseRoomFee * 0.5`，訂金只按基本房費計算，不得按住宿總額計算。
+- `remainingBalance = estimatedTotal - depositAmount`，作入住當日支付的預計尾數。
+- `cashDeposit = quantity * 1000`；按金須獨立回傳，絕不可計入住宿總額、訂金或尾數。
+- 回傳資料須逐項提供房型、每晚價格、晚數、物種、數量、基本房費、額外寵物費、週末費、各服務費及服務費小計、附加費合計、預計總額、訂金、尾數和現金按金；所有金額為 HKD 整數／可精確表示數值。
+- 日期以 UTC 曆日計算，不受瀏覽器時區或夏令時間影響；星期五／六／日規則按入住日判定。
+
+## 3. 定價測試
+
+- 新增 `tests/pricing.test.js`，使用 Node 內建測試工具，不增加 npm dependencies。測試全部房型與物種對應價格／容量、結果公式、所有費用項目、有效週末和非適用邊界、按金與住宿金額隔離，以及所有拒絕條件。
+- 必須包含指定案例：3 隻兔、豪華套房、2 晚：基本房費 HK$700、額外寵物費 HK$200、總額 HK$900、訂金 HK$350、尾數 HK$550、現金按金 HK$3,000。
+- 週末核心案例：星期五入住 1 晚 +HK$250；星期六入住 1 晚 +HK$250；星期日入住 1 晚 +HK$250；星期五入住 2 晚 +HK$0；星期四入住 1 晚 +HK$0。
+- 本次不把計價模組接入 `booking/booking.js` 或預約 UI；不建立 Apps Script、Sheets、API、房態、付款、後台或 Production，不部署、不合併到 `develop`／`main`。
