@@ -486,8 +486,11 @@
       ['晚數', price.nights ? `${price.nights} 晚` : '—']
     ];
     el.summaryPreview.innerHTML = entries.map(([label, value]) => `<div class="preview-row"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
-    el.summaryTotal.textContent = money(price.estimatedTotal);
-    el.summaryDeposit.textContent = money(price.depositAmount);
+    const invalidRoomQuantity = Boolean(state.form.roomId) && !quantityIsValid();
+    el.summaryTotal.textContent = invalidRoomQuantity ? '待修正' : money(price.estimatedTotal);
+    el.summaryDeposit.textContent = invalidRoomQuantity ? '待修正' : money(price.depositAmount);
+    const pricingHint = document.getElementById('summaryValidationHint');
+    if (pricingHint) pricingHint.hidden = !invalidRoomQuantity;
     const checkoutInput = document.getElementById('checkout');
     if (checkoutInput) {
       const today = localDateValue(new Date());

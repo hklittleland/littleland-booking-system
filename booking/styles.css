@@ -283,6 +283,7 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 .summary-divider { height: 1px; background: #e8dfef; }
 .summary-total-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 13px 0 9px; color: #675a77; font-size: 12px; font-weight: 800; }
 .summary-total-row strong { color: #8159bb; font-size: 20px; font-weight: 900; }
+.summary-validation-hint { margin: 0 0 10px; padding: 8px 10px; border: 1px solid #f0e2c7; border-radius: 10px; color: #80643d; background: #fff9ef; font-size: 10px; line-height: 1.45; }
 .mini-deposit { display: flex; align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid #dbefdf; border-radius: 13px; color: #5d8067; background: #f0faf1; font-size: 10px; line-height: 1.55; }
 .mini-deposit-icon { font-size: 17px; }
 .mini-deposit strong { font-size: 13px; }
