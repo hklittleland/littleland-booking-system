@@ -82,3 +82,50 @@
 - 必須包含指定案例：3 隻兔、豪華套房、2 晚：基本房費 HK$700、額外寵物費 HK$200、總額 HK$900、訂金 HK$350、尾數 HK$550、現金按金 HK$3,000。
 - 週末核心案例：星期五入住 1 晚 +HK$250；星期六入住 1 晚 +HK$250；星期日入住 1 晚 +HK$250；星期五入住 2 晚 +HK$0；星期四入住 1 晚 +HK$0。
 - 本次不把計價模組接入 `booking/booking.js` 或預約 UI；不建立 Apps Script、Sheets、API、房態、付款、後台或 Production，不部署、不合併到 `develop`／`main`。
+
+
+# 最新進度更新（2026-10-30；取代上方舊的等待確認狀態）
+
+- TASK-001 Booking Frontend UI：完成並已接受。
+- TASK-002 Pricing Engine：完成並已驗收；Commit `6f002fd9ea921c313ecf90502091f1de051f332c`。
+- TASK-003 Frontend Validation：依使用者指示跳過，不另行開發。
+- TASK-004 TEST Sheets Schema + Initialization：已完成並驗證；只完成下列 TEST schema／初始化範圍，未合併 develop/main，交付後停止並等候驗收。
+
+# TASK-004 — Google Sheets TEST Schema + Initialization
+
+狀態：已完成（TEST Spreadsheet 已建立並讀回驗證；Apps Script initializer source 已完成並通過語法／mock 安全測試；未部署任何 API）。
+
+## 1. TEST 試算表、安全界線與分頁
+
+- 只建立一份新的 Google Spreadsheet，名稱精確為 `LittleLand_TEST`，使用已連接帳戶的預設 My Drive，不分享給其他人。建立前先檢查是否有同名檔；如有同名檔案，停止並詢問使用者，不自動重用、改名、清空或覆寫。
+- 只建立原規格指定的八個工作表，名稱精確為 `Bookings`、`Pets`、`Payments`、`Rooms`、`Logs`、`IdempotencyKeys`、`Staff`、`Sessions`；欄名置於第一列，使用穩定 camelCase 欄名。
+- 只用 TEST 資料庫；不可連接、讀取、匯入、複製、修改或寫入正式 LittleLand 資料或正式試算表；不可使用真實客人資料。Bookings、Pets、Payments、Logs、IdempotencyKeys、Staff、Sessions 不預填客人、付款、員工、登入 Session 或防重複提交記錄。
+- 業務記錄使用獨立 ID，不可用 Google Sheet row number 作 Booking ID；測試 Booking ID 格式使用 `TEST-LL-...`。本 Task 不建立任何 Booking ID。
+
+## 2. Schema 欄位與既定狀態
+
+- `Bookings` 一列代表一張訂單，欄位包含獨立 `bookingId`、建立／更新時間、版本、訂單狀態、入住／退房日期與時段、物種、Room Type ID、數量、實體房間分配欄、家長姓名／電話／Email／兩位緊急聯絡人／指定獸醫、目前前台使用的訂單層主糧／牧草／餵食頻率／蔬菜欄位、額外服務、六項同意及同意時間、房價與完整計價 snapshot、`priceVersion`／`policyVersion`／`roomRuleVersion`、訂金／尾數／現金按金金額及狀態、現金按金收取／使用／退還紀錄，以及員工 follow-up 欄位。飲食欄位須符合已接受前台：倉鼠長擺糧，倉鼠餵食頻率留空且不顯示星期日／假期餵食次數欄位。
+- `Bookings` 的 booking 狀態僅使用 V3.0 值：`PENDING_CONFIRMATION`、`PENDING_DEPOSIT`、`CONFIRMED`、`CHECKED_IN`、`CHECKED_OUT`、`COMPLETED`、`CANCELLED`。不佔房狀態是 `PENDING_CONFIRMATION`、`CANCELLED`、`CHECKED_OUT`、`COMPLETED`；佔房狀態是 `PENDING_DEPOSIT`、`CONFIRMED`、`CHECKED_IN`。`PENDING_DEPOSIT` 無固定付款期限，不自動倒數、取消或釋放房間。
+- Booking 與 payment 狀態分開：`depositStatus` 使用 `UNPAID`／`PAID`／`REFUNDED`；`balanceStatus` 使用 `UNPAID`／`PAID`；`cashDepositStatus` 使用 `NOT_COLLECTED`／`COLLECTED`／`PARTIALLY_USED`／`REFUNDED`。按金欄位保存 `cashDepositAmount`、`cashDepositCollected`、`cashDepositCollectedAt`、`cashDepositUsedAmount`、`cashDepositRefundedAmount`、`cashDepositRefundedAt`、`cashDepositNote`。
+- 訂金 snapshot 必須按 `baseRoomFee * 0.5`，附加費在尾數收取；`cashDeposit = qty * 1000`，不可計入住宿總額、訂金或尾數。保存 `roomPrice`、`nights`、`baseRoomFee`、`extraPetFee`、`weekendFee`、逐項服務費／`serviceFees`、`totalSurcharges`、`estimatedTotal`、`depositAmount`、`remainingBalance`、`cashDeposit` 及價格／政策／房規版本；前端價格不可當後端權威價格。
+- `Pets` 一隻毛孩一列，以唯一 `petId` 關聯 `bookingId`；包含寵物序號、名稱、品種、年齡數值、年齡單位（月／歲）、`ageInMonths`、性別、絕育、懷孕、最近 30 日是否接受手術、最近看獸醫與詳情、傳染病與詳情、慢性疾病與詳情、服藥與詳情、特殊照顧、一個月內杜蝨及健康覆核欄位。需人工覆核時 `healthReviewStatus` 保存 `HEALTH_REVIEW_REQUIRED`，不可自動批准入住。倉鼠不適用欄位留空。
+- `Payments` 以唯一 `paymentId` 關聯 `bookingId`，欄位包含付款種類、金額、幣別、付款狀態、付款方法、交易參考、付款時間、記錄員工、退款金額／時間、備註及建立時間；不接付款服務、不建立交易、不預填付款列。
+- `Rooms` 保存固定房間主檔，列出 10 個實體房：S1、S2、S3 為獨立套房空間；A1、A2、A3 為豪華房；B1、B2 為標準房；C1 為整理箱；F1 為自備籠。另列 SS1（豪華套房）及 SSR1（非常.豪華套房）兩個虛擬房，以 `roomKind` 明確區分 PHYSICAL／VIRTUAL；虛擬房不得作額外實體房計數。SS1 僅可用 S1+S2 或 S2+S3，不可 S1+S3；SSR1 固定 S1+S2+S3。保留分配優先序：獨立套房 S1→S2→S3；豪華套房 S1+S2→S2+S3；豪華房 A1→A2→A3；標準房 B1→B2；整理箱 C1；自備籠 F1。房價及物種別入住上限以已確認 V3.0／Pricing Engine 為準，不建立第二個價格或容量權威來源。
+- `Logs` 包含事件時間、actor 類型／員工 ID、動作、目標類型／ID、request ID、精簡摘要及變更欄位資料，供重要後台修改追蹤；不可記錄明文密碼、原始 Session token 或不必要的完整個人資料。
+- `IdempotencyKeys` 包含唯一 `idempotencyKey`、操作範圍、payload hash、處理狀態、結果 Booking ID、回應代碼／可重用回應 snapshot、request ID 及建立／更新時間；相同 key 不得建立第二張訂單。規格未定義保留期限，本 Task 不新增自動 TTL。
+- `Staff` 包含唯一 `staffId`、username、display name、角色、password hash／salt、active 狀態、建立／更新時間及最後登入時間欄位；角色遵從 `VIEWER`、`STAFF`、`ADMIN`。不建立員工帳號，不存明文密碼。
+- `Sessions` 包含唯一 `sessionId`、`staffId`、token hash、角色 snapshot、建立／到期／撤銷／最後使用時間欄位；只保存 token hash，不保存原始 token，不建立登入 Session。原規格未定義的 Session 時限、password hash 演算法、付款方式及資料保留期，本 Task 不自行設定政策。
+
+## 3. 初始化器與交付界線
+
+- 建立 `docs/SHEETS-SCHEMA.md`，列出八個工作表、欄位用途、主鍵／關聯、已定義狀態值、敏感資料限制及 TEST-only 初始化方式。
+- 建立 `apps-script/InitializeTestSheets.gs`，提供手動 `initializeLittleLandTestSheets(spreadsheetId)`。初始化器只接受名稱精確為 `LittleLand_TEST` 的試算表；只建立缺少的工作表及空白表頭；遇到不符表頭時停止且保留資料；不得清空或覆寫現有資料；按唯一 `roomId` 冪等補入 10 個實體房及 2 個虛擬房主檔；不得建立任何客人、寵物、付款、員工、Session 或 IdempotencyKeys 記錄。初始化器不是 API，不部署或連接正式環境。
+- 建立後讀回並核對試算表名稱、八個分頁名稱／表頭及 Rooms 12 筆固定房間主檔；確認其他七表只有標題列、沒有個人／預約／付款資料。
+- 本 Task 不實作 TASK-005 Inventory Engine、TASK-006 Availability API、TASK-007 Create Booking API、Staff Login/Auth API、付款系統、正式 Session、部署或 Production；不修改已接受的客人前台與 Pricing Engine。
+- 使用新分支 `feature/test-sheets-schema`，所有保留程式碼／文件推送至 GitHub `hklittleland/littleland-booking-system`；不得自行 merge 到 `develop` 或 `main`。TASK-004 完成後停止並回報，等待使用者驗收。
+
+- 初始化器必須同時驗證 Apps Script Script Property `LITTLELAND_TEST_SPREADSHEET_ID` 與目標 spreadsheet ID 完全相同，並驗證試算表名稱精確為 `LittleLand_TEST`；未設定或不符一律停止，絕不自動尋找／猜測／連接正式資料表。
+
+## TASK-004 完成證據（2026-10-30）
+
+已在已授權 Google Workspace 帳戶的預設 My Drive 建立 `LittleLand_TEST`，timezone 為 `Asia/Hong_Kong`，未設定共享。讀回確認名稱與八個分頁完全符合規格；八張表的欄名均與版本化 initializer 一致；`Rooms` 有 12 筆固定主檔（10 個實體房、2 個虛擬房），其餘七表各只有標題列，沒有客人、寵物、付款、員工、Session 或 Idempotency 記錄。`InitializeTestSheets.gs` 通過 Node 語法檢查；mock 驗證首次初始化、重複執行冪等、TEST ID／名稱限制及表頭／分頁／房間資料異常時 fail-closed 並保留資料。此 Apps Script source 尚未部署；未建立預約、付款、Staff Login、Session、Inventory Engine、Availability API 或 Production 資料。
