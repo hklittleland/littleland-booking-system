@@ -11,9 +11,9 @@
   // Mock only. A future availability API can replace this resolver without changing the UI states.
   const roomAvailabilityFor = (datesAreValid) => datesAreValid ? 'available' : 'unknown';
   const SPECIES = {
-    rabbit: { label: '兔子', icon: '🐰', minimumAge: 3 },
-    guineaPig: { label: '天竺鼠', icon: '🐹', minimumAge: 1 },
-    hamster: { label: '倉鼠', icon: '🐭', minimumAge: 1 }
+    rabbit: { label: '兔子', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-1.webp', fallback: '🐇', minimumAge: 3 },
+    guineaPig: { label: '天竺鼠', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-2.webp', fallback: '🐾', minimumAge: 3 },
+    hamster: { label: '倉鼠', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-3.webp', fallback: '🐹', minimumAge: 2 }
   };
   const ROOMS = {
     rabbit: [
@@ -280,7 +280,7 @@
   function stepTwo() {
     return `${sectionHeading('🐾', '毛孩是什麼種類？', '每張申請只可選一種寵物；不同物種需分開申請。', 'STEP 02')}
       <div class="choice-grid" role="radiogroup" aria-label="選擇寵物種類">
-        ${Object.entries(SPECIES).map(([id, species]) => `<label class="choice-card ${state.form.species === id ? 'is-selected' : ''}"><input type="radio" name="species" data-field="species" value="${id}" ${state.form.species === id ? 'checked' : ''}><span class="selection-check" aria-hidden="true">✓</span><span class="choice-emoji" aria-hidden="true">${species.icon}</span><strong>${species.label}</strong><small>最低入住 ${species.minimumAge} 個月</small></label>`).join('')}
+        ${Object.entries(SPECIES).map(([id, species]) => `<label class="choice-card ${state.form.species === id ? 'is-selected' : ''}"><input type="radio" name="species" data-field="species" value="${id}" ${state.form.species === id ? 'checked' : ''}><span class="selection-check" aria-hidden="true">✓</span><span class="choice-emoji" aria-hidden="true"><span class="species-fallback">${species.fallback}</span><img class="species-illustration" src="${species.image}" alt="" loading="lazy"></span><strong>${species.label}</strong><small class="species-min-age">最低入住年齡：${species.minimumAge} 個月</small></label>`).join('')}
       </div>
       ${notice('pink', '♡', '<strong>一張訂單 = 一個房間。</strong> 同一張申請可有多隻同種類寵物；不同物種不可混住。如需兩個房間，請分開建立兩張申請。')}`;
   }
@@ -321,16 +321,17 @@
 
   function renderPet(pet, index) {
     const hamster = state.form.species === 'hamster';
+    const showPregnancy = !hamster && pet.sex === 'female';
     return `<article class="pet-profile" aria-labelledby="pet-title-${index}">
       <div class="pet-profile-head"><div class="pet-profile-title"><span class="pet-profile-number">${index + 1}</span><span id="pet-title-${index}">${SPECIES[state.form.species]?.label || '毛孩'}資料</span></div><span class="pet-profile-note">每隻毛孩都要填寫</span></div>
       <div class="field-grid">
         <div class="field"><label for="pet-${index}-name">寵物名稱 <span class="required-mark">*</span></label><input id="pet-${index}-name" data-pet-index="${index}" data-pet-field="name" value="${escapeHtml(pet.name)}" placeholder="毛孩的名字" required></div>
         <div class="field"><label for="pet-${index}-breed">品種 <span class="required-mark">*</span></label><input id="pet-${index}-breed" data-pet-index="${index}" data-pet-field="breed" value="${escapeHtml(pet.breed)}" placeholder="例如：侏儒兔" required></div>
-        <div class="field"><label for="pet-${index}-ageValue">年齡 <span class="required-mark">*</span></label><div class="field-grid" style="grid-template-columns:1fr 100px;gap:8px"><input type="number" min="0" step="any" inputmode="decimal" id="pet-${index}-ageValue" data-pet-index="${index}" data-pet-field="ageValue" value="${escapeHtml(pet.ageValue)}" placeholder="數值" required><select id="pet-${index}-ageUnit" data-pet-index="${index}" data-pet-field="ageUnit"><option value="month" ${pet.ageUnit === 'month' ? 'selected' : ''}>月</option><option value="year" ${pet.ageUnit === 'year' ? 'selected' : ''}>年</option></select></div><p class="field-help">系統會換算月齡；最低入住 ${SPECIES[state.form.species]?.minimumAge || 1} 個月。</p></div>
-        <div class="field"><label for="pet-${index}-sex">性別 <span class="required-mark">*</span></label><select id="pet-${index}-sex" data-pet-index="${index}" data-pet-field="sex" required><option value="">請選擇</option><option value="公" ${pet.sex === '公' ? 'selected' : ''}>公</option><option value="母" ${pet.sex === '母' ? 'selected' : ''}>母</option></select></div>
-        <div class="field"><label for="pet-${index}-sterilized">絕育 <span class="required-mark">*</span></label><select id="pet-${index}-sterilized" data-pet-index="${index}" data-pet-field="sterilized" required><option value="">請選擇</option><option value="yes" ${pet.sterilized === 'yes' ? 'selected' : ''}>已絕育</option><option value="no" ${pet.sterilized === 'no' ? 'selected' : ''}>未絕育</option></select></div>
-        ${hamster ? '' : `<div class="field"><label for="pet-${index}-pregnant">是否懷孕 <span class="required-mark">*</span></label><select id="pet-${index}-pregnant" data-pet-index="${index}" data-pet-field="pregnant" required><option value="">請選擇</option><option value="no" ${pet.pregnant === 'no' ? 'selected' : ''}>否</option><option value="yes" ${pet.pregnant === 'yes' ? 'selected' : ''}>是</option></select></div>`}
-        ${healthSelect(index, 'recentSurgery', '最近 7 日內曾接受手術', pet.recentSurgery)}
+        <div class="field"><label for="pet-${index}-ageValue">年齡 <span class="required-mark">*</span></label><div class="field-grid" style="grid-template-columns:1fr 100px;gap:8px"><input type="number" min="0" step="any" inputmode="decimal" id="pet-${index}-ageValue" data-pet-index="${index}" data-pet-field="ageValue" value="${escapeHtml(pet.ageValue)}" placeholder="數值" required><select id="pet-${index}-ageUnit" data-pet-index="${index}" data-pet-field="ageUnit"><option value="month" ${pet.ageUnit === 'month' ? 'selected' : ''}>月</option><option value="year" ${pet.ageUnit === 'year' ? 'selected' : ''}>歲</option></select></div><p class="field-help">系統會換算月齡；最低入住年齡為 ${SPECIES[state.form.species]?.minimumAge || 1} 個月。</p></div>
+        <div class="field"><label for="pet-${index}-sex">性別 <span class="required-mark">*</span></label><select id="pet-${index}-sex" data-pet-index="${index}" data-pet-field="sex" required><option value="">請選擇</option><option value="male" ${pet.sex === 'male' ? 'selected' : ''}>男孩子</option><option value="female" ${pet.sex === 'female' ? 'selected' : ''}>女孩子</option></select></div>
+        ${hamster ? '' : `<div class="field"><label for="pet-${index}-sterilized">絕育 <span class="required-mark">*</span></label><select id="pet-${index}-sterilized" data-pet-index="${index}" data-pet-field="sterilized" required><option value="">請選擇</option><option value="yes" ${pet.sterilized === 'yes' ? 'selected' : ''}>已絕育</option><option value="no" ${pet.sterilized === 'no' ? 'selected' : ''}>未絕育</option></select></div>`}
+        ${showPregnancy ? `<div class="field"><label for="pet-${index}-pregnant">是否懷孕 <span class="required-mark">*</span></label><select id="pet-${index}-pregnant" data-pet-index="${index}" data-pet-field="pregnant" required><option value="">請選擇</option><option value="no" ${pet.pregnant === 'no' ? 'selected' : ''}>否</option><option value="yes" ${pet.pregnant === 'yes' ? 'selected' : ''}>是</option></select></div>` : ''}
+        ${healthSelect(index, 'recentSurgery', '最近 30 日是否接受過手術？', pet.recentSurgery)}
         ${healthSelect(index, 'vetVisit', '最近看獸醫', pet.vetVisit)}
         ${healthDetail(index, 'vetVisit', 'vetDetails', '獸醫診治', pet.vetDetails)}
         ${healthSelect(index, 'infectiousDisease', '傳染病', pet.infectiousDisease)}
@@ -351,7 +352,7 @@
     const petCount = quantityNumber();
     const reviewRequired = state.form.pets.some((pet) => ['vetVisit', 'infectiousDisease', 'chronicDisease', 'medication'].some((key) => pet[key] === 'yes'));
     return `${sectionHeading('🩺', '認識每一位毛孩', '請為每隻毛孩填寫資料與健康情況。', `${petCount} 隻毛孩`)}
-      ${notice('yellow', '💛', '懷孕或最近 7 日內接受手術的毛孩不可入住；其他健康情況會交由 LittleLand 人工確認。')}
+      ${notice('yellow', '💛', '懷孕或最近 30 日內接受手術的毛孩不可入住；其他健康情況會交由 LittleLand 人工確認。')}
       ${state.form.pets.map((pet, index) => renderPet(pet, index)).join('')}
       ${reviewRequired ? notice('yellow', '🔔', '<strong>需要人工確認健康情況。</strong> 你提供的資料已標記為 HEALTH_REVIEW_REQUIRED 示範狀態；這不是自動批准入住。') : ''}`;
   }
@@ -394,20 +395,22 @@
   function detailedQuoteMarkup() {
     const price = currentPricing();
     const rows = [
-      ['房型', price.room ? `${price.room.name} · ${money(price.room.price)}／晚` : '尚未選擇'],
-      ['晚數', price.nights ? `${price.nights} 晚` : '尚未選擇'],
-      ['寵物種類／數量', state.form.species ? `${SPECIES[state.form.species].label} · ${price.quantity || '—'} 隻` : '尚未選擇'],
-      ['基本房費', money(price.baseRoomFee)],
-      ['額外寵物費', money(price.extraPetFee)],
-      ['週末短住附加費', money(price.weekendFee)],
-      ...price.serviceItems.map((item) => [item.label, money(item.amount)]),
-      ['附加費合計', money(price.totalSurcharges)]
+      { label: '房型', amount: price.room ? `${price.room.name} · ${money(price.room.price)}／晚` : '尚未選擇' },
+      { label: '晚數', amount: price.nights ? `${price.nights} 晚` : '尚未選擇' },
+      { label: '寵物種類／數量', amount: state.form.species ? `${SPECIES[state.form.species].label} · ${price.quantity || '—'} 隻` : '尚未選擇' },
+      { label: '基本房費', amount: money(price.baseRoomFee) },
+      { label: '額外寵物費', amount: money(price.extraPetFee), surcharge: true },
+      { label: '週末短住附加費（週五／六／日入住 1 晚）', amount: money(price.weekendFee), surcharge: true },
+      ...price.serviceItems.map((item) => ({ label: item.label, amount: money(item.amount), surcharge: true })),
+      { label: '附加費合計', amount: money(price.totalSurcharges), surcharge: true }
     ];
     return `<div class="quote-title"><strong>費用明細</strong><span class="quote-caption">Mock Pricing 預覽</span></div>
-      ${rows.map(([label, amount]) => `<div class="quote-line"><span>${escapeHtml(label)}</span><span>${escapeHtml(amount)}</span></div>`).join('')}
+      ${rows.map((row) => `<div class="quote-line${row.surcharge ? ' quote-surcharge' : ''}"><span>${escapeHtml(row.label)}</span><span>${escapeHtml(row.amount)}</span></div>`).join('')}
       <div class="quote-line total"><span>預計住宿總額</span><span>${money(price.estimatedTotal)}</span></div>
-      <div class="quote-emphasis"><div class="emphasis-box emphasis-deposit"><span class="emphasis-icon" aria-hidden="true">🌱</span><span>現在需支付訂金<br><strong>${money(price.depositAmount)}</strong><br>基本房費 50%</span></div><div class="emphasis-box emphasis-cash"><span class="emphasis-icon" aria-hidden="true">💧</span><span>現金備用金／按金<br><strong>${money(price.cashDeposit)}</strong><br>不計入住宿總額</span></div></div>
-      <div class="quote-line"><span>預計尾數</span><span>${money(price.remainingBalance)}</span></div>`;
+      <div class="quote-emphasis"><div class="emphasis-box emphasis-deposit"><span class="emphasis-icon" aria-hidden="true">🌱</span><span>現在需支付訂金<br><strong>${money(price.depositAmount)}</strong><br>基本房費 50%</span></div></div>
+      <div class="quote-line"><span>預計尾數（入住當日支付）</span><span>${money(price.remainingBalance)}</span></div>
+      <div class="balance-payment-reminder"><strong>尾數付款安排</strong><div class="balance-breakdown"><span>基本房費餘額 ${money(price.baseRoomFee - price.depositAmount)}</span><span>＋</span><span>附加費合計 ${money(price.totalSurcharges)}</span><span>＝ ${money(price.remainingBalance)}</span></div><p>請於入住當日支付預計尾數；附加費包含在尾數內。</p></div>
+      <div class="cash-deposit-reminder"><strong>💰 現金備用金／按金 HK$1,000／隻</strong><span>合計 ${money(price.cashDeposit)}</span><p>請於入住當日準備，不計入住宿總額、訂金或尾數。</p></div>`;
   }
 
   function reviewTiles() {
@@ -416,16 +419,16 @@
     const values = [
       ['入住／退房', `${formatDate(state.form.checkin)} ${state.form.checkinTime || ''} → ${formatDate(state.form.checkout)} ${state.form.checkoutTime || ''}`],
       ['毛孩', `${SPECIES[state.form.species]?.label || '—'} · ${price.quantity || '—'} 隻${petNames.length ? `（${petNames.join('、')}）` : ''}`],
-      ['房型', price.room ? price.room.name : '—'],
-      ['家長', state.form.parentName || '—']
+      ['房型', price.room ? price.room.name : '—']
     ];
-    return values.map(([label, value]) => `<div class="review-tile"><small>${label}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
+    const rows = values.map(([label, value]) => `<div class="review-tile"><small>${label}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
+    return `${rows}<div class="review-tile"><small>家長</small><strong id="reviewParentName">${escapeHtml(state.form.parentName.trim() || '—')}</strong></div>`;
   }
 
   function stepFive() {
     const healthReview = state.form.pets.some((pet) => ['vetVisit', 'infectiousDisease', 'chronicDisease', 'medication'].some((key) => pet[key] === 'yes'));
     return `${sectionHeading('💌', '最後確認一下', '留下聯絡資料，看看照顧安排與費用預覽。', 'STEP 05')}
-      <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">👋</span>家長聯絡資料</h3><div class="field-grid">
+      <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">📲</span>家長聯絡資料</h3><div class="field-grid">
         ${field('parentName', '家長姓名', { required: true, placeholder: '請輸入姓名' })}
         ${field('phone', '香港電話（8 位數字）', { required: true, type: 'tel', placeholder: '例如：61234567', extra: 'inputmode="numeric" maxlength="8" autocomplete="tel-national"' })}
         ${field('email', 'Email', { required: true, type: 'email', placeholder: 'name@example.com', extra: 'autocomplete="email"' })}
@@ -435,7 +438,7 @@
       </div></section>
       ${contactFoodServices()}
       <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🧾</span>預約內容確認</h3><div class="review-summary">${reviewTiles()}</div>${healthReview ? notice('yellow', '🔔', '健康資料需由 LittleLand 人工確認（HEALTH_REVIEW_REQUIRED）。') : ''}<div class="quote-box" id="detailedQuote">${detailedQuoteMarkup()}</div>
-        ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong> 現金備用金／按金為每隻 HK$1,000，另於入住時預支，不計入住宿總額、訂金或尾數。')}
+        ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong>')}
       </section>
       <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🤍</span>提交前請確認</h3><p class="field-help">六項同意都需要勾選，才能繼續。</p><div class="terms-list">${TERMS.map((term, index) => `<label class="term-item"><input type="checkbox" data-term-index="${index}" ${state.terms[index] ? 'checked' : ''}><span>${escapeHtml(term)}</span></label>`).join('')}</div><p class="terms-error" id="termsError" ${state.terms.every(Boolean) ? 'hidden' : ''}>請勾選以上六項同意事項。</p></section>
       ${notice('blue', '💬', '提交後的下一頁是<strong>模擬完成畫面</strong>。本示範不會傳送任何預約資料、建立正式預約或處理付款。')}`;
@@ -486,6 +489,8 @@
       ['晚數', price.nights ? `${price.nights} 晚` : '—']
     ];
     el.summaryPreview.innerHTML = entries.map(([label, value]) => `<div class="preview-row"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+    const reviewParentName = document.getElementById('reviewParentName');
+    if (reviewParentName) reviewParentName.textContent = state.form.parentName.trim() || '—';
     const invalidRoomQuantity = Boolean(state.form.roomId) && !quantityIsValid();
     el.summaryTotal.textContent = invalidRoomQuantity ? '待修正' : money(price.estimatedTotal);
     el.summaryDeposit.textContent = invalidRoomQuantity ? '待修正' : money(price.depositAmount);
@@ -549,13 +554,19 @@
       const prefix = `#pet-${index}-`;
       const required = [
         ['name', '請填寫每隻毛孩的名稱。'], ['breed', '請填寫每隻毛孩的品種。'],
-        ['ageValue', '請填寫每隻毛孩的年齡。'], ['sex', '請選擇每隻毛孩的性別。'],
-        ['sterilized', '請填寫每隻毛孩的絕育情況。'], ['recentSurgery', '請回答最近 7 日內是否曾接受手術。'],
-        ['vetVisit', '請回答最近看獸醫的情況。'], ['infectiousDisease', '請回答是否有傳染病。'],
-        ['chronicDisease', '請回答是否有慢性疾病。'], ['medication', '請回答是否正在服用藥物。']
+        ['ageValue', '請填寫每隻毛孩的年齡。'], ['sex', '請選擇每隻毛孩的性別。']
       ];
+      if (state.form.species !== 'hamster') required.push(['sterilized', '請填寫每隻毛孩的絕育情況。']);
+      required.push(
+        ['recentSurgery', '請回答最近 30 日是否接受過手術。'],
+        ['vetVisit', '請回答最近看獸醫的情況。'],
+        ['infectiousDisease', '請回答是否有傳染病。'],
+        ['chronicDisease', '請回答是否有慢性疾病。'],
+        ['medication', '請回答是否正在服用藥物。']
+      );
+      if (state.form.species !== 'hamster' && pet.sex === 'female') required.push(['pregnant', '請回答是否懷孕。']);
       if (state.form.species !== 'hamster') {
-        required.push(['pregnant', '請回答是否懷孕。'], ['fleaTreatment', '請回答一個月內杜蝨處理情況。']);
+        required.push(['fleaTreatment', '請回答一個月內杜蝨處理情況。']);
       }
       for (const [key, message] of required) {
         if (!String(pet[key] || '').trim()) return { message, target: `${prefix}${key}` };
@@ -564,8 +575,8 @@
       if (!Number.isFinite(age) || age <= 0) return { message: '年齡必須是大於 0 的數值。', target: `${prefix}ageValue` };
       const ageInMonths = age * (pet.ageUnit === 'year' ? 12 : 1);
       if (ageInMonths < SPECIES[state.form.species].minimumAge) return { message: `${SPECIES[state.form.species].label}最低入住年齡為 ${SPECIES[state.form.species].minimumAge} 個月，這隻毛孩未達最低年齡。`, target: `${prefix}ageValue` };
-      if (pet.pregnant === 'yes') return { message: '懷孕中的毛孩不可接受一般入住。', target: `${prefix}pregnant` };
-      if (pet.recentSurgery === 'yes') return { message: '最近 7 日內接受手術的毛孩不可接受一般入住。', target: `${prefix}recentSurgery` };
+      if (state.form.species !== 'hamster' && pet.sex === 'female' && pet.pregnant === 'yes') return { message: '懷孕中的毛孩不可接受一般入住。', target: `${prefix}pregnant` };
+      if (pet.recentSurgery === 'yes') return { message: '最近 30 日內接受手術的毛孩不可接受一般入住。', target: `${prefix}recentSurgery` };
       for (const [yesKey, detailKey, detailName] of [
         ['vetVisit', 'vetDetails', '最近看獸醫的詳情'],
         ['infectiousDisease', 'infectiousDetails', '傳染病詳情'],
@@ -650,9 +661,24 @@
 
   function completionMarkup() {
     const price = currentPricing();
-    const names = state.form.pets.map((pet) => pet.name.trim()).filter(Boolean).map(escapeHtml).join('、');
-    const petDescription = `${SPECIES[state.form.species]?.label || '寵物'} · ${price.quantity || '—'} 隻${names ? `（${names}）` : ''}`;
-    const dateDescription = `${formatDate(state.form.checkin)} ${escapeHtml(state.form.checkinTime)} → ${formatDate(state.form.checkout)} ${escapeHtml(state.form.checkoutTime)} · ${price.nights} 晚`;
+    const names = state.form.pets.map((pet) => pet.name.trim()).filter(Boolean).join('、');
+    const petType = SPECIES[state.form.species]?.label || '寵物';
+    const petDescription = `${petType} · ${price.quantity || '—'} 隻${names ? `（${names}）` : ''}`;
+    const dateDescription = `${formatDate(state.form.checkin)} ${state.form.checkinTime} → ${formatDate(state.form.checkout)} ${state.form.checkoutTime} · ${price.nights} 晚`;
+    const whatsappMessage = [
+      '你好 LittleLand！我已提交預約申請，麻煩盡快協助確認並告知訂金安排，謝謝。',
+      `預約申請編號：${state.mockBookingId}`,
+      `家長：${state.form.parentName}`,
+      `寵物：${petDescription}`,
+      `房型：${price.room ? price.room.name : '—'}`,
+      `入住：${formatDate(state.form.checkin)} ${state.form.checkinTime}`,
+      `退房：${formatDate(state.form.checkout)} ${state.form.checkoutTime}`,
+      `預計住宿總額：${money(price.estimatedTotal)}`,
+      `訂金：${money(price.depositAmount)}`,
+      `預計尾數（入住當日支付）：${money(price.remainingBalance)}`,
+      `現金備用金／按金：${money(price.cashDeposit)}（HK$1,000／隻，入住當日準備，不計入住宿總額）`
+    ].join('\n');
+    const whatsappHref = `https://wa.me/85262886598?text=${encodeURIComponent(whatsappMessage)}`;
     return `<div class="completion-screen"><div class="completion-badge" aria-hidden="true">🎉</div>
       <h2>已收到您的預約申請！</h2>
       <p>謝謝你把毛孩的照顧需要告訴我們。LittleLand 將確認預約及提供訂金付款安排。</p>
@@ -665,12 +691,14 @@
         ${completionRow('入住／退房', dateDescription)}
         ${completionRow('住宿總額', money(price.estimatedTotal))}
         ${completionRow('訂金（基本房費 50%）', money(price.depositAmount))}
-        ${completionRow('預計尾數', money(price.remainingBalance))}
+        ${completionRow('預計尾數（入住當日支付）', money(price.remainingBalance))}
         ${completionRow('現金備用金／按金', money(price.cashDeposit))}
       </div>
       ${notice('green', '🌱', '<strong>LittleLand 將確認預約及提供訂金付款安排。</strong> 完成訂金付款及確認後，房間才正式保留。')}
-      ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong> 現金備用金／按金須於入住時預支，不計入住宿總額。')}
-      <div class="completion-actions"><a class="button button-primary" href="https://wa.me/85262886598" target="_blank" rel="noopener noreferrer">WhatsApp LittleLand · 62886598 <span aria-hidden="true">↗</span></a></div>
+      ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong>')}
+      <div class="cash-deposit-reminder"><strong>💰 現金備用金／按金 HK$1,000／隻</strong><span>合計 ${money(price.cashDeposit)}</span><p>請於入住當日準備，不計入住宿總額、訂金或尾數。</p></div>
+      <div class="completion-actions"><a class="button button-primary" href="${escapeHtml(whatsappHref)}" target="_blank" rel="noopener noreferrer">📲 WhatsApp LittleLand · 62886598 <span aria-hidden="true">↗</span></a></div>
+      <p class="whatsapp-draft-note">按下後會開啟已填好預約摘要的 WhatsApp 草稿；訊息會由你確認後才發送。</p>
       <div class="completion-actions"><button type="button" class="button button-quiet" data-reset>返回預約首頁</button></div>
     </div>`;
   }
@@ -716,8 +744,9 @@
       const key = target.dataset.petField;
       if (Number.isInteger(index) && state.form.pets[index] && key in state.form.pets[index]) {
         state.form.pets[index][key] = target.value;
+        if (key === 'sex' && target.value === 'male') state.form.pets[index].pregnant = '';
         saveDraft();
-        if (state.step === 4 && ['vetVisit', 'infectiousDisease', 'chronicDisease', 'medication'].includes(key)) renderStep();
+        if (state.step === 4 && ['sex', 'vetVisit', 'infectiousDisease', 'chronicDisease', 'medication'].includes(key)) renderStep();
         else updateSummary();
       }
       return;
@@ -732,6 +761,13 @@
       state.form.foodMain = '';
       state.form.hay = '';
       state.form.vegetables = '';
+      if (state.form.species === 'hamster') {
+        state.form.pets.forEach((pet) => {
+          pet.sterilized = '';
+          pet.pregnant = '';
+          pet.fleaTreatment = '';
+        });
+      }
       ensurePetCount();
       renderStep();
     } else if (key === 'quantity') {
@@ -806,6 +842,17 @@
       if (state.step < 5) { event.preventDefault(); advance(); }
     }
   });
+
+  function handleSpeciesIllustration(event) {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement) || !image.matches('.species-illustration')) return;
+    const fallback = image.previousElementSibling;
+    if (!fallback || !fallback.classList.contains('species-fallback')) return;
+    if (event.type === 'load') fallback.remove();
+    if (event.type === 'error') image.remove();
+  }
+  document.addEventListener('load', handleSpeciesIllustration, true);
+  document.addEventListener('error', handleSpeciesIllustration, true);
 
   ensurePetCount();
   refreshAvailability();
