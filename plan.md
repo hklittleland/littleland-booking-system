@@ -132,3 +132,8 @@
 
 
 > 範圍補充：後端資料／商業規則驗證是 Create Booking API 必需功能，屬本部分；不代表重啟 TASK-003 Frontend Validation。本部分不改客人前台、不做 Staff Authentication／Dashboard、付款 API／支付服務、TASK-008 前台接線或 Production。
+
+
+## TEST Apps Script 專案綁定檢查點（2026-10-30）
+
+使用者後續明確授權建立 TEST Apps Script 專案及設定 target。已在登入的 LittleLand Google 帳戶中建立綁定至唯一 `LittleLand_TEST` 試算表的 Apps Script 專案，將 `LITTLELAND_TEST_SPREADSHEET_ID` 設為已核實的 TEST spreadsheet ID，並重新載入設定頁確認保存值仍存在。Spreadsheet ID 不寫入 repository。這是後續整合前的設定準備，不改變 TASK-005／006／007 只交付 code + mock tests 的範圍；尚未上傳 LittleLand 程式碼、執行 initializer／API、寫入任何 Sheets row、建立 Web App deployment 或產生 API URL。任何程式碼上傳、實表測試與部署均留待後續使用者明確指示。

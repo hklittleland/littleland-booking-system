@@ -186,3 +186,13 @@
 - 新增純記憶體 Node mock harness、Pricing parity、Room Availability 與 Idempotency/API 測試。`node --test`：60 passed、0 failed；所有 `.gs` 與測試 `.js` 通過 `node --check`；`git diff --check` 無錯誤。
 - 完成獨立只讀驗收，未發現阻斷問題。真實 Apps Script runtime、實際 Google Sheets、GAS 併發配額、部署及前台接線仍未測／未做，符合使用者指定的 code + mock-only 界線。
 - 本階段沒有新增或修改任何 Google Sheets 資料列、沒有建立真實預約／付款資料、沒有部署 Web App、沒有連接前台、沒有合併 `develop` 或 `main`。
+
+
+# TEST Apps Script target 設定檢查點（2026-10-30）
+
+狀態：完成（已授權建立 TEST 專案及 Script Property，並回讀確認）。
+
+- Drive 唯讀查找確認目標是唯一、名稱精確為 `LittleLand_TEST` 的試算表；Apps Script 專案以該試算表為 parent 建立，並在登入的 LittleLand 帳戶中將 `LITTLELAND_TEST_SPREADSHEET_ID` 綁定至該 TEST ID。
+- 保存後重新載入 Apps Script 設定頁，核對 property key/value 仍存在。Spreadsheet ID 不保存於 GitHub repository；實際專案連結與 Script ID 由本次交付訊息提供。
+- 本次僅建立專案與 allow-list property；沒有上傳 LittleLand source、沒有執行 initializer/API、沒有修改任何試算表資料列、沒有建立真實測試預約、沒有部署 Web App 或建立 API URL。
+- 後續若要把 repository 內 source 上傳至該專案、執行實表初始化／測試或建立部署，需另按當時範圍操作；任何公開／可匿名存取的 deployment 都必須先另行取得使用者明確授權。Production 永遠不可作為測試目標。
