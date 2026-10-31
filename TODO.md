@@ -253,7 +253,7 @@
 
 # TASK-009 — TEST Booking 壓力／房態驗收
 
-狀態：進行中。所有資料只用合成 TEST 值；本 TASK 不啟動 Staff Dashboard／確認 API，不使用 Production。
+狀態：完成（2026-10-31）。只用合成 TEST 值；未啟動 Staff Dashboard／確認 API，未使用 Production。逐筆 ID、價格、Sheet 核對與限制見 [TASK-009 TEST Booking 壓力／房態驗收](docs/TEST-BOOKING-STRESS-20261031.md)。
 
 ### 十組 Create Booking 情境
 

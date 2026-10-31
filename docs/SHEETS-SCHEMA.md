@@ -6,9 +6,9 @@
 
 ## 安全及共通規則
 
-每張表第一列為下列順序的 `camelCase` 欄名；一列代表一筆該類記錄。使用穩定業務 ID 作為主鍵，不以 Google Sheets row number 作 ID。日期使用 `YYYY-MM-DD`，時間戳使用 ISO 8601 並明確保留時區，金額儲存為 HKD 數值，布林欄儲存 `TRUE`／`FALSE`。JSON 欄位以合法 JSON 字串存放。除固定 Rooms 主檔外，本次建立的其他七張表只有表頭列，不放任何客人、寵物、預約、付款、員工、Session 或 Idempotency 測試資料。
+每張表第一列為下列順序的 `camelCase` 欄名；一列代表一筆該類記錄。使用穩定業務 ID 作為主鍵，不以 Google Sheets row number 作 ID。日期使用 `YYYY-MM-DD`，時間戳使用 ISO 8601 並明確保留時區，金額儲存為 HKD 數值，布林欄儲存 `TRUE`／`FALSE`。JSON 欄位以合法 JSON 字串存放。此句所指只有表頭的狀態是 2026-10-30 初始建立時；後續經明確授權的 TEST E2E 已加入合成 Bookings／Pets／Logs／IdempotencyKeys 資料。除這些標示為 TEST 的記錄外，不放任何正式客人資料；Production 不連接。
 
-訂單 ID（只在未來建立 TEST 預約時使用）格式為 `TEST-LL-...`，不可使用 row number。前端報價只供預覽；日後建立預約時由後端重新計價，並保存價格／政策／房規 snapshot，避免改價影響舊訂單。`pricing.js` 是目前已驗收的規則參照；本試算表不另建會與後端計價規則衝突的房價或容量來源。
+訂單 ID 格式為 `TEST-LL-...`，不可使用 row number。前端報價只供預覽；TEST Create Booking API 會重新計價，並保存價格／政策／房規 snapshot，避免改價影響舊訂單。`pricing.js` 是目前已驗收的規則參照；本試算表不另建會與後端計價規則衝突的房價或容量來源。
 
 ## `Bookings` — 一筆訂單一列
 
@@ -104,7 +104,7 @@ logId, createdAt, actorType, actorStaffId, action, entityType, entityId, request
 idempotencyKey, operation, payloadHash, state, bookingId, requestId, responseCode, responseSnapshotJson, createdAt, updatedAt
 ```
 
-相同 key 重送不得建立第二張訂單。TEST Create Booking API 的 `state` 是技術狀態 `PROCESSING`／`COMPLETED`／`FAILED`，不與 Booking Status 混用；不設定自動 TTL 或刪除。完成請求重播精簡 response snapshot；可安全重試的 `FAILED` 請求須確認尚未開始 Booking／Pets／Logs 寫入，才可重用同一 key；任何部分寫入不確定性保持 `PROCESSING` 並交由人工 reconciliation。本階段只以 mock 測試，不建立任何實際 key 或 booking。
+相同 key 重送不得建立第二張訂單。TEST Create Booking API 的 `state` 是技術狀態 `PROCESSING`／`COMPLETED`／`FAILED`，不與 Booking Status 混用；不設定自動 TTL 或刪除。完成請求重播精簡 response snapshot；可安全重試的 `FAILED` 請求須確認尚未開始 Booking／Pets／Logs 寫入，才可重用同一 key；任何部分寫入不確定性保持 `PROCESSING` 並交由人工 reconciliation。Unit tests 使用 mock；使用者另行授權的 TEST E2E／壓力驗收可建立合成 key／booking，Production 永不使用。
 
 ## `Staff` — 員工資料結構
 
