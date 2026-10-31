@@ -114,7 +114,7 @@ idempotencyKey, operation, payloadHash, state, bookingId, requestId, responseCod
 staffId, username, displayName, role, passwordHash, passwordSalt, isActive, createdAt, updatedAt, lastLoginAt
 ```
 
-角色僅用 `VIEWER`、`STAFF`、`ADMIN`。本次不建立員工帳號、不存明文密碼。密碼 hash 演算法由後續登入實作階段另行依安全規格決定。
+`role` 欄位為既有試算表 schema 的相容欄位；目前 Staff Web V1 的兩個 active TEST 帳號均填 `ADMIN`，但應用程式不依 `VIEWER`／`STAFF`／`ADMIN` 分級或逐操作授權。每個有效登入 Staff 都有相同完整後台權限。密碼只存 hash／salt，絕不存明文；V1 使用 PBKDF2-HMAC-SHA256、120,000 rounds。
 
 ## `Sessions` — 員工登入 Session 資料結構
 
@@ -124,7 +124,7 @@ staffId, username, displayName, role, passwordHash, passwordSalt, isActive, crea
 sessionId, staffId, tokenHash, roleSnapshot, createdAt, expiresAt, revokedAt, lastSeenAt
 ```
 
-只保存 hash 後的 token，不保存原始 token；本次不建立 Session。V3.0 未定義的 Session 時限及資料保留期不在本次自行決定或啟用。
+只保存 hash 後的 token，不保存原始 token。`roleSnapshot` 依既有欄位保留，Staff Web V1 寫 `ADMIN` 作顯示／相容值，不作權限判斷。Session 有效期 8 小時；登出寫入 `revokedAt`，員工帳號停用後既有 Session 亦立即失效。
 
 ## 手動初始化方式
 

@@ -292,13 +292,13 @@
 
 # Staff Web V1 — 完整可操作初版
 
-狀態：進行中（2026-10-31；使用者核准建議方案 1；單一 V1 交付，不拆成多個 user-facing TASK。前後端本地實作完成；108/108 automated tests PASS；390px Playwright mock UI 驗證通過。live TEST two-hamster E2E 尚未通過，Staff login response 有 intermittent client reset，不能視為 V1 已驗收。）
+狀態：Staff Web V1 核心實作與 TEST 驗收完成（2026-10-31；TEST deployment v8、兩個 synthetic ADMIN 帳號、111/111 automated tests、390px 八頁 smoke、paid-deposit room-conflict E2E 與 Sheets read-back 均通過）。正式驗收／任何 Production 部署仍須另行決定；八頁 smoke 是登入後導覽／render／橫向捲動檢查，不代表每項操作均已手動端到端覆核；見 §7 最終核對。
 
 ## 1. 後台定位、登入與導覽
-
 - 建立登入式響應式網站（不是手機 App），繁體中文 zh-HK，iPhone 優先並同時適合 iPad／桌面；沿用 LittleLand 紫／粉色品牌、白色圓角卡片與清晰簡單的日常營運介面，手機主要按鈕要大而易點。
-- 後台主要選單包括：概覽 Dashboard、房間月曆、預訂、🔔 待跟進、付款、客戶、基本營收、設定／登出。員工管理及排班不需做完整版本。
-- 必須登入。不能把真實密碼硬寫在前端；本 V1 只建立一個合成 TEST Staff 帳號，密碼只存 hash／salt，登入後建立有期限及可登出的 Session。只有已驗證 Staff 才可取得 Booking、客人、寵物、付款、房間及 Logs；未登入不可讀取任何後台資料。
+- 後台主要選單包括：概覽 Dashboard、房間月曆、預訂、🔔 待跟進、付款、客戶、基本營收、設定／登出。員工管理及排班不需做完整版本；保留以 TEST `Staff.isActive=false` 停用帳號，且停用後既有 Session 也不可再讀寫資料。
+- 只保留基本 username/password Staff Login；TEST 建立兩個有效 synthetic Staff 帳號，兩者登入後一律擁有完整 ADMIN 權限。不實作 VIEWER／STAFF／ADMIN 三層角色判斷、逐操作 role gate 或操作時重新輸入密碼。密碼不可寫在前端或 GitHub；只存 PBKDF2-HMAC-SHA256 hash／salt，固定 120,000 rounds。登入後建立有期限 Session，支援過期及登出；員工停用 `isActive=false` 後，該帳號及其既有 Session 均不可再讀取資料或操作。只有有效登入 Staff 才可取得 Booking、客人、寵物、付款、房間及 Logs；未登入不可讀取任何後台資料。
+- 兩個有效 Staff 帳號都可使用完整後台：查看及編輯預約、查看客人及寵物、確認資料／轉待付訂金／確認收到訂金並依最新房態分配房間、記錄尾數及現金按金、辦理入住及退房、取消預約、新增跟進紀錄，以及查看付款與基本營收。保留合法狀態／金額驗證、房態 re-check、重要操作 Logs 與必要確認；不做角色分級授權。
 
 ## 2. 共用 Booking Detail、預訂列表與 Dashboard
 
@@ -317,7 +317,7 @@
 
 - 嚴格遵循：客人提交 → `PENDING_CONFIRMATION`（不佔房）→ 員工確認資料 → `PENDING_DEPOSIT`（仍不佔房）→ 實際收訂金後由員工確認 → 最新房態仍有合法實體房才可分配房號並轉 `CONFIRMED`（開始正式佔房）。只有 `CONFIRMED` 及 `CHECKED_IN` 佔房；`PENDING_CONFIRMATION`、`PENDING_DEPOSIT`、`CANCELLED`、`CHECKED_OUT`、`COMPLETED` 不佔房；所有 pending booking 的 allocation 必須是 `[]`。同日期可以有多張待確認／待付訂金預約；提交 pending 不分配／保留房間。
 - 「確認已收訂金」必須在鎖內重新讀取最新房態、尋找合法實體房組合後才執行轉換，不能信任舊查詢結果或客戶端指定房號。如果仍有房：記錄訂金、分配合法實體房、轉 `CONFIRMED`、正式佔房及寫入 Log。如果已無房：依使用者已核准的方案仍記錄已實收訂金到 `Payments`，但 Booking 維持 `PENDING_DEPOSIT`、`allocatedRoomIdsJson=[]`，顯示房態衝突並加入人工跟進；不可 CONFIRMED、不可任意分配、不可自動取消預約或忽略實際收款。
-- 提供確認資料、轉待付訂金、確認已收訂金、記錄尾數、收取／使用／退款現金按金、辦理入住、退房、完成、取消預約、新增跟進及編輯允許資料等 Detail 操作。取消必須由員工明確確認及記錄原因；不自動退款。入住後不可直接退回未入住狀態。不可編輯 status、價格 snapshot、付款狀態或房間 allocation 的一般欄位；敏感修改需重新驗證、確認、鎖內 re-read、版本更新並寫 Log。所有轉換依明確合法狀態及角色限制 fail-closed。
+- 提供確認資料、轉待付訂金、確認已收訂金、記錄尾數、收取／使用／退款現金按金、辦理入住、退房、完成、取消預約、新增跟進及編輯允許資料等 Detail 操作。取消必須由員工明確確認及記錄原因；不自動退款。入住後不可直接退回未入住狀態。不可編輯 status、價格 snapshot、付款狀態或房間 allocation 的一般欄位；敏感修改需明確確認、鎖內 re-read、版本更新並寫 Log，不要求操作時再次輸入密碼。所有轉換依明確合法狀態、record version 及 idempotency fail-closed，不依角色分級。
 - LittleLand 沒有固定訂金付款期限；不得自動倒數、逾期取消或釋放房間。任何部分寫入不確定時不可回報成功或盲目重試／覆寫，必須保留可稽核狀態並交人工核對。拒絕 Logs 不含客人／寵物個資、密碼或 Session token。
 
 ## 5. 付款、待跟進、客戶與基本營收
@@ -338,7 +338,20 @@
 - TEST Apps Script 的既有 Web App deployment 已更新至 Version 6；deployment ID／URL、execute-as owner 與 anyone-access 設定維持不變。PBKDF2 使用 120,000 rounds；Apps Script HMAC 已改為 UTF-8 password bytes 與 Byte[]/Byte[] overload。
 - Staff API client 已停用 login network exception／malformed JSON response 的自動重試，避免不確定回應自動建立第二個 Session；regression tests 確認兩種失敗均只送一次，其他 idempotent mutation 仍以相同 payload 重試一次。
 - 一次 synthetic TEST Admin login/logout probe 成功；之後多個 client login requests 未收到 response。最新 Google Sheets read-back 找到該 TEST Admin 共 6 筆 Sessions，均已 revoked／expired，active synthetic sessions = 0；最近 one-shot E2E 新增的 TEST row 7 已精確撤銷並讀回核對。
-- 完整自動測試 command：`node --test tests/apps-script/*.test.js tests/*.test.js`；結果 **108 passed / 0 failed**。
+- 最新完整 suite：`node --test tests/apps-script/*.test.js tests/*.test.js`；結果 **109 passed / 0 failed**，包含 Noble PBKDF2 bundle、兩個帳號平面 ADMIN、停用帳號使既有 Session 失效，以及移除角色／重輸密碼 gate 的 regression tests。
 - 390px Playwright mobile viewport 使用本地 mocked API；8 個導航頁（Dashboard、房間月曆、預訂、待跟進、付款、客戶、基本營收、設定／登出）均可切換並正確 render。每頁 `documentElement.scrollWidth` 及 `body.scrollWidth` 均為 390px，無 page JavaScript errors；此項測試沒有連接 TEST API 或寫入 Sheets。
 - live two-hamster-box E2E 尚未通過：房態 preflight 為 available，但唯一一次執行仍在 login 回應前 `fetch failed`，之後沒有重送或建立 booking。Google Sheets read-back 仍為 Bookings 11、Pets 24、Payments 0、Logs 13、IdempotencyKeys 12。6 筆 synthetic Staff sessions 均 revoked／expired，無 active synthetic session。
 - 完成 V1 前仍必須從 TEST API 做一次完整 conflict E2E，並重新讀取 Sheets：第一張確認並佔用合法實體房；第二張即使記錄已實收訂金仍須維持 `PENDING_DEPOSIT`、`allocatedRoomIdsJson=[]`、顯示房態衝突及人工 Follow-up；不得自動取消或分配房間。未完成此 live read-back 前不得標記 Staff V1 已驗收。
+- 最新本地權限／KDF 修訂已實作：所有有效 Staff 登入一律回傳 `ADMIN`，角色欄不參與授權；source 中無 role tiers 或 `reauthPassword` gate。PBKDF2 改以 pinned `@noble/hashes@2.4.0` 本地 bundle 計算並固定 120,000 rounds；Node standard vectors 與 109 項 mock tests 通過。尚須同步 TEST GAS source、更新同一 TEST deployment，並以實際兩個帳號驗證 login/logout／八個頁面；不可降輪數。
+
+### 最終驗收更新 — 2026-10-31 20:50 HKT
+
+本段取代上方較早時點記錄的「尚待部署／conflict E2E 未通過」狀態；前述資料是 v8 部署前的歷史記錄。
+
+- TEST Apps Script 已將同一 Web App deployment 更新至 Version 8；原 deployment ID、API URL、執行身分及 Anyone access 維持不變。日期修正只在 Staff/Google Sheets 房態邊界將 Date/ISO timestamp 正規化為香港 date-only；Guest API 仍維持嚴格 `YYYY-MM-DD` 輸入驗證。沒有連接或修改 Production。
+- 兩個合成 TEST Staff 帳號均為完整 `ADMIN`。直接 API login/logout、TEST 登入後八頁讀取，以及 v8 conflict E2E 的 login/logout 成功；登入 network exception／malformed response 無自動重試。`Staff.isActive=false` 令既有 Session 在每個受保護 action 即時失效，並有 regression test。帳號密碼只存 Git 外的私密檔案。
+- 390×844 live TEST mobile smoke 覆蓋 Dashboard、房間月曆、預訂、待跟進、付款、客戶、基本營收、設定／登出八頁；每頁無橫向捲動，API login/logout 成功。這是導航／render／版面 smoke，不等同每一種 Staff 寫入操作均由瀏覽器逐項手動端到端操作。
+- 完整 automated suite：`node --test tests/apps-script/*.test.js tests/*.test.js` — **111 passed / 0 failed**。Apps Script `.gs` 與 Staff `.js` syntax checks 及 `git diff --check` 通過。
+- v8 live TEST deposit/conflict E2E 使用兩張既有合成預約（沒有額外建單）：`TEST-LL-20261031-9CECA2C7` 與 `TEST-LL-20261031-1B66EC7B`，均為 2026-11-15 入住、2026-11-16 退房、1 隻倉鼠、HAMSTER_BOX。第一張房費 HK$65、週末附加費 HK$250、服務費 HK$80、住宿總額 HK$395、訂金 HK$32.50、尾數 HK$362.50、現金按金 HK$1,000；付款記錄 HK$32.50 後成為 `CONFIRMED` 並獲分配 `C1`。第二張房費 HK$65、週末附加費 HK$250、服務費 HK$0、住宿總額 HK$315、訂金 HK$32.50、尾數 HK$282.50、現金按金 HK$1,000；付款記錄 HK$32.50 後仍為 `PENDING_DEPOSIT`、allocation `[]`、`followUpRequired=TRUE`，API 回報 room conflict，沒有確認或分配實體房。
+- 重新讀回 LittleLand_TEST Sheets 核對兩個 Payments（各 HK$32.50、PAID）、兩個 Pets（各 1 隻）、`staff.confirmDeposit` Logs、兩個 v8 deposit Idempotency key（均 `COMPLETED`，沒有重複 Booking）。重疊日期唯一有效實體佔房是第一張的 `C1`；第二張無 allocation。Staff detail、Dashboard 及 Follow-ups 三處均出現第二張房態衝突提示。Sessions 共 13 筆、有效 Session 0。
+- 正式產品驗收及任何 Production 部署仍待使用者另行決定；不得 merge `develop`／`main`，本次只更新 `feature/test-booking-api`。

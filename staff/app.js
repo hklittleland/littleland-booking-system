@@ -75,12 +75,6 @@
     })[String(v)] || v;
   const status = (v) =>
     `<span class="badge ${["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "COMPLETED"].includes(v) ? "status-green" : ["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].includes(v) ? "status-orange" : v === "CANCELLED" ? "status-gray" : "status-purple"}">${esc(labels[v] || v)}</span>`;
-  const role = () =>
-    String(
-      (store.state.staff && store.state.staff.role) ||
-        (store.state.summary && store.state.summary.role) ||
-        "",
-    ).toUpperCase();
   function toast(t) {
     const e = document.getElementById("toast");
     if (e) {
@@ -389,40 +383,36 @@
       payments = arr(d.payments),
       logs = arr(d.logs),
       history = arr(d.followupHistory),
-      s = b.bookingStatus,
-      viewer = role() === "VIEWER",
-      admin = role() === "ADMIN";
+      s = b.bookingStatus;
     const actions = [];
-    if (!viewer) {
-      if (s === "PENDING_CONFIRMATION")
-        actions.push(["confirmData", "確認資料"]);
-      if (s === "PENDING_DEPOSIT")
-        actions.push(["confirmDeposit", "確認已收訂金"]);
-      if (s === "CHECKED_IN" && b.balanceStatus === "UNPAID")
-        actions.push(["recordBalance", "記錄尾數"]);
-      if (s === "CHECKED_IN" && b.cashDepositStatus === "NOT_COLLECTED")
-        actions.push(["cashDepositCollect", "收現金按金"]);
-      if (["COLLECTED", "PARTIALLY_USED"].includes(b.cashDepositStatus)) {
-        if (
-          Number(b.cashDepositAmount || 0) -
-            Number(b.cashDepositUsedAmount || 0) -
-            Number(b.cashDepositRefundedAmount || 0) >
-          0
-        )
-          actions.push(["cashDepositUse", "使用現金按金"]);
-        if (
-          ["CHECKED_OUT", "COMPLETED"].includes(s) &&
-          Number(b.cashDepositRefundDue || 0) > 0
-        )
-          actions.push(["cashDepositRefund", "退現金按金"]);
-      }
-      if (s === "CONFIRMED") actions.push(["checkIn", "辦理入住"]);
-      if (s === "CHECKED_IN") actions.push(["checkOut", "辦理退房"]);
-      if (s === "CHECKED_OUT") actions.push(["complete", "完成預約"]);
-      if (["PENDING_CONFIRMATION", "PENDING_DEPOSIT", "CONFIRMED"].includes(s))
-        actions.push(["cancel", "取消預約"]);
-      if (admin) actions.push(["edit", "更新資料"]);
+    if (s === "PENDING_CONFIRMATION")
+      actions.push(["confirmData", "確認資料"]);
+    if (s === "PENDING_DEPOSIT")
+      actions.push(["confirmDeposit", "確認已收訂金"]);
+    if (s === "CHECKED_IN" && b.balanceStatus === "UNPAID")
+      actions.push(["recordBalance", "記錄尾數"]);
+    if (s === "CHECKED_IN" && b.cashDepositStatus === "NOT_COLLECTED")
+      actions.push(["cashDepositCollect", "收現金按金"]);
+    if (["COLLECTED", "PARTIALLY_USED"].includes(b.cashDepositStatus)) {
+      if (
+        Number(b.cashDepositAmount || 0) -
+          Number(b.cashDepositUsedAmount || 0) -
+          Number(b.cashDepositRefundedAmount || 0) >
+        0
+      )
+        actions.push(["cashDepositUse", "使用現金按金"]);
+      if (
+        ["CHECKED_OUT", "COMPLETED"].includes(s) &&
+        Number(b.cashDepositRefundDue || 0) > 0
+      )
+        actions.push(["cashDepositRefund", "退現金按金"]);
     }
+    if (s === "CONFIRMED") actions.push(["checkIn", "辦理入住"]);
+    if (s === "CHECKED_IN") actions.push(["checkOut", "辦理退房"]);
+    if (s === "CHECKED_OUT") actions.push(["complete", "完成預約"]);
+    if (["PENDING_CONFIRMATION", "PENDING_DEPOSIT", "CONFIRMED"].includes(s))
+      actions.push(["cancel", "取消預約"]);
+    actions.push(["edit", "更新資料"]);
     const conflict =
         b.roomConflict === true ||
         (d.confirmed === false && d.roomConflict === true) ||
@@ -523,7 +513,7 @@
         ["已使用按金", "cashDepositUsedAmount"],
         ["應退按金", refund],
       ],
-    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(get(p, "paidAt"))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section><section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(get(b, "lastContactedAt"))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(get(x, "createdAt"))} · ${esc(get(x, "staffName"))} · ${esc(get(x, "note"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${esc(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(get(x, "createdAt"))} · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section>${!viewer ? `<section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>` : '<div class="notice">唯讀帳戶：沒有可用 mutation 操作。</div>'}${admin ? (() => {
+    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(get(p, "paidAt"))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section><section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(get(b, "lastContactedAt"))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(get(x, "createdAt"))} · ${esc(get(x, "staffName"))} · ${esc(get(x, "note"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${esc(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(get(x, "createdAt"))} · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
       const draft = store.state.editDraft || {}, fieldValue = (key, fallback) => draft[key] !== undefined ? draft[key] : (fallback == null ? "" : fallback);
       const textField = (label, key, fallback, type = "text") => `<label>${esc(label)}</label><input name="${esc(key)}" type="${type}" value="${esc(fieldValue(key, fallback))}">`;
       const selectField = (label, key, value, options) => `<label>${esc(label)}</label><select name="${esc(key)}">${options.map(([v, title]) => `<option value="${esc(v)}" ${String(fieldValue(key, value)) === String(v) ? "selected" : ""}>${esc(title)}</option>`).join("")}</select>`;
@@ -535,12 +525,12 @@
         const hamster = b.species === "HAMSTER", male = String(pv("sex") || pet.sex).toLowerCase() === "male";
         return `<article class="pet edit-pet"><h3>寵物 ${i + 1} · ${esc(get(pet,"name","petName"))}</h3>${pinput("name","名稱")}${pinput("breed","品種")}${pinput("ageValue","年齡數值","number")}${pselect("ageUnit","年齡單位",[["month","月"],["year","歲"]],"month")}${pselect("sex","性別",[["male","男孩子"],["female","女孩子"]],"female")}${!hamster ? pselect("sterilized","絕育",yesNo,false) : ""}${!hamster && !male ? pselect("pregnant","懷孕",yesNo,false) : ""}${pselect("recentSurgery30Days","最近 30 日手術",yesNo,false)}${pselect("vetVisit","最近看獸醫",yesNo,false)}${pinput("vetDetails","獸醫詳情")}${pselect("infectiousDisease","傳染病",yesNo,false)}${pinput("infectiousDetails","傳染病詳情")}${pselect("chronicDisease","慢性疾病",yesNo,false)}${pinput("chronicDetails","慢性疾病詳情")}${pselect("medication","正在服藥",yesNo,false)}${pinput("medicationDetails","藥物詳情")}${pinput("specialCare","特殊照顧")}${!hamster ? pselect("fleaTreatment","一個月內杜蝨",yesNo,false) : ""}</article>`;
       }).join("");
-      return `<section class="card"><h2>更新資料（管理員）</h2><form id="editForm" class="field">${textField("家長姓名","parentName",b.parentName || b.customerName || "")}${textField("電話","phone",b.phone,"tel")}${textField("Email","email",b.email,"email")}${textField("緊急聯絡人 1","emergency1",b.emergency1)}${textField("緊急聯絡人 2","emergency2",b.emergency2)}${textField("指定獸醫／診所","vet",b.vet)}${selectField("入住時間","checkinTime",b.checkinTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${selectField("退房時間","checkoutTime",b.checkoutTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${textField("主糧","foodMain",b.foodMain)}${textField("牧草","hay",b.hay)}${textField("餵食","feeding",b.feeding)}${selectField("蔬菜","vegetables",b.vegetables,[["","—"],["yes","是"],["no","否"]])}<h3>寵物資料</h3>${petFields}<label>目前管理員密碼（重新驗證）</label><input name="reauthPassword" type="password" autocomplete="current-password" required><button class="btn" ${pendingAction ? "disabled" : ""}>重新驗證並更新</button></form></section>`;
-    })() : ""}`;
+      return `<section class="card"><h2>更新資料</h2><form id="editForm" class="field">${textField("家長姓名","parentName",b.parentName || b.customerName || "")}${textField("電話","phone",b.phone,"tel")}${textField("Email","email",b.email,"email")}${textField("緊急聯絡人 1","emergency1",b.emergency1)}${textField("緊急聯絡人 2","emergency2",b.emergency2)}${textField("指定獸醫／診所","vet",b.vet)}${selectField("入住時間","checkinTime",b.checkinTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${selectField("退房時間","checkoutTime",b.checkoutTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${textField("主糧","foodMain",b.foodMain)}${textField("牧草","hay",b.hay)}${textField("餵食","feeding",b.feeding)}${selectField("蔬菜","vegetables",b.vegetables,[["","—"],["yes","是"],["no","否"]])}<h3>寵物資料</h3>${petFields}<button class="btn" ${pendingAction ? "disabled" : ""}>更新資料</button></form></section>`;
+    })()}`;
   }
   function settings() {
     const s = store.state.settings || {};
-    return `${head("設定／登出", "TEST 環境帳戶")}<section class="card"><h2>登入資料</h2><p>${esc(get(s, "staff.displayName"))} · ${esc(get(s, "staff.role"))}</p><p class="meta">Session token 只保存在 sessionStorage。</p><button class="btn danger" data-logout>登出並撤銷 Session</button></section>`;
+    return `${head("設定／登出", "TEST 環境帳戶")}<section class="card"><h2>登入資料</h2><p>${esc(get(s, "staff.displayName"))} · 完整管理權限（TEST）</p><p class="meta">Session token 只保存在 sessionStorage。</p><button class="btn danger" data-logout>登出並撤銷 Session</button></section>`;
   }
   function paint() {
     if (!store.token) {
@@ -696,7 +686,7 @@
         const data = readEdit();
         store.state.editDraft = data;
         if (!confirm("確認更新聯絡、飲食／時間及現有寵物資料？寵物數量、種類、狀態、房間、價格及付款資料不會更改。")) return;
-        mutate("edit", StaffRouter.current().id, { data, reauthPassword: ef.elements.reauthPassword.value }, ef);
+        mutate("edit", StaffRouter.current().id, { data }, ef);
       };
     }
     app
@@ -819,10 +809,6 @@
     ) {
       pendingAction = false;
       paint();
-      return;
-    }
-    if (action === "edit" && role() !== "ADMIN") {
-      pendingAction = false;
       return;
     }
     try {

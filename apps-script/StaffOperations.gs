@@ -31,7 +31,6 @@ function littlelandStaffDispatch_(body, requestId) {
   var data = littlelandStaffReadAction_(action, body, auth);
   if (data !== null)
     return littlelandSuccessResponse_(data, requestId, "操作成功");
-  littlelandStaffRequireRole_(auth, ["STAFF", "ADMIN"]);
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000))
     throw littlelandApiError_(
@@ -48,14 +47,6 @@ function littlelandStaffDispatch_(body, requestId) {
   } finally {
     lock.releaseLock();
   }
-}
-function littlelandStaffRequireRole_(auth, roles) {
-  littlelandRequire_(
-    roles.indexOf(auth.role) >= 0,
-    "STAFF_PERMISSION_DENIED",
-    "此操作沒有權限。",
-    false,
-  );
 }
 function littlelandStaffTruthy_(v) {
   return v === true || String(v).toLowerCase() === "true";
@@ -95,14 +86,16 @@ function littlelandStaffReadAction_(action, body, auth) {
   function hasRoomConflict(b) {
     if (b.bookingStatus !== "PENDING_DEPOSIT") return false;
     if (!roomConflictInventoryValid) return true;
-    var key = [b.roomTypeId, b.checkinDate, b.checkoutDate].join("|");
+    var checkin = littlelandSheetDateOnly_(b.checkinDate),
+      checkout = littlelandSheetDateOnly_(b.checkoutDate),
+      key = [b.roomTypeId, checkin, checkout].join("|");
     if (roomAvailabilityCache[key] === undefined) {
       try {
         roomAvailabilityCache[key] = littlelandAvailability_(
           {
             roomTypeId: b.roomTypeId,
-            checkin: b.checkinDate,
-            checkout: b.checkoutDate,
+            checkin: checkin,
+            checkout: checkout,
           },
           roomConflictInventory,
         ).available;
@@ -612,8 +605,8 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
     allocated = littlelandAvailability_(
       {
         roomTypeId: b.roomTypeId,
-        checkin: b.checkinDate,
-        checkout: b.checkoutDate,
+        checkin: littlelandSheetDateOnly_(b.checkinDate),
+        checkout: littlelandSheetDateOnly_(b.checkoutDate),
       },
       inventory,
     );
@@ -683,18 +676,6 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
       false,
     );
   else if (action === "staff.edit") {
-    littlelandStaffRequireRole_(auth, ["ADMIN"]);
-    var candidate = littlelandStaffPasswordHash_(
-      String(body.reauthPassword || ""),
-      auth.staff.passwordSalt,
-    );
-    littlelandRequire_(
-      !!body.reauthPassword &&
-        littlelandStaffConstantTimeEqual_(candidate, auth.staff.passwordHash),
-      "STAFF_AUTH_INVALID",
-      "重新驗證失敗。",
-      false,
-    );
     var editData = body.data || {};
     if (Object.prototype.hasOwnProperty.call(editData, "pets")) {
       littlelandRequire_(Array.isArray(editData.pets), "VALIDATION_FAILED", "寵物資料格式不正確。", false);

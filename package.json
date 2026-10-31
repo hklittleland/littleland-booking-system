@@ -1,0 +1,16 @@
+{
+  "name": "littleland-booking-system",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "build:staff-crypto": "node scripts/build-staff-crypto.mjs",
+    "test": "node --test tests/apps-script/*.test.js tests/*.test.js"
+  },
+  "devDependencies": {
+    "@noble/hashes": "2.4.0",
+    "esbuild-wasm": "0.28.2"
+  }
+}

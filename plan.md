@@ -186,10 +186,10 @@
 
 - `/staff/` 作為獨立、mobile-first vanilla JavaScript SPA；客人 `/booking/` 所有檔案和 UI 不改。使用目前已配置的 Cloud Preview 3000，不 publish，不啟用 WebDev Server 或 Managed Database；新增簡單本機靜態開發服務（僅供 Preview）。所有瀏覽器 URL 使用相對路徑；`manus-routes.json` 同時保留 `/booking/` 並加入 `/staff/`。
 - 延用現有 GAS `LittleLand_TEST Booking API` 作唯一資料服務，新增 `StaffAuth.gs`、`StaffOperations.gs` 及 API dispatcher；既有 guest action 維持原 contract。GAS 每次 read/write 先驗證 active Staff Session，再讀取敏感 Booking、Pets、Payments、Rooms、Logs；仍強制 `LITTLELAND_TEST_SPREADSHEET_ID` allow-list、試算表名稱精確為 `LittleLand_TEST` 及八表 schema。公開部署仍需支援既有客人 API，但未登入的 Staff request 不得回傳後台資料或執行操作。
-- Authentication 按既有 `Staff(username,passwordHash,passwordSalt)`、`Sessions(tokenHash,expiresAt,revokedAt,...)` schema 實作 TEST-only username/password。密碼使用個人隨機 salt 及 PBKDF2-HMAC-SHA256（建議 120,000 rounds；須量測 GAS 執行時間），只儲存 hash/salt，絕不保存明文、寫入 client code、URL 或 Logs。成功登入以加密安全隨機 opaque token 建立 Session；只存 token hash，8 小時到期，登出即 revoke；每個受保護 action 都檢查 Session、expiry、revocation、Staff `isActive` 及角色。失敗登入設有限速；未登入、無效或過期 Session 均 fail-closed。
+- Authentication 按既有 `Staff(username,passwordHash,passwordSalt)`、`Sessions(tokenHash,expiresAt,revokedAt,...)` schema 實作 TEST-only username/password。密碼使用個人隨機 salt 及 PBKDF2-HMAC-SHA256、固定 120,000 rounds；以 pinned `@noble/hashes@2.4.0` 與 `esbuild-wasm@0.28.2` 本地 bundle 於 Apps Script V8 計算，避免每輪跨呼叫 GAS `Utilities` service；bundle 不依賴 runtime CDN/network，並以 Node `crypto.pbkdf2Sync` standard vector 核對一致性。只儲存 hash/salt，絕不保存明文、寫入 client code、URL 或 Logs。成功登入以加密安全隨機 opaque token 建立 Session；只存 token hash，8 小時到期，登出即 revoke；每個受保護 action 只檢查有效 Session、expiry、revocation 及 Staff `isActive`，不做角色分級或逐操作權限檢查。未登入、無效或過期 Session 均 fail-closed。
 - Apps Script `ContentService` 不能可靠設定 `HttpOnly` cookie，因此 Staff API 僅用 `POST text/plain;charset=utf-8` 傳 JSON，token 放 request body、不放 query；瀏覽器只將暫存 token 放 `sessionStorage`，不放 `localStorage`。這是 TEST Preview 方案，不代表可用於正式客人資料／Production；任何未來 Production 使用前須改用伺服器端 HttpOnly session/proxy 或另行核准的 OAuth 架構。前端不載入未必要的第三方 JS、所有資料以安全文字節點呈現、不用不可信值作 HTML，避免 token XSS 外洩。
-- 啟用既有角色 `VIEWER`／`STAFF`／`ADMIN`：VIEWER 只讀；STAFF 可做核准的營運狀態、付款及跟進操作；ADMIN 可執行 V1 全部營運操作。V1 不做員工 CRUD、排班或薪酬。
-- 使用者核准後，建立一個合成 TEST `ADMIN` 帳號（例如 username `test_admin`、顯示名 `TEST 員工`）；產生一次性高熵密碼，僅將 hash/salt 寫入 `LittleLand_TEST.Staff`，不進 Git；完成時只向使用者提供登入方式。原有 11 筆 Booking 初始不因建立帳號而修改。完整 E2E 需要操作資料時，另用使用者准許的合成 TEST 情境，不用真實姓名、電話、Email 或寵物資料。
+- TEST V1 僅建立兩個有效合成 Staff 帳號。兩人登入後一律具有完整 ADMIN 功能；不實作 `VIEWER`／`STAFF`／`ADMIN` 三層角色判斷、每操作角色檢查或重新輸入密碼。既有 `role`/`roleSnapshot` 欄位為 sheet 相容欄位，兩個 TEST 帳號均寫 `ADMIN`；程式不依該值授權。V1 不做員工 CRUD、排班或薪酬。
+- 為兩個 TEST 帳號各產生獨立高熵密碼、salt 及 PBKDF2 hash，只將 hash/salt 寫入 `LittleLand_TEST.Staff`，不進 Git；完成時透過 repo 外權限受限的私有檔案提供兩組登入資料。兩位 Staff 均可查看／編輯預約、查看客人及寵物、轉待付訂金、確認訂金並按最新房態分房、記錄尾數及現金按金、入住／退房、取消、跟進，以及查看付款和基本營收。原有 11 筆 Booking 初始不因建立帳號而修改；E2E 僅使用合成 TEST 情境。
 
 ## 頁面、共同 Booking Detail 及資料顯示
 
@@ -202,15 +202,15 @@
 - 付款頁集中顯示待收訂金、待收尾數、待收現金按金、待退現金按金、今日已收款；每項連到共同 Detail，不接支付 gateway。可人工記錄訂金／尾數／現金按金收取、按金使用及退款；記錄金額、日期、方法（選填）及 reference（選填），由 TEST API 驗證餘額並新增 Payments／Logs。訂金遵循 `baseRoomFee*0.5`，現金按金按 `quantity*HK$1,000`，不得改價／重算既有 snapshot，現金按金不計住宿收入。未定義的付款服務、付款期限、自动取消或自动退款均不自行建立。
 - 基本營收依 TEST `Payments` 實際收款與退款的 `paidAt`／`refundedAt` 匯總本月訂金、尾數、住宿收款及房型／物種；不把可退現金按金算入住宿收入，並清楚標為 V1 營運摘要，不取代會計帳。
 - 待跟進頁顯示 Booking ID、客人／電話／房型／入住日／狀態、最後聯絡時間／員工／備註；可新增 follow-up、標記已聯絡、以 `wa.me` 開啟 WhatsApp、跳 Detail。歷史使用 Logs；不自動倒數、不因待付訂金逾期取消或釋放房間。
-- 設定頁顯示 TEST 環境標示、目前員工／角色、登出；不做排班或員工管理。
+- 設定頁顯示 TEST 環境標示、目前員工與「完整 ADMIN 權限」、Session 到期資訊及登出；不做角色切換、排班或完整員工 CRUD。保留簡單停用方式：在 TEST `Staff` 表將該帳號 `isActive=false`；每個受保護 action 都會重查此欄位，停用後既有 Session 即不可再讀寫。
 
 ## 既定 Booking 工作流及操作保護
 
 - `PENDING_CONFIRMATION` → 員工確認資料 → `PENDING_DEPOSIT`；兩種 pending 狀態始終 `allocatedRoomIdsJson=[]` 且不佔房。同日期同房型允許多張 pending。沒有固定訂金期限，不自動倒數、取消或釋放。
-- 「確認已收訂金」必須在 Script Lock 內重新讀取該 Booking、最新 `Bookings`／`Rooms` 房態，再找合法實體配置；僅在配置成功後，於受保護操作中記錄實收訂金、合法實體房 ID、`CONFIRMED`、`depositStatus=PAID`、版本更新及 Log。每一個 transition 都驗證目前狀態、`recordVersion`、角色及重播 key；不接受客戶端指定房號／狀態／金額。
+- 「確認已收訂金」必須在 Script Lock 內重新讀取該 Booking、最新 `Bookings`／`Rooms` 房態，再找合法實體配置；僅在配置成功後，於受保護操作中記錄實收訂金、合法實體房 ID、`CONFIRMED`、`depositStatus=PAID`、版本更新及 Log。每一個 transition 都驗證目前狀態、`recordVersion` 及重播 key；不接受客戶端指定房號／狀態／金額。操作授權只依有效登入 Session 與 active Staff，不依角色分類。
 - 佔房只限 `CONFIRMED`／`CHECKED_IN`；採入住日含、退房日不含。獨立套房用 S1／S2／S3；豪華套房只能 S1+S2 或 S2+S3，禁止 S1+S3；非常.豪華套房固定 S1+S2+S3；虛擬 SS1／SSR1 不作額外實體房。其他房依既有 RoomAvailability helper。不得修改既有房型、上限、價格或計價公式。
 - 無房衝突時絕不可 `CONFIRMED`、不可分配房、不可自動取消其他 booking；保持 `PENDING_DEPOSIT`、allocation `[]`，設待跟進並顯示衝突讓員工聯絡。使用者於 2026-10-31 批准：若員工已實際收款但檢房衝突，仍記錄已收訂金 Payment，維持 `depositStatus=PAID`、Booking `PENDING_DEPOSIT` 且 allocation `[]`；不可把付款等同於房間確認，也不得自動取消。
-- 其他 Detail 操作：確認資料、確認收款、記錄尾數、收／用／退現金按金、入住、退房、完成、取消、新增跟進及編輯允許的聯絡／寵物欄位。一般編輯不可改 status、價格 snapshot、付款狀態、分配欄位；敏感更改須重新驗證、提示確認、鎖內 re-read、更新 `recordVersion` 及寫 Logs。取消採員工明確確認並記原因，不自動退款；`CHECKED_IN` 不允許直接退回未入住狀態。每個狀態轉換按明確 transition table fail-closed。
+- 其他 Detail 操作：確認資料、確認收款、記錄尾數、收／用／退現金按金、入住、退房、完成、取消、新增跟進及編輯允許的聯絡／寵物欄位。一般編輯不可改 status、價格 snapshot、付款狀態、分配欄位；所有更新仍須提示確認（若適用）、鎖內 re-read、更新 `recordVersion` 及寫 Logs，但不要求操作時再次輸入密碼、不做 role gate。取消採員工明確確認並記原因，不自動退款；`CHECKED_IN` 不允許直接退回未入住狀態。每個狀態轉換按明確 transition table fail-closed。
 - Google Sheets 多表更新不是真正 ACID transaction：在做任何 payment+booking+room 分配組合寫入前，先在 mock harness 測試所有失敗階段與補償策略；任何部分寫入不確定時不回成功、不盲目重試／覆寫，保留可稽核的 request/idempotency 狀態並交員工 reconciliation。拒絕 Logs 僅寫錯誤碼／request ID，不寫客人、寵物、密碼或 token 個資。
 
 ## 視覺與互動設計
@@ -224,22 +224,27 @@
 
 - `staff/index.html`、`staff/styles.css`：登入頁、導航 shell、共用 Booking Detail 容器、響應式八區頁面。
 - `staff/app.js`、`staff/router.js`、`staff/api-client.js`、`staff/store.js`：hash-based app navigation、所有頁面共用一份 booking record、TEST API 呼叫、token/session state、錯誤與 loading 狀態；API URL 僅指向現有 TEST deployment，不接受使用者傳入 URL／Spreadsheet ID。
-- `apps-script/StaffAuth.gs`：登入、PBKDF2 hash 驗證、Session create/validate/revoke、限速、角色授權。
+- `package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`：pin `pnpm@11.25.0`、`@noble/hashes@2.4.0` 及 `esbuild-wasm@0.28.2`；依賴不需要 lifecycle scripts。`scripts/staff-crypto-entry.mjs` 與 `scripts/build-staff-crypto.mjs` 產生可直接載入的本地 Apps Script bundle。
+- `apps-script/StaffAuth.gs`、`apps-script/StaffCrypto.gs`：TEST basic login、固定 120,000-round PBKDF2 hash 驗證、Session create/validate/revoke、既有 login 限速及兩位帳號同一完整 ADMIN access；PBKDF2 bundle 不於執行時下載程式碼。
 - `apps-script/StaffOperations.gs`：唯一 Staff reads/writes、dashboard/list/detail/calendar/payments/follow-up/customer/revenue 聚合、明確 Booking transition、房態 lock／allocation、audit logs、request idempotency。
 - `apps-script/BookingApi.gs`：以明確 action dispatch 擴展 API，但不改 guest `availability`／Create Booking contract；認證 Staff action 必須在讀取任何敏感資料前過驗證。
 - `manus-routes.json`：保留 `/booking/` 並加入 `/staff/`；不列 API 或靜態檔。
-- `tests/apps-script/`：login/session expiry/revocation/role/unauth access/rate limit，狀態 transition 與並行最後房間，合法 S 組合，Payments、follow-up、Logs、部分寫入 fail-closed；`tests/staff/`：頁面 adapter／router 及 API retry/error tests。只用 mock；不要把任何 mock credentials 寫入 production source。
-- 使用者確認後更新 `TODO.md` 為一個 Staff Web V1 outcome（內含完整子成果及接受條款），再依序實作、執行 mock tests、seed 單一合成 TEST staff、需要時建立獨立 synthetic Booking、部署新 TEST API version、啟動 Cloud Preview、確認 route manifest 與 mobile／desktop layout，再提交到 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`。不 push internal `origin`、不 merge `develop`／`main`、不 publish Production。
+- `tests/apps-script/`：兩個有效帳號均回傳完整 ADMIN、任意 legacy `role` 不限制操作、PBKDF2 120k 跨 Node/GAS vector、login/session expiry/revocation/disabled account/unauth access，狀態 transition 與並行最後房間，Payments、follow-up、Logs、部分寫入 fail-closed；`tests/staff/`：頁面 adapter／router 及 API retry/error tests。只用 mock；不要把任何 mock credentials 寫入 production source。
+- 使用者要求更新後，將 `TODO.md` Staff V1 outcome 改為兩個 synthetic TEST 帳號、完整 ADMIN 且無 role tiers/re-auth；再依序實作、執行完整 mock tests、在 TEST Sheet seed 第二個帳號、完成 live login/logout、8 頁驗證及 two-hamster conflict E2E、讀回 TEST Sheets、更新既有 TEST deployment（不新增 Production deployment）、啟動 Cloud Preview、確認 route manifest 與 mobile／desktop layout，最後只提交到 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`。不 push internal `origin`、不 merge `develop`／`main`、不 publish Production。
 
-## 待確認事項（完成方案核准前不實作）
+## 初始方案待確認事項（已由下方 user approval records 決定，保留作歷史紀錄）
 
 1. Staff Login 建議按現有 schema 使用 TEST username/password + hashed bearer Session（Session token 暫存在 sessionStorage）；如希望改用 Manus OAuth／HttpOnly session，需另選該架構，並會涉及不可逆的 WebDev `server:true` enablement 和員工 Manus account allow-list。
 2. 「員工已實收訂金但最新房態已無房」時，建議保留真實收款紀錄（新增 Payments／depositStatus=PAID），但 Booking 保持 `PENDING_DEPOSIT`、無 allocation、設 follow-up／衝突；另一選項是先不新增 Payment row，待人工處理後再入帳。必須由使用者選擇，不能由實作自行決定。
-3. 建立一名合成 `TEST` Admin 帳號（僅 hash/salt 存表、一次性隨機密碼不入 repo），以及必要的額外合成 Booking，供登入和房間確認 E2E；原有 11 張 TEST Booking 初始保持不改，除非員工操作明確選中該筆。
+3. 初始方案曾提議建立一名合成 `TEST` Admin 帳號；後續使用者已明確修訂為建立兩名，見下方最新授權記錄。
 
 
 ## User approval record — Staff Web V1 (2026-10-31)
 
 The user approved the recommended Option 1: use a TEST-only username/password account and hashed bearer session; when staff has actually received a deposit but the fresh room check finds no legal room, persist the received payment in `Payments`, keep the booking at `PENDING_DEPOSIT` with `allocatedRoomIdsJson=[]`, show an explicit room-conflict/follow-up warning, and do not auto-cancel or falsely confirm it. This approval resolves open questions 1 and 2 above.
 
-Seed exactly one synthetic TEST Admin staff account; keep its one-time password out of repository files and provide it only in the completion handoff. Use the existing 11 synthetic TEST bookings without modifying them by default; create only the additional synthetic booking fixture(s) needed to validate the approved confirmation/payment flow, and never use real customer data. Deliver a usable Staff Web V1 in the existing project Preview only. No Production connection/deployment, no guest booking UI or Pricing Engine changes, no merge to `develop`/`main`, and no push to internal `origin`.
+The original approval specified one synthetic TEST Admin account; that count is superseded by the user's later explicit amendment below. The TEST-only environment, hashed credentials, approved paid-deposit conflict behavior, no-Production, no-merge, and no-internal-origin restrictions remain in force.
+
+## User amendment — flat Staff access model (2026-10-31)
+
+The user explicitly requested two active TEST Staff accounts. Both have the same complete ADMIN access after basic username/password login; there are no VIEWER/STAFF/ADMIN tiers, role-based action gates, or per-operation password re-authentication. Preserve unauthenticated data denial, 120,000-round password hashing, expiring/revocable sessions, account deactivation, audit Logs, and strict TEST/Production separation. Deliver both TEST credentials privately outside GitHub; do not merge `main`.

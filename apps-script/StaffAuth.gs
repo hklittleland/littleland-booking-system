@@ -15,31 +15,10 @@ function littlelandStaffHash_(value) {
 function littlelandStaffPasswordHash_(password, saltB64, hashState) {
   if (hashState) hashState.phase = "SALT_DECODE";
   var salt = Utilities.base64Decode(String(saltB64));
-  var passwordKey = Utilities.base64Decode(
-    Utilities.base64Encode(String(password), Utilities.Charset.UTF_8),
-  );
-  if (hashState) hashState.phase = "HMAC_INITIAL";
-  var u = Utilities.computeHmacSha256Signature(
-    salt.concat([0, 0, 0, 1]),
-    passwordKey,
-  );
-  var result = u.map(function (b) {
-    return (b + 256) % 256;
-  });
-  if (hashState) hashState.phase = "HMAC_ITERATION";
-  for (var i = 1; i < LITTLELAND_STAFF_PBKDF2_ROUNDS; i += 1) {
-    u = Utilities.computeHmacSha256Signature(
-      u,
-      passwordKey,
-    );
-    for (var n = 0; n < result.length; n += 1) result[n] ^= (u[n] + 256) % 256;
-  }
+  if (hashState) hashState.phase = "PBKDF2";
+  var result = LittleLandStaffCrypto.staffPasswordHash(String(password), salt);
   if (hashState) hashState.phase = "HASH_FORMAT";
-  return result
-    .map(function (b) {
-      return ("0" + b.toString(16)).slice(-2);
-    })
-    .join("");
+  return result;
 }
 function littlelandStaffConstantTimeEqual_(a, b) {
   a = String(a || "");
@@ -96,8 +75,7 @@ function littlelandStaffLogin_(body, requestId) {
     if (
       !record ||
       !littlelandStaffIsActive_(record.isActive) ||
-      !littlelandStaffConstantTimeEqual_(candidate, record.passwordHash) ||
-      ["VIEWER", "STAFF", "ADMIN"].indexOf(String(record.role)) < 0
+      !littlelandStaffConstantTimeEqual_(candidate, record.passwordHash)
     ) {
       stage = "RATE_LIMIT_FAILURE";
       littlelandStaffRate_(username, true);
@@ -118,7 +96,7 @@ function littlelandStaffLogin_(body, requestId) {
       sessionId: sessionId,
       staffId: record.staffId,
       tokenHash: littlelandStaffHash_(token),
-      roleSnapshot: record.role,
+      roleSnapshot: "ADMIN",
       createdAt: now.toISOString(),
       expiresAt: expires.toISOString(),
       revokedAt: "",
@@ -135,7 +113,7 @@ function littlelandStaffLogin_(body, requestId) {
       staff: {
         staffId: record.staffId,
         displayName: record.displayName,
-        role: record.role,
+        role: "ADMIN",
       },
       expiresAt: expires.toISOString(),
     };
@@ -154,8 +132,7 @@ function littlelandStaffLogin_(body, requestId) {
     if (stage === "PASSWORD_HASH" && hashState.phase) {
       var hashPhaseCodes = {
         SALT_DECODE: "STAFF_LOGIN_SALT_DECODE_FAILED",
-        HMAC_INITIAL: "STAFF_LOGIN_PASSWORD_HMAC_FAILED",
-        HMAC_ITERATION: "STAFF_LOGIN_PASSWORD_HMAC_FAILED",
+        PBKDF2: "STAFF_LOGIN_PASSWORD_KDF_FAILED",
         HASH_FORMAT: "STAFF_LOGIN_PASSWORD_HASH_FORMAT_FAILED",
       };
       code = hashPhaseCodes[hashState.phase] || code;
@@ -200,10 +177,7 @@ function littlelandStaffAuthenticate_(token) {
   });
   if (staff.length !== 1 || !littlelandStaffIsActive_(staff[0].record.isActive))
     throw littlelandApiError_("STAFF_AUTH_INVALID", "員工帳戶未啟用。", false);
-  var role = String(staff[0].record.role);
-  if (["VIEWER", "STAFF", "ADMIN"].indexOf(role) < 0)
-    throw littlelandApiError_("STAFF_AUTH_INVALID", "員工角色無效。", false);
-  return { staff: staff[0].record, session: session, role: role };
+  return { staff: staff[0].record, session: session, role: "ADMIN" };
 }
 function littlelandStaffLogout_(auth) {
   littlelandUpdateRecordByKey_(

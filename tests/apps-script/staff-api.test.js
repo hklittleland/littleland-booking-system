@@ -91,15 +91,17 @@ test("Staff login reports safe rate-limiter failures without a session", () => {
 });
 test("Staff login reports safe password-hash failures without a session", () => {
   const r = staffRuntime();
-  r.context.Utilities.computeHmacSha256Signature = () => {
-    throw new Error("private internal detail");
+  r.context.LittleLandStaffCrypto = {
+    staffPasswordHash: () => {
+      throw new Error("private internal detail");
+    },
   };
   const out = r.invokeStaff({
     action: "staff.login",
     username: "teststaff",
     password: "pass-test",
   });
-  assert.equal(out.code, "STAFF_LOGIN_PASSWORD_HMAC_FAILED");
+  assert.equal(out.code, "STAFF_LOGIN_PASSWORD_KDF_FAILED");
   assert.equal(out.message.includes("private internal detail"), false);
   assert.equal(r.records("Sessions").length, 0);
 });
@@ -157,21 +159,44 @@ test("Logout revokes session and expired session is rejected", () => {
     "STAFF_AUTH_INVALID",
   );
 });
-test("VIEWER cannot mutate staff records", () => {
-  const r = staffRuntime("VIEWER"),
-    login = r.invokeStaff({
-      action: "staff.login",
-      username: "teststaff",
-      password: "pass-test",
-    });
-  const out = r.invokeStaff({
-    action: "staff.confirmData",
-    token: login.data.token,
-    bookingId: "x",
-    idempotencyKey: "key-12345678",
+test("two active Staff accounts both receive complete ADMIN access regardless of legacy role", () => {
+  const r = staffRuntime("VIEWER");
+  const primary = r.records("Staff")[0];
+  const salt = Buffer.from("synthetic-second-staff-salt").toString("base64");
+  const second = Object.assign({}, primary, {
+    staffId: "TEST-STAFF-002",
+    username: "teststaff2",
+    displayName: "Test Staff 2",
+    role: "STAFF",
+    passwordSalt: salt,
+    passwordHash: r.context.littlelandStaffPasswordHash_("pass-test-2", salt),
+    isActive: true,
   });
-  assert.equal(out.success, false);
-  assert.equal(out.code, "STAFF_PERMISSION_DENIED");
+  r.addRecord("Staff", second);
+
+  for (const credentials of [
+    { username: "teststaff", password: "pass-test" },
+    { username: "teststaff2", password: "pass-test-2" },
+  ]) {
+    const login = r.invokeStaff(Object.assign({ action: "staff.login" }, credentials));
+    assert.equal(login.success, true);
+    assert.equal(login.data.staff.role, "ADMIN");
+    const session = r.invokeStaff({ action: "staff.session", token: login.data.token });
+    assert.equal(session.success, true);
+    assert.equal(session.data.staff.role, "ADMIN");
+  }
+});
+
+test("disabling a Staff account blocks its existing session", () => {
+  const r = staffRuntime("ADMIN");
+  const token = loggedIn(r);
+  const staff = r.records("Staff")[0];
+  r.context.littlelandUpdateRecordByKey_("Staff", "staffId", staff.staffId, {
+    isActive: false,
+  });
+  const result = r.invokeStaff({ action: "staff.session", token });
+  assert.equal(result.success, false);
+  assert.equal(result.code, "STAFF_AUTH_INVALID");
 });
 
 function addBooking(r, overrides = {}) {
@@ -226,7 +251,7 @@ function addStaffPet(r, bookingId, overrides = {}) {
 }
 function editPetRequest(r, booking, pet, overrides = {}) {
   return Object.assign({
-    action: "staff.edit", token: loggedIn(r), reauthPassword: "pass-test",
+    action: "staff.edit", token: loggedIn(r),
     bookingId: booking.bookingId, expectedRecordVersion: Number(booking.recordVersion),
     expectedStatus: booking.bookingStatus, idempotencyKey: "pet-edit-0001",
     data: { pets: [Object.assign({ petId: pet.petId, name: "Mochi Updated", breed: "Lionhead", ageValue: 6,
@@ -312,16 +337,17 @@ test("staff.edit enforces hamster and male-pet conditional declaration rules", (
   assert.equal(male.records("IdempotencyKeys").length, 0);
 });
 
-test("staff.edit rejects stale version and non-admin pet edit", () => {
+test("staff.edit rejects stale version but allows full access without password re-auth", () => {
   const r = staffRuntime("ADMIN"), b = addBooking(r, { quantity: 1, species: "rabbit" }), p = addStaffPet(r, b.bookingId);
   let body = editPetRequest(r, b, p);
   body.expectedRecordVersion = 99;
   assert.equal(r.invokeStaff(body).code, "BOOKING_VERSION_CONFLICT");
   assert.equal(r.records("IdempotencyKeys").length, 0);
-  const viewer = staffRuntime("STAFF"), vb = addBooking(viewer, { quantity: 1, species: "rabbit" }), vp = addStaffPet(viewer, vb.bookingId);
-  body = editPetRequest(viewer, vb, vp);
-  assert.equal(viewer.invokeStaff(body).code, "STAFF_PERMISSION_DENIED");
-  assert.equal(viewer.records("Pets")[0].name, "Mochi");
+  const legacyStaff = staffRuntime("VIEWER"), vb = addBooking(legacyStaff, { quantity: 1, species: "rabbit" }), vp = addStaffPet(legacyStaff, vb.bookingId);
+  body = editPetRequest(legacyStaff, vb, vp);
+  const edit = legacyStaff.invokeStaff(body);
+  assert.equal(edit.success, true, JSON.stringify(edit));
+  assert.equal(legacyStaff.records("Pets")[0].name, "Mochi Updated");
 });
 
 test("Confirm-data transition uses expected version/status and rejects illegal states", () => {
@@ -396,6 +422,70 @@ test("Room conflict still records received deposit, leaves pending and follows u
     expectedRecordVersion: 1,
     expectedStatus: "PENDING_DEPOSIT",
     idempotencyKey: "deposit-conflict-01",
+  });
+  assert.equal(out.success, true);
+  assert.equal(out.data.confirmed, false);
+  assert.equal(out.data.roomConflict, true);
+  assert.equal(out.data.detail.bookingStatus, "PENDING_DEPOSIT");
+  assert.equal(out.data.detail.depositStatus, "PAID");
+  assert.deepEqual(JSON.parse(out.data.detail.allocatedRoomIdsJson), []);
+  assert.equal(String(out.data.detail.followUpRequired), "true");
+  assert.equal(r.records("Payments").length, 1);
+});
+
+test("Confirm deposit normalizes Google Sheets ISO timestamps to Hong Kong dates", () => {
+  const r = staffRuntime(),
+    b = addBooking(r, {
+      checkinDate: "2026-11-14T16:00:00.000Z",
+      checkoutDate: "2026-11-15T16:00:00.000Z",
+    }),
+    token = loggedIn(r);
+  const out = r.invokeStaff({
+    action: "staff.confirmDeposit",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "PENDING_DEPOSIT",
+    idempotencyKey: "deposit-sheet-iso-date-01",
+  });
+  assert.equal(out.success, true);
+  assert.equal(out.data.confirmed, true);
+  assert.equal(out.data.detail.bookingStatus, "CONFIRMED");
+  assert.deepEqual(JSON.parse(out.data.detail.allocatedRoomIdsJson), [
+    "S1",
+    "S2",
+  ]);
+  assert.equal(r.records("Payments").length, 1);
+});
+
+test("ISO-dated confirmed rooms leave a paid booking pending and flagged for follow-up", () => {
+  const checkinDate = "2026-11-14T16:00:00.000Z",
+    checkoutDate = "2026-11-15T16:00:00.000Z",
+    r = staffRuntime(),
+    b = addBooking(r, {
+      bookingId: "TEST-LL-STAFF-ISO-CONFLICT",
+      roomTypeId: "PRIVATE_SUITE",
+      checkinDate,
+      checkoutDate,
+    }),
+    token = loggedIn(r);
+  for (const room of ["S1", "S2", "S3"])
+    r.addRecord("Bookings", {
+      bookingId: "confirmed-iso-" + room,
+      recordVersion: 1,
+      bookingStatus: "CONFIRMED",
+      checkinDate,
+      checkoutDate,
+      roomTypeId: "PRIVATE_SUITE",
+      allocatedRoomIdsJson: JSON.stringify([room]),
+    });
+  const out = r.invokeStaff({
+    action: "staff.confirmDeposit",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "PENDING_DEPOSIT",
+    idempotencyKey: "deposit-sheet-iso-conflict-01",
   });
   assert.equal(out.success, true);
   assert.equal(out.data.confirmed, false);

@@ -14,6 +14,7 @@ const APPS_SCRIPT_FILES = [
   'apps-script/BookingValidation.gs',
   'apps-script/RoomAvailability.gs',
   'apps-script/IdempotencyService.gs',
+  'apps-script/StaffCrypto.gs',
   'apps-script/StaffAuth.gs',
   'apps-script/StaffOperations.gs',
   'apps-script/BookingApi.gs'
@@ -88,7 +89,6 @@ function createRuntime(options = {}) {
     Number,
     String,
     Boolean,
-    Object,
     Array,
     Set,
     Map,

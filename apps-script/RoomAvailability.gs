@@ -19,11 +19,31 @@ var LITTLELAND_ROOM_PLANS = Object.freeze({
   OWN_CAGE: Object.freeze([['F1']])
 });
 
+function littlelandSheetDateOnly_(value) {
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '';
+    return littlelandHongKongDate_(value);
+  }
+  var text = String(value === null || value === undefined ? '' : value).trim();
+  if (littlelandIsIsoDate_(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+    var parsed = new Date(text);
+    if (isNaN(parsed.getTime())) return '';
+    return littlelandHongKongDate_(parsed);
+  }
+  return text;
+}
+
 function littlelandReadInventory_() {
   var roomTable = littlelandReadTable_('Rooms');
   var bookingTable = littlelandReadTable_('Bookings');
   littlelandValidateRoomMaster_(roomTable.rows.map(function (row) { return row.record; }));
-  var bookings = bookingTable.rows.map(function (row) { return row.record; });
+  var bookings = bookingTable.rows.map(function (row) {
+    var record = row.record;
+    record.checkinDate = littlelandSheetDateOnly_(record.checkinDate);
+    record.checkoutDate = littlelandSheetDateOnly_(record.checkoutDate);
+    return record;
+  });
   var occupying = littlelandBuildOccupancy_(bookings);
   return { bookings: bookings, occupying: occupying };
 }
