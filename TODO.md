@@ -336,7 +336,7 @@
 ## 7. 驗證進度與剩餘驗收（2026-10-31）
 
 - TEST Apps Script 的既有 Web App deployment 已更新至 Version 6；deployment ID／URL、execute-as owner 與 anyone-access 設定維持不變。PBKDF2 使用 120,000 rounds；Apps Script HMAC 已改為 UTF-8 password bytes 與 Byte[]/Byte[] overload。
-- Staff API client 已停用 login fetch exception 的自動重試，避免同一個 response-reset 請求自動建立第二個 Session；regression test 確認 login 僅送一次，其他 idempotent mutation 仍以相同 payload 重試一次。
+- Staff API client 已停用 login network exception／malformed JSON response 的自動重試，避免不確定回應自動建立第二個 Session；regression tests 確認兩種失敗均只送一次，其他 idempotent mutation 仍以相同 payload 重試一次。
 - 一次 synthetic TEST Admin login/logout probe 成功；之後多個 client login requests 未收到 response。最新 Google Sheets read-back 找到該 TEST Admin 共 6 筆 Sessions，均已 revoked／expired，active synthetic sessions = 0；最近 one-shot E2E 新增的 TEST row 7 已精確撤銷並讀回核對。
 - 完整自動測試 command：`node --test tests/apps-script/*.test.js tests/*.test.js`；結果 **108 passed / 0 failed**。
 - 390px Playwright mobile viewport 使用本地 mocked API；8 個導航頁（Dashboard、房間月曆、預訂、待跟進、付款、客戶、基本營收、設定／登出）均可切換並正確 render。每頁 `documentElement.scrollWidth` 及 `body.scrollWidth` 均為 390px，無 page JavaScript errors；此項測試沒有連接 TEST API 或寫入 Sheets。
