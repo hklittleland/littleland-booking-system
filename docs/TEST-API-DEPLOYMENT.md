@@ -2,7 +2,7 @@
 
 **Environment:** TEST only
 **Apps Script project:** `LittleLand TEST Booking API`
-**Deployment:** Version 2 (updated 2026-10-31; exact console time not recorded here)
+**Deployment:** Version 6 (updated 2026-10-31; existing TEST Web App deployment, same URL)
 **Deployment ID:** `AKfycby6ecJFVBzQHAwGXS9VZlMLOQ3q3DbZh12Ssjg5nxUBGn1S61Sq_MGzZpmIgNm5EQ_i`
 
 ## API URL
@@ -20,7 +20,7 @@
 
 ## Corrected room-status rule
 
-Only `CONFIRMED` and `CHECKED_IN` bookings occupy physical rooms. `PENDING_CONFIRMATION` and `PENDING_DEPOSIT` do not occupy rooms and must have `allocatedRoomIdsJson=[]`. New guest applications check current availability but do not reserve or receive physical room IDs. The future deposit-confirmation transition must lock, recheck current inventory, allocate a legal physical room, and change to `CONFIRMED` only if the room remains available. If no room remains, retain the pending booking for staff follow-up; do not auto-cancel it. The Staff confirmation transaction is not yet implemented.
+Only `CONFIRMED` and `CHECKED_IN` bookings occupy physical rooms. `PENDING_CONFIRMATION` and `PENDING_DEPOSIT` do not occupy rooms and must have `allocatedRoomIdsJson=[]`. New guest applications check current availability but do not reserve or receive physical room IDs. The deposit-confirmation transition locks and rechecks current inventory, allocates a legal physical room, and changes to `CONFIRMED` only if the room remains available. If no room remains, it retains the pending booking for staff follow-up; it does not auto-cancel it. The Staff confirmation transaction is implemented in TEST v6, but its live conflict E2E remains unverified; see the status below.
 
 ## TEST Sheets snapshot — 2026-10-31
 
@@ -41,7 +41,7 @@ Detailed booking IDs, dates, prices, overlap and idempotency findings are in [th
 
 - Before the writes, read-only Availability preflight checked all ten proposed test date/species/room combinations; all returned `available=true`.
 - Ten live API `POST`s completed successfully as `PENDING_CONFIRMATION`. A same-key duplicate replay returned the original Booking ID without duplicate rows. A deliberate HK$1 client-quote mismatch returned `PRICE_CLIENT_MISMATCH`, wrote no booking or pet, and produced one sanitized `REJECT_BOOKING` log; replaying that failed key did not create a second log.
-- During a parallel two-request test, the competing request initially returned retryable `LOCK_TIMEOUT` before claiming its idempotency key; it produced no Sheets side effect. Retrying the exact same payload/key succeeded; both overlapping pending applications exist with empty allocations. This is not an occupancy conflict. Confirmation-time last-room contention cannot be tested live until the Staff confirmation API exists.
+- During a parallel two-request test, the competing request initially returned retryable `LOCK_TIMEOUT` before claiming its idempotency key; it produced no Sheets side effect. Retrying the exact same payload/key succeeded; both overlapping pending applications exist with empty allocations. This is not an occupancy conflict. Staff confirmation API is now deployed in TEST v6, but the new last-room paid-deposit conflict flow has not passed live E2E because the synthetic login response resets at the client transport.
 - Full automated suite command:
 
   ```sh
@@ -53,3 +53,13 @@ Detailed booking IDs, dates, prices, overlap and idempotency findings are in [th
 ## Public endpoint warning
 
 Anonymous callers can reach this endpoint and its `POST` action can write synthetic TEST records. Keep the TEST-only Script Property binding and never use the endpoint with real guest details or Production data.
+
+## Staff Auth and TEST E2E status — 2026-10-31
+
+- The existing TEST Web App deployment was updated to Version 6; deployment ID/URL, execute-as owner, and anyone-access settings remain unchanged.
+- Root cause was the GAS HMAC overload: the previous implementation mixed a `Byte[]` value with a `String` key/charset. The source now UTF-8 encodes the password and uses the documented `Byte[]`/`Byte[]` overload while retaining 120,000 PBKDF2 rounds. [Google Apps Script Utilities reference](https://developers.google.com/apps-script/reference/utilities/utilities)
+- One synthetic TEST Admin login/logout probe succeeded on v6. Later Node `fetch`, `curl`, and manual-redirect login probes failed at the client transport. A final Sheets read-back found six Session rows for the synthetic Admin account; all six are revoked or expired, with zero active sessions. The latest one-shot E2E attempt added one late Session row after `fetch failed`; only that exact TEST row was revoked and read back.
+- The live two-hamster-box conflict E2E is **not passed**. No new Booking, Payment, or Idempotency row was created by these Staff attempts. Latest TEST read-back remains 11 Bookings, 24 Pets, 0 Payments, 13 Logs, and 12 IdempotencyKeys; the Booking rows predate the Staff E2E.
+- The Staff API client now does not automatically retry `staff.login` after a fetch exception, preventing one uncertain login request from creating a second Session; a new regression test covers this behavior. Other idempotent staff mutations retain a same-payload retry.
+- Local verification: `node --test tests/apps-script/*.test.js tests/*.test.js` — **108 passed, 0 failed**. A 390px Playwright UI check used a local mocked API, verified all eight navigation pages and no horizontal overflow, and did not write TEST Sheets.
+- Do not treat Staff V1 as accepted until a reliable live TEST login/response path completes the two-hamster flow and Google Sheets read-back confirms both the allocated room and the paid-but-unconfirmed conflict handling.

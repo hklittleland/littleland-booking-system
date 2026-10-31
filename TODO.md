@@ -288,3 +288,57 @@
 ### 最終核對
 
 重新讀取 `LittleLand_TEST`，逐筆對十個新 Booking ID、物種／房型／日期／數量／晚數、空 allocation、每隻 Pets、所有金額、CREATE／REJECT Logs 與 Idempotency 狀態；確認重播無重複 Booking、待確認資料不佔房。自動測試結果、任何被拒絕的請求及原因、既有 TEST row 的處理方式均需記錄。只在 `feature/test-booking-api` 提交／推送，不 merge `main`。
+
+
+# Staff Web V1 — 完整可操作初版
+
+狀態：進行中（2026-10-31；使用者核准建議方案 1；單一 V1 交付，不拆成多個 user-facing TASK。前後端本地實作完成；108/108 automated tests PASS；390px Playwright mock UI 驗證通過。live TEST two-hamster E2E 尚未通過，Staff login response 有 intermittent client reset，不能視為 V1 已驗收。）
+
+## 1. 後台定位、登入與導覽
+
+- 建立登入式響應式網站（不是手機 App），繁體中文 zh-HK，iPhone 優先並同時適合 iPad／桌面；沿用 LittleLand 紫／粉色品牌、白色圓角卡片與清晰簡單的日常營運介面，手機主要按鈕要大而易點。
+- 後台主要選單包括：概覽 Dashboard、房間月曆、預訂、🔔 待跟進、付款、客戶、基本營收、設定／登出。員工管理及排班不需做完整版本。
+- 必須登入。不能把真實密碼硬寫在前端；本 V1 只建立一個合成 TEST Staff 帳號，密碼只存 hash／salt，登入後建立有期限及可登出的 Session。只有已驗證 Staff 才可取得 Booking、客人、寵物、付款、房間及 Logs；未登入不可讀取任何後台資料。
+
+## 2. 共用 Booking Detail、預訂列表與 Dashboard
+
+- Booking Detail 為所有頁面唯一的訂單詳細資料來源。Dashboard、房間月曆、預訂列表、待跟進、付款及客戶過往預訂中每張 Booking 均須一鍵進入同一張 Booking Detail，不為不同頁面建立不同版本的訂單資料。
+- Dashboard 顯示今日入住、今日退房、待確認、待付訂金、已確認及待跟進數量，並顯示今日入住／退房時間表、近期預約及需要跟進的預約；每張預約均可直接進 Detail。
+- 預訂列表可搜尋 Booking ID、客人姓名、電話、寵物名稱、入住日期、退房日期、房型；可按 `PENDING_CONFIRMATION` 待確認、`PENDING_DEPOSIT` 待付訂金、`CONFIRMED` 已確認、`CHECKED_IN` 已入住、`CHECKED_OUT` 已退房、`COMPLETED` 已完成、`CANCELLED` 已取消及全部篩選。點擊列進入共用 Detail。
+- Detail 完整顯示：預約 ID／狀態／提交時間／入住退房日期與時段／晚數／房型／實際內部分配房號；客人姓名／電話／Email／兩位緊急聯絡人／指定獸醫或診所；每隻寵物獨立卡片中的名稱／種類／品種／年齡／性別／絕育／懷孕／最近手術／最近看獸醫／傳染病／慢性疾病／藥物／特殊照顧／杜蝨／飲食資料；主糧／餵食次數／牧草／蔬菜；基本房費／額外寵物費／週末附加費／每項額外服務／附加費合計／住宿總額／訂金／尾數／現金按金；訂金狀態金額與收款日期、尾數狀態金額、現金按金狀態／已使用金額／應退金額；最後聯絡日期、聯絡員工、備註及跟進歷史；狀態修改、付款、房間分配、入住退房、取消與員工操作 Logs。
+
+## 3. 房間月曆、實體房及分配規則
+
+- 建立完整月份月曆；每日顯示日期、實體房號、寵物圖示與寵物名稱、入住時間、退房時間及房態顏色；員工可見內部房號。房態顏色：灰色＝空房、橙色＝待處理／提示、綠色＝已確認／入住；顏色旁亦需有文字或圖示，不可只靠顏色表達狀態。點擊預約直接開共用 Booking Detail。
+- 實體房只有 S1、S2、S3、A1、A2、A3、B1、B2、C1、F1；SS1／SSR1 是虛擬組合名稱，不是額外實體房。
+- 保持既定 S 區規則：獨立套房可用 S1、S2 或 S3；豪華套房只可用 S1+S2 或 S2+S3，絕不可用 S1+S3；非常.豪華套房固定使用 S1+S2+S3。所有入住日含、退房日不含，退房日等於下一位入住日可沿用房間。
+
+## 4. Booking 狀態、收款、入住／退房及敏感操作
+
+- 嚴格遵循：客人提交 → `PENDING_CONFIRMATION`（不佔房）→ 員工確認資料 → `PENDING_DEPOSIT`（仍不佔房）→ 實際收訂金後由員工確認 → 最新房態仍有合法實體房才可分配房號並轉 `CONFIRMED`（開始正式佔房）。只有 `CONFIRMED` 及 `CHECKED_IN` 佔房；`PENDING_CONFIRMATION`、`PENDING_DEPOSIT`、`CANCELLED`、`CHECKED_OUT`、`COMPLETED` 不佔房；所有 pending booking 的 allocation 必須是 `[]`。同日期可以有多張待確認／待付訂金預約；提交 pending 不分配／保留房間。
+- 「確認已收訂金」必須在鎖內重新讀取最新房態、尋找合法實體房組合後才執行轉換，不能信任舊查詢結果或客戶端指定房號。如果仍有房：記錄訂金、分配合法實體房、轉 `CONFIRMED`、正式佔房及寫入 Log。如果已無房：依使用者已核准的方案仍記錄已實收訂金到 `Payments`，但 Booking 維持 `PENDING_DEPOSIT`、`allocatedRoomIdsJson=[]`，顯示房態衝突並加入人工跟進；不可 CONFIRMED、不可任意分配、不可自動取消預約或忽略實際收款。
+- 提供確認資料、轉待付訂金、確認已收訂金、記錄尾數、收取／使用／退款現金按金、辦理入住、退房、完成、取消預約、新增跟進及編輯允許資料等 Detail 操作。取消必須由員工明確確認及記錄原因；不自動退款。入住後不可直接退回未入住狀態。不可編輯 status、價格 snapshot、付款狀態或房間 allocation 的一般欄位；敏感修改需重新驗證、確認、鎖內 re-read、版本更新並寫 Log。所有轉換依明確合法狀態及角色限制 fail-closed。
+- LittleLand 沒有固定訂金付款期限；不得自動倒數、逾期取消或釋放房間。任何部分寫入不確定時不可回報成功或盲目重試／覆寫，必須保留可稽核狀態並交人工核對。拒絕 Logs 不含客人／寵物個資、密碼或 Session token。
+
+## 5. 付款、待跟進、客戶與基本營收
+
+- 付款頁用於搜尋／管理待收訂金、待收尾數、待收現金按金、待退現金按金及今日已收款；每一項直接開共用 Booking Detail，實際付款記錄由 Detail 執行。
+- 獨立 🔔 待跟進頁顯示 Booking ID、客人、電話、房型、入住日期、狀態、最後聯絡日期／員工及備註；可記錄已聯絡、新增備註、開啟 WhatsApp 及進入共用 Detail。
+- 客戶頁可按姓名、電話及 Email 搜尋；顯示基本聯絡資料、過往 Booking 及過往寵物；每張歷史 Booking 均能開啟該 Booking Detail。
+- 基本營收頁顯示本月已收訂金、本月已收尾數、本月住宿收入，並可按房型及寵物種類查看；不建複雜會計系統。現金備用金／按金獨立管理，不混入住宿收入或 V3.0 房費、訂金與尾數公式。
+
+## 6. TEST-only 資料、既有商業規則與完成交付
+
+- 只用既有 GitHub repository／`feature/test-booking-api`、現有 `LittleLand_TEST` Sheets、目前 TEST API 及合成資料。優先用目前 11 張 TEST Booking；不可使用真實客人資料，不可連接或修改 Production。若確認房態需要額外資料，只建立明確合成的 TEST 情境；既有 11 張資料預設保持不變，只有員工明確選取的 TEST booking 才可操作。
+- 不修改已接受客人預約網站設計／檔案，不修改 `booking/pricing.js`、房價、入住上限、S 區組合、訂金公式、週末附加費或現金按金公式；既有 Guest API `availability`／Create Booking contract 必須維持相容。所有 Staff reads/writes 只可在 Staff 驗證成功後讀取／寫入 TEST Sheets/API。
+- 完成後提供 Staff TEST Preview 網址、TEST 登入方法、已完成頁面、可用 Detail 操作、月曆、付款、Follow-up、客戶歷史、哪些資料連接 TEST Sheets/API 及哪些仍 Mock、自動測試結果、Branch、Commit SHA 及已知問題；完成初版後停止。只提交到 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`，不得推送內部 `origin`、不得 merge `develop`／`main`、不得部署 Production。
+
+## 7. 驗證進度與剩餘驗收（2026-10-31）
+
+- TEST Apps Script 的既有 Web App deployment 已更新至 Version 6；deployment ID／URL、execute-as owner 與 anyone-access 設定維持不變。PBKDF2 使用 120,000 rounds；Apps Script HMAC 已改為 UTF-8 password bytes 與 Byte[]/Byte[] overload。
+- Staff API client 已停用 login fetch exception 的自動重試，避免同一個 response-reset 請求自動建立第二個 Session；regression test 確認 login 僅送一次，其他 idempotent mutation 仍以相同 payload 重試一次。
+- 一次 synthetic TEST Admin login/logout probe 成功；之後多個 client login requests 未收到 response。最新 Google Sheets read-back 找到該 TEST Admin 共 6 筆 Sessions，均已 revoked／expired，active synthetic sessions = 0；最近 one-shot E2E 新增的 TEST row 7 已精確撤銷並讀回核對。
+- 完整自動測試 command：`node --test tests/apps-script/*.test.js tests/*.test.js`；結果 **108 passed / 0 failed**。
+- 390px Playwright mobile viewport 使用本地 mocked API；8 個導航頁（Dashboard、房間月曆、預訂、待跟進、付款、客戶、基本營收、設定／登出）均可切換並正確 render。每頁 `documentElement.scrollWidth` 及 `body.scrollWidth` 均為 390px，無 page JavaScript errors；此項測試沒有連接 TEST API 或寫入 Sheets。
+- live two-hamster-box E2E 尚未通過：房態 preflight 為 available，但唯一一次執行仍在 login 回應前 `fetch failed`，之後沒有重送或建立 booking。Google Sheets read-back 仍為 Bookings 11、Pets 24、Payments 0、Logs 13、IdempotencyKeys 12。6 筆 synthetic Staff sessions 均 revoked／expired，無 active synthetic session。
+- 完成 V1 前仍必須從 TEST API 做一次完整 conflict E2E，並重新讀取 Sheets：第一張確認並佔用合法實體房；第二張即使記錄已實收訂金仍須維持 `PENDING_DEPOSIT`、`allocatedRoomIdsJson=[]`、顯示房態衝突及人工 Follow-up；不得自動取消或分配房間。未完成此 live read-back 前不得標記 Staff V1 已驗收。

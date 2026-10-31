@@ -71,6 +71,14 @@ function doPost(event) {
       throw littlelandApiError_('VALIDATION_FAILED', '請求 JSON 格式不正確。', false);
     }
 
+    if (request && typeof request.action === 'string' && request.action.indexOf('staff.') === 0) {
+      try {
+        return littlelandJsonOutput_(littlelandStaffDispatch_(request, requestId));
+      } catch (staffError) {
+        return littlelandJsonOutput_(littlelandFailureResponse_(littlelandNormalizeError_(staffError, 'staff'), requestId));
+      }
+    }
+
     stage = 'validate';
     var validated = littlelandValidateBookingRequest_(request);
     payloadHash = littlelandPayloadHash_(validated);

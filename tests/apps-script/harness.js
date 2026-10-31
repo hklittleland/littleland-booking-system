@@ -14,6 +14,8 @@ const APPS_SCRIPT_FILES = [
   'apps-script/BookingValidation.gs',
   'apps-script/RoomAvailability.gs',
   'apps-script/IdempotencyService.gs',
+  'apps-script/StaffAuth.gs',
+  'apps-script/StaffOperations.gs',
   'apps-script/BookingApi.gs'
 ];
 
@@ -22,6 +24,7 @@ function createRuntime(options = {}) {
   let writeCount = 0;
   let readFailureUsed = false;
   let writeFailureUsed = false;
+  const cacheValues = new Map();
   const testId = options.testId || 'test-spreadsheet-id';
   const allowedProperty = options.allowedSpreadsheetId === undefined ? testId : options.allowedSpreadsheetId;
   const initializer = readInitializer();
@@ -109,6 +112,21 @@ function createRuntime(options = {}) {
         return Array.from(crypto.createHash(algorithm).update(String(value), 'utf8').digest())
           .map((byte) => (byte > 127 ? byte - 256 : byte));
       },
+      computeHmacSha256Signature(value, key) {
+        const bytes = (input) => Array.isArray(input)
+          ? Buffer.from(input.map((b) => (b + 256) % 256))
+          : Buffer.from(String(input), 'utf8');
+        const message = bytes(value);
+        return Array.from(crypto.createHmac('sha256', bytes(key)).update(message).digest())
+          .map((byte) => (byte > 127 ? byte - 256 : byte));
+      },
+      base64Decode(value) { return Array.from(Buffer.from(String(value), 'base64')).map((byte) => byte > 127 ? byte - 256 : byte); },
+      base64Encode(value, charset) {
+        const input = Array.isArray(value)
+          ? Buffer.from(value.map((b) => (b + 256) % 256))
+          : Buffer.from(String(value), charset || 'utf8');
+        return input.toString('base64');
+      },
       getUuid() {
         const number = uuidCounter++;
         const head = number.toString(16).padStart(8, '0');
@@ -128,6 +146,11 @@ function createRuntime(options = {}) {
         throw new Error(`Unsupported mock date format: ${pattern}`);
       }
     },
+    CacheService: { getScriptCache: () => ({
+      get(key) { const item = cacheValues.get(key); return item && item.expires > Date.now() ? item.value : null; },
+      put(key, value, seconds) { cacheValues.set(key, { value: String(value), expires: Date.now() + Number(seconds) * 1000 }); },
+      remove(key) { cacheValues.delete(key); }
+    }) },
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(text) {
@@ -160,7 +183,8 @@ function createRuntime(options = {}) {
     },
     invokePost(payload) {
       return parseOutput(context.doPost({ postData: { contents: JSON.stringify(payload) } }));
-    }
+    },
+    invokeStaff(payload) { return parseOutput(context.doPost({ postData: { contents: JSON.stringify(payload) } })); }
   };
 }
 

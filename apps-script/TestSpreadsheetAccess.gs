@@ -5,8 +5,11 @@
 var LITTLELAND_API_WRITE_SHEETS = Object.freeze({
   Bookings: true,
   Pets: true,
+  Payments: true,
   Logs: true,
-  IdempotencyKeys: true
+  IdempotencyKeys: true,
+  Staff: true,
+  Sessions: true
 });
 
 function littlelandApiError_(code, message, retryable) {
