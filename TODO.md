@@ -196,3 +196,13 @@
 - 保存後重新載入 Apps Script 設定頁，核對 property key/value 仍存在。Spreadsheet ID 不保存於 GitHub repository；實際專案連結與 Script ID 由本次交付訊息提供。
 - 本次僅建立專案與 allow-list property；沒有上傳 LittleLand source、沒有執行 initializer/API、沒有修改任何試算表資料列、沒有建立真實測試預約、沒有部署 Web App 或建立 API URL。
 - 後續若要把 repository 內 source 上傳至該專案、執行實表初始化／測試或建立部署，需另按當時範圍操作；任何公開／可匿名存取的 deployment 都必須先另行取得使用者明確授權。Production 永遠不可作為測試目標。
+
+
+# TEST Apps Script 上傳與 Web App 部署更新（2026-10-31）
+
+- 完成原先尚未上傳的 `apps-script/BookingApi.gs`，並在 `LittleLand TEST Booking API` 專案保存。載入後內容 SHA-256 與 repository 原始檔一致：`a180fb027ef2759fe3dc338cb57a3c80a1d8dde38256b78839da718e2e6dbeb0`。`IdempotencyService.gs` 亦已保存且 SHA-256 一致：`97bc37b78470e9d6086be55b3936808a988b6f69f254425a178ca7ba48abfc29`。其餘來源檔在本專案先前已上傳／驗證。
+- 依使用者授權建立 Apps Script Web App，Version 1；Execute as：專案擁有人；Access：Anyone（供匿名客人前端呼叫）。Script Property `LITTLELAND_TEST_SPREADSHEET_ID` 已在部署前核對為 TEST 試算表綁定。未連接或修改 Production。
+- API URL、公開存取風險、TEST-only 邊界及驗證紀錄存於 `docs/TEST-API-DEPLOYMENT.md`。由於 access 為 Anyone，公開 URL 可被匿名呼叫；POST 可能建立 TEST 預約，禁止提供真實客人資料或用於 Production。
+- 唯讀 live smoke check：匿名 GET `action=availability` 回 HTTP 200、`success:true`、`code:OK`、`available:true`。沒有發出 POST；沒有建立或修改預約、寵物、付款、Logs、IdempotencyKeys 記錄。
+- 自動測試命令 `node --test tests/apps-script/*.test.js tests/pricing.test.js`：60 passed、0 failed。
+- 本次沒有變更 Apps Script 業務邏輯，沒有接線前台，沒有合併 `develop` 或 `main`。部署回執見 `docs/TEST-API-DEPLOYMENT.md`。
