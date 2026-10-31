@@ -31,9 +31,9 @@ followUpRequired, lastContactedAt, lastContactedBy, followUpNote
 
 日期、時段、房型、物種、數量、家長及緊急聯絡欄位對應已接受前台的表單；`emergency1`／`emergency2` 儲存前台現有的兩位緊急聯絡人值，`vet` 儲存選填獸醫／診所。飲食資料在目前 UI 是訂單層欄位，故存於本表；倉鼠長擺糧，`feeding` 留空，不套用兔／天竺鼠每日次數或星期日／假期次數提醒。`serviceItemsJson` 保存逐項服務名稱與當時金額，其他服務旗標保存當時選擇。
 
-六個同意欄分別對應：HK$1,000／隻現金備用金／按金、基本房費 50% 訂金及附加費於尾數收取、訂金不退款、入住須知／寄養條款、健康申報屬實、緊急獸醫安排及相關費用；`consentedAt` 記錄同意時間。`recordVersion` 供未來更新衝突偵測，不改變訂單商業狀態。`allocatedRoomIdsJson` 在 schema 初始化時留空，不做房間分配。
+六個同意欄分別對應：HK$1,000／隻現金備用金／按金、基本房費 50% 訂金及附加費於尾數收取、訂金不退款、入住須知／寄養條款、健康申報屬實、緊急獸醫安排及相關費用；`consentedAt` 記錄同意時間。`recordVersion` 供未來更新衝突偵測，不改變訂單商業狀態。`allocatedRoomIdsJson` 在 schema 初始化時留空，不做房間分配；`PENDING_CONFIRMATION` 及 `PENDING_DEPOSIT` 預約亦必須保存空陣列 `[]`，不暫留實體房。
 
-`bookingStatus` 僅使用 V3.0 狀態：`PENDING_CONFIRMATION`、`PENDING_DEPOSIT`、`CONFIRMED`、`CHECKED_IN`、`CHECKED_OUT`、`COMPLETED`、`CANCELLED`。佔房狀態為 `PENDING_DEPOSIT`、`CONFIRMED`、`CHECKED_IN`；不佔房狀態為 `PENDING_CONFIRMATION`、`CANCELLED`、`CHECKED_OUT`、`COMPLETED`。`PENDING_DEPOSIT` 無固定付款期限，不自動倒數、取消或釋放房間。員工 follow-up 欄位只作人工提醒，不自動改變 Booking Status，且不得顯示於客人前台。
+`bookingStatus` 僅使用 V3.0 狀態：`PENDING_CONFIRMATION`、`PENDING_DEPOSIT`、`CONFIRMED`、`CHECKED_IN`、`CHECKED_OUT`、`COMPLETED`、`CANCELLED`。只有 `CONFIRMED`、`CHECKED_IN` 佔房；`PENDING_CONFIRMATION`、`PENDING_DEPOSIT`、`CANCELLED`、`CHECKED_OUT`、`COMPLETED` 均不佔房。客人提交為 `PENDING_CONFIRMATION`，員工確認申請後可轉 `PENDING_DEPOSIT`，收到訂金並準備確認時須在鎖內重新檢查最新房態；只有成功分配合法實體房後才可轉 `CONFIRMED` 並開始佔房。若其他申請先確認導致無房，不自動取消其他待付訂金預約，留待員工人工聯絡。`PENDING_DEPOSIT` 無固定付款期限，不自動倒數、取消或釋放房間。員工 follow-up 欄位只作人工提醒，不自動改變 Booking Status，且不得顯示於客人前台。
 
 付款狀態與 `bookingStatus` 分開：`depositStatus` 為 `UNPAID`／`PAID`／`REFUNDED`；`balanceStatus` 為 `UNPAID`／`PAID`；`cashDepositStatus` 為 `NOT_COLLECTED`／`COLLECTED`／`PARTIALLY_USED`／`REFUNDED`。
 

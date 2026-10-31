@@ -1,6 +1,6 @@
 /**
  * LittleLand TEST Apps Script API source.
- * This file is not deployed in this task; all tests use mocked Apps Script services.
+ * This is the deployed TEST Web App source; automated tests use mocked Apps Script services.
  */
 var LITTLELAND_API_RETRYABLE_CODES = Object.freeze([
   'LOCK_TIMEOUT', 'SHEET_READ_FAILED', 'SHEET_WRITE_FAILED', 'QUOTA_EXCEEDED',
@@ -115,19 +115,19 @@ function doPost(event) {
 
       stage = 'inventory-read';
       var inventory = littlelandReadInventory_();
-      var allocation = littlelandAvailability_({
+      var availability = littlelandAvailability_({
         roomTypeId: validated.form.roomId,
         checkin: validated.form.checkin,
         checkout: validated.form.checkout
       }, inventory);
-      if (!allocation.available) {
+      if (!availability.available) {
         throw littlelandApiError_('ROOM_NO_LONGER_AVAILABLE', '所選日期的房型已不可預訂，請重新查詢。', false);
       }
 
       var bookingId = littlelandCreateBookingId_(inventory.bookings);
       littlelandSetIdempotencyBookingId_(idempotencyKey, bookingId);
       var timestamp = littlelandNowIso_();
-      var booking = littlelandBuildBookingRecord_(validated, pricing, allocation.roomIds, bookingId, timestamp);
+      var booking = littlelandBuildBookingRecord_(validated, pricing, bookingId, timestamp);
       var pets = littlelandBuildPetRecords_(validated, bookingId, timestamp);
       var log = littlelandBuildCreationLog_(validated, bookingId, requestId, timestamp);
       var response = littlelandBookingSuccess_(bookingId, validated.form, pricing, requestId);
@@ -147,6 +147,11 @@ function doPost(event) {
           littlelandMarkIdempotencyFailed_(idempotencyKey, requestId, normalizedLockedError);
         } catch (markFailedError) {
           // Fail closed: a still-PROCESSING key prevents duplicate writes for reconciliation.
+        }
+        try {
+          littlelandAppendRecord_('Logs', littlelandBuildRejectionLog_(normalizedLockedError, requestId, littlelandNowIso_()));
+        } catch (rejectionLogError) {
+          // Preserve the original API failure; the IdempotencyKeys row remains the fallback audit.
         }
       }
       throw normalizedLockedError;
@@ -169,7 +174,7 @@ function littlelandExistingRequestResponse_(check, requestId) {
   return null;
 }
 
-function littlelandBuildBookingRecord_(validated, pricing, roomIds, bookingId, timestamp) {
+function littlelandBuildBookingRecord_(validated, pricing, bookingId, timestamp) {
   var form = validated.form;
   var terms = validated.terms;
   var consentedAt = timestamp;
@@ -189,7 +194,7 @@ function littlelandBuildBookingRecord_(validated, pricing, roomIds, bookingId, t
     species: form.species,
     roomTypeId: form.roomId,
     quantity: form.quantity,
-    allocatedRoomIdsJson: JSON.stringify(roomIds),
+    allocatedRoomIdsJson: JSON.stringify([]),
     parentName: form.parentName,
     phone: form.phone,
     email: form.email,
@@ -289,6 +294,22 @@ function littlelandBuildCreationLog_(validated, bookingId, requestId, timestamp)
       petCount: validated.form.quantity,
       roomTypeId: validated.form.roomId
     })
+  };
+}
+
+function littlelandBuildRejectionLog_(error, requestId, timestamp) {
+  var errorCode = String(error && error.code ? error.code : 'INTERNAL_ERROR');
+  return {
+    logId: 'REJECT-' + requestId,
+    createdAt: timestamp,
+    actorType: 'SYSTEM',
+    actorStaffId: '',
+    action: 'REJECT_BOOKING',
+    entityType: 'BOOKING_REQUEST',
+    entityId: requestId,
+    requestId: requestId,
+    summary: 'TEST booking request rejected (' + errorCode + ').',
+    changedFieldsJson: JSON.stringify({ errorCode: errorCode })
   };
 }
 

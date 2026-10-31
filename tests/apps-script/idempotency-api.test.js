@@ -15,7 +15,7 @@ function expectFailure(response, code) {
 function activeBooking(runtime, payload, roomId, bookingId = 'TEST-LL-20261201-OCCUPIED') {
   runtime.addRecord('Bookings', {
     bookingId,
-    bookingStatus: 'PENDING_DEPOSIT',
+    bookingStatus: 'CONFIRMED',
     checkinDate: payload.form.checkin,
     checkoutDate: payload.form.checkout,
     roomTypeId: payload.form.roomId,
@@ -55,7 +55,7 @@ test('Create Booking writes one pending request, per-pet rows and a minimal log 
   assert.equal(logs.length, 1);
   assert.equal(bookings[0].bookingId, response.data.bookingId);
   assert.equal(bookings[0].bookingStatus, 'PENDING_CONFIRMATION');
-  assert.deepEqual(JSON.parse(bookings[0].allocatedRoomIdsJson), ['A1']);
+  assert.deepEqual(JSON.parse(bookings[0].allocatedRoomIdsJson), []);
   assert.equal(bookings[0].depositStatus, 'UNPAID');
   assert.equal(bookings[0].balanceStatus, 'UNPAID');
   assert.equal(bookings[0].cashDepositStatus, 'NOT_COLLECTED');
@@ -113,6 +113,10 @@ test('tampered client quote is rejected and terminal failure is replayed without
   expectFailure(second, 'PRICE_CLIENT_MISMATCH');
   assert.equal(runtime.records('Bookings').length, 0);
   assert.equal(runtime.records('IdempotencyKeys')[0].state, 'FAILED');
+  assert.equal(runtime.records('Logs').length, 1);
+  assert.equal(runtime.records('Logs')[0].action, 'REJECT_BOOKING');
+  assert.equal(JSON.parse(runtime.records('Logs')[0].changedFieldsJson).errorCode, 'PRICE_CLIENT_MISMATCH');
+  assert.equal(JSON.stringify(runtime.records('Logs')[0]).includes('Test Parent'), false);
 });
 
 test('expired client price version is rejected with the stable version error code', () => {
@@ -236,7 +240,9 @@ test('the API performs a last-moment room recheck and does not create a stale bo
   expectFailure(runtime.invokePost(payload), 'ROOM_NO_LONGER_AVAILABLE');
   assert.equal(runtime.records('Bookings').length, 3);
   assert.equal(runtime.records('Pets').length, 0);
-  assert.equal(runtime.records('Logs').length, 0);
+  assert.equal(runtime.records('Logs').length, 1);
+  assert.equal(runtime.records('Logs')[0].action, 'REJECT_BOOKING');
+  assert.equal(JSON.parse(runtime.records('Logs')[0].changedFieldsJson).errorCode, 'ROOM_NO_LONGER_AVAILABLE');
   assert.equal(runtime.records('IdempotencyKeys')[0].state, 'FAILED');
 });
 
@@ -247,9 +253,12 @@ test('retryable inventory read failure can be retried with the same key after re
   expectFailure(first, 'SHEET_READ_FAILED');
   assert.equal(first.retryable, true);
   assert.equal(runtime.records('IdempotencyKeys')[0].state, 'FAILED');
+  assert.equal(runtime.records('Logs').length, 1);
+  assert.equal(runtime.records('Logs')[0].action, 'REJECT_BOOKING');
   const second = runtime.invokePost(payload);
   assert.equal(second.success, true, JSON.stringify(second));
   assert.equal(runtime.records('Bookings').length, 1);
+  assert.equal(runtime.records('Logs').length, 2);
   assert.equal(runtime.records('IdempotencyKeys')[0].state, 'COMPLETED');
 });
 
@@ -307,16 +316,18 @@ test('canonical idempotency hash is stable when JSON object key order changes', 
   assert.equal(runtime.records('Bookings').length, 1);
 });
 
-test('one occupied physical room causes allocation to advance to the next free room of the selected type', () => {
+test('new pending request is checked against live inventory but does not reserve a physical room', () => {
   const runtime = createRuntime();
   const payload = makePayload(runtime, { species: 'rabbit', roomId: 'DELUXE_ROOM' });
   activeBooking(runtime, payload, 'A1');
   const response = runtime.invokePost(payload);
   assert.equal(response.success, true, JSON.stringify(response));
-  assert.deepEqual(JSON.parse(runtime.records('Bookings').find((row) => row.bookingId === response.data.bookingId).allocatedRoomIdsJson), ['A2']);
+  const created = runtime.records('Bookings').find((row) => row.bookingId === response.data.bookingId);
+  assert.equal(created.bookingStatus, 'PENDING_CONFIRMATION');
+  assert.deepEqual(JSON.parse(created.allocatedRoomIdsJson), []);
 });
 
-test('PENDING_CONFIRMATION is provisional and does not occupy a physical room for another request', () => {
+test('overlapping PENDING_CONFIRMATION requests are allowed and neither receives a physical room', () => {
   const runtime = createRuntime();
   const firstPayload = makePayload(runtime, {}, { idempotencyKey: 'pending-one' });
   const first = runtime.invokePost(firstPayload);
@@ -328,7 +339,7 @@ test('PENDING_CONFIRMATION is provisional and does not occupy a physical room fo
   const created = runtime.records('Bookings').filter((row) => [first.data.bookingId, second.data.bookingId].includes(row.bookingId));
   assert.equal(created.length, 2);
   assert.ok(created.every((row) => row.bookingStatus === 'PENDING_CONFIRMATION'));
-  assert.ok(created.every((row) => row.allocatedRoomIdsJson === '["A1"]'));
+  assert.ok(created.every((row) => row.allocatedRoomIdsJson === '[]'));
 });
 
 test('Availability returns false when all physical rooms for a type are occupied, without revealing why', () => {
@@ -430,7 +441,7 @@ test('rechecks the idempotency key after acquiring the script lock and replays a
     const validated = runtime.context.littlelandValidateBookingRequest_(payload);
     const pricing = runtime.context.LittleLandPricing.calculatePricing(validated.pricingInput);
     const timestamp = '2026-12-01T00:00:00.000Z';
-    const booking = runtime.context.littlelandBuildBookingRecord_(validated, pricing, ['A1'], bookingId, timestamp);
+    const booking = runtime.context.littlelandBuildBookingRecord_(validated, pricing, bookingId, timestamp);
     const pets = runtime.context.littlelandBuildPetRecords_(validated, bookingId, timestamp);
     const log = runtime.context.littlelandBuildCreationLog_(validated, bookingId, 'winner-request', timestamp);
     const winner = runtime.context.littlelandBookingSuccess_(bookingId, validated.form, pricing, 'winner-request');

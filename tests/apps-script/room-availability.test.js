@@ -13,7 +13,7 @@ function addBooking(runtime, overrides = {}) {
   const stay = dates();
   runtime.addRecord('Bookings', Object.assign({
     bookingId: 'TEST-LL-20261201-EXIST001',
-    bookingStatus: 'PENDING_DEPOSIT',
+    bookingStatus: 'CONFIRMED',
     checkinDate: stay.checkin,
     checkoutDate: stay.checkout,
     roomTypeId: 'PRIVATE_SUITE',
@@ -50,19 +50,41 @@ test('deluxe suite can use S2+S3 after S1+S2 is blocked and never creates S1+S3'
   assert.notDeepEqual(Array.from(result.roomIds), ['S1', 'S3']);
 });
 
-test('deluxe suite returns unavailable when both legal virtual combinations conflict', () => {
+test('S2 occupancy blocks both legal deluxe-suite combinations; never substitutes S1+S3', () => {
   const runtime = createRuntime();
-  addBooking(runtime, { bookingId: 'B1', allocatedRoomIdsJson: '["S1"]' });
   addBooking(runtime, { bookingId: 'B2', allocatedRoomIdsJson: '["S2"]' });
   const result = availability(runtime, 'DELUXE_SUITE');
   assert.equal(result.available, false);
   assert.deepEqual(Array.from(result.roomIds), []);
 });
 
+test('a deluxe suite using S1+S2 leaves only S3 for a private suite on overlapping dates', () => {
+  const runtime = createRuntime();
+  addBooking(runtime, {
+    roomTypeId: 'DELUXE_SUITE',
+    allocatedRoomIdsJson: '["S1","S2"]'
+  });
+  const result = availability(runtime, 'PRIVATE_SUITE');
+  assert.deepEqual(Array.from(result.roomIds), ['S3']);
+});
+
 test('very deluxe suite maps only to the S1+S2+S3 physical group', () => {
   const runtime = createRuntime();
   const result = availability(runtime, 'VERY_DELUXE_SUITE');
   assert.deepEqual(Array.from(result.roomIds), ['S1', 'S2', 'S3']);
+});
+
+test('very deluxe suite occupying S1+S2+S3 blocks every S-area room type on overlapping dates', () => {
+  const runtime = createRuntime();
+  addBooking(runtime, {
+    roomTypeId: 'VERY_DELUXE_SUITE',
+    allocatedRoomIdsJson: '["S1","S2","S3"]'
+  });
+  for (const roomTypeId of ['PRIVATE_SUITE', 'DELUXE_SUITE', 'VERY_DELUXE_SUITE']) {
+    const result = availability(runtime, roomTypeId);
+    assert.equal(result.available, false, roomTypeId);
+    assert.deepEqual(Array.from(result.roomIds), [], roomTypeId);
+  }
 });
 
 test('date intervals are half-open; same-day checkout and next check-in do not overlap', () => {
@@ -78,12 +100,12 @@ test('date intervals are half-open; same-day checkout and next check-in do not o
 test('PENDING_CONFIRMATION and closed/cancelled statuses do not occupy rooms', () => {
   for (const status of ['PENDING_CONFIRMATION', 'CANCELLED', 'CHECKED_OUT', 'COMPLETED']) {
     const runtime = createRuntime();
-    addBooking(runtime, { bookingStatus: status, allocatedRoomIdsJson: '' });
+    addBooking(runtime, { bookingStatus: status, allocatedRoomIdsJson: status === 'PENDING_CONFIRMATION' ? '["S1"]' : '' });
     assert.deepEqual(Array.from(availability(runtime, 'PRIVATE_SUITE').roomIds), ['S1'], status);
   }
 });
 
-test('PENDING_DEPOSIT continues to occupy its room without an expiry timer', () => {
+test('PENDING_DEPOSIT does not occupy a room, even if a legacy row has a stale allocation', () => {
   const runtime = createRuntime();
   const stay = dates();
   addBooking(runtime, {
@@ -93,7 +115,15 @@ test('PENDING_DEPOSIT continues to occupy its room without an expiry timer', () 
     allocatedRoomIdsJson: '["S1"]',
     createdAt: '2024-01-01T00:00:00.000Z'
   });
-  assert.deepEqual(Array.from(availability(runtime, 'PRIVATE_SUITE').roomIds), ['S2']);
+  assert.deepEqual(Array.from(availability(runtime, 'PRIVATE_SUITE').roomIds), ['S1']);
+});
+
+test('CONFIRMED and CHECKED_IN are the only statuses that occupy physical rooms', () => {
+  for (const status of ['CONFIRMED', 'CHECKED_IN']) {
+    const runtime = createRuntime();
+    addBooking(runtime, { bookingStatus: status, allocatedRoomIdsJson: '["S1"]' });
+    assert.deepEqual(Array.from(availability(runtime, 'PRIVATE_SUITE').roomIds), ['S2'], status);
+  }
 });
 
 test('active Booking allocation cannot reference virtual rooms or illegal S1+S3 combination', () => {

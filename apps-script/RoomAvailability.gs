@@ -3,7 +3,7 @@
  * Only the ten physical room IDs below can ever be allocated; SS1/SSR1 are virtual.
  */
 var LITTLELAND_OCCUPYING_BOOKING_STATUSES = Object.freeze([
-  'PENDING_DEPOSIT', 'CONFIRMED', 'CHECKED_IN'
+  'CONFIRMED', 'CHECKED_IN'
 ]);
 var LITTLELAND_BOOKING_STATUSES = Object.freeze([
   'PENDING_CONFIRMATION', 'PENDING_DEPOSIT', 'CONFIRMED', 'CHECKED_IN',
