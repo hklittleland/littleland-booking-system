@@ -9,8 +9,7 @@
     unavailable: '不可預訂',
     unknown: '暫時無法確認'
   });
-  // Mock only. A future availability API can replace this resolver without changing the UI states.
-  const roomAvailabilityFor = (datesAreValid) => datesAreValid ? 'available' : 'unknown';
+  const PRICE_VERSION = '6f002fd9ea921c313ecf90502091f1de051f332c';
   const SPECIES = {
     rabbit: { label: '兔子', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-1.webp', fallback: '🐇', minimumAge: 3 },
     guineaPig: { label: '天竺鼠', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-2.webp', fallback: '🐾', minimumAge: 3 },
@@ -56,7 +55,14 @@
     form: loadDraft(),
     terms: Array(6).fill(false),
     availability: 'unknown',
-    mockBookingId: '',
+    availabilityByRoomId: {},
+    availabilityRequestToken: 0,
+    availabilityLoading: false,
+    availabilityError: false,
+    isSubmitting: false,
+    submitFailed: false,
+    pendingSubmission: null,
+    serverBooking: null,
     completed: false
   };
 
@@ -122,7 +128,7 @@
 
   function saveDraft() {
     const allowed = { ...state.form, pets: state.form.pets.map((pet) => ({ ...pet })) };
-    // Terms, availability, payment data, employee sessions and mock booking IDs are never persisted.
+    // Terms, room availability, submission keys, payment data, employee sessions and Booking IDs are never persisted.
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(allowed)); } catch (_) { /* Storage may be unavailable in private browsing. */ }
   }
 
@@ -204,8 +210,75 @@
     return Boolean(checkin && checkout && today && checkin >= today && checkout > checkin);
   }
 
-  function refreshAvailability() {
-    state.availability = roomAvailabilityFor(datesAreValid());
+  function invalidateAvailability() {
+    state.availabilityRequestToken += 1;
+    state.availabilityByRoomId = {};
+    state.availabilityLoading = false;
+    state.availabilityError = false;
+    state.availability = 'unknown';
+  }
+
+  function updateAvailabilityUI() {
+    document.querySelectorAll('.room-status[data-room-id]').forEach((node) => {
+      const roomId = node.dataset.roomId;
+      const status = state.availabilityByRoomId[roomId] || (state.availabilityLoading ? 'checking' : 'unknown');
+      node.dataset.status = status;
+      node.textContent = AVAILABILITY[status];
+      const card = node.closest('.room-card');
+      const input = card && card.querySelector('input[type="radio"]');
+      if (input) input.disabled = status !== 'available';
+    });
+
+    const recovery = document.getElementById('availabilityRecovery');
+    if (recovery) {
+      recovery.hidden = !state.availabilityError;
+      const retry = recovery.querySelector('[data-retry-availability]');
+      if (retry) retry.disabled = state.availabilityLoading;
+    }
+
+    state.availability = state.form.roomId
+      ? state.availabilityByRoomId[state.form.roomId] || (state.availabilityLoading ? 'checking' : 'unknown')
+      : 'unknown';
+    if (el.nextButton && state.step === 3) {
+      el.nextButton.disabled = state.isSubmitting || (Boolean(state.form.roomId) && (state.availability !== 'available' || !quantityIsValid()));
+    }
+  }
+
+  async function startAvailabilityQuery() {
+    if (state.step !== 3 || !datesAreValid() || !state.form.species) {
+      updateAvailabilityUI();
+      return;
+    }
+    const rooms = ROOMS[state.form.species] || [];
+    const token = ++state.availabilityRequestToken;
+    state.availabilityLoading = true;
+    state.availabilityError = false;
+    state.availabilityByRoomId = rooms.reduce((statuses, room) => {
+      statuses[room.id] = 'checking';
+      return statuses;
+    }, {});
+    updateAvailabilityUI();
+
+    const results = await Promise.all(rooms.map(async (room) => {
+      try {
+        if (!window.LittleLandBookingApi) throw new Error('TEST API client unavailable');
+        const available = await window.LittleLandBookingApi.getAvailability({
+          checkin: state.form.checkin,
+          checkout: state.form.checkout,
+          species: state.form.species,
+          roomTypeId: room.id
+        });
+        return [room.id, available ? 'available' : 'unavailable'];
+      } catch (_) {
+        return [room.id, 'unknown'];
+      }
+    }));
+
+    if (token !== state.availabilityRequestToken || state.step !== 3) return;
+    state.availabilityLoading = false;
+    state.availabilityByRoomId = Object.fromEntries(results);
+    state.availabilityError = results.some((result) => result[1] === 'unknown');
+    updateAvailabilityUI();
   }
 
   function currentPricing() {
@@ -263,7 +336,7 @@
     const checkinMin = localDateValue(new Date());
     const checkinDate = state.form.checkin;
     const checkoutMin = checkinDate && checkinDate >= checkinMin ? checkinDate : checkinMin;
-    const statusLabel = AVAILABILITY[state.availability] || AVAILABILITY.unknown;
+    const statusLabel = datesAreValid() ? '房態將於房型步驟即時查詢' : '選擇有效日期後查詢 TEST 房態';
     return `${sectionHeading('🗓️', '選擇入住時間', '先告訴我們毛孩何時入住和回家。', 'STEP 01')}
       ${notice('yellow', '☀️', '<strong>入住日包括，退房日不包括。</strong> 例如 11 月 1 日入住、11 月 3 日退房，即住宿兩晚。最少入住一晚。')}
       <div class="field-grid">
@@ -279,7 +352,7 @@
         <div class="toggle-line"><div class="toggle-copy"><strong>提早入住安排</strong><small>一次性附加費 HK$200；時間另行確認</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇提早入住"><input type="checkbox" data-field="earlyCheckin" ${state.form.earlyCheckin ? 'checked' : ''}><span></span></label></div>
         <div class="toggle-line"><div class="toggle-copy"><strong>延遲退房安排</strong><small>17:00 後，一次性附加費 HK$200</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇延遲退房"><input type="checkbox" data-field="lateCheckout" ${state.form.lateCheckout ? 'checked' : ''}><span></span></label></div>
       </div>
-      <div class="availability-banner" id="availabilityBanner" data-status="${state.availability}"><div class="availability-copy"><span class="availability-pulse" aria-hidden="true"></span><span class="availability-label" id="availabilityLabel">${statusLabel}</span></div><span class="availability-meta" id="availabilityMeta">${datesAreValid() ? `${dateNights()} 晚 · 示範房態` : '選擇有效日期後顯示示範房態'}</span></div>`;
+      <div class="availability-banner" id="availabilityBanner" data-status="unknown"><div class="availability-copy"><span class="availability-pulse" aria-hidden="true"></span><span class="availability-label" id="availabilityLabel">${statusLabel}</span></div><span class="availability-meta" id="availabilityMeta">${datesAreValid() ? `${dateNights()} 晚 · 房型頁將查詢 TEST 房態` : '選擇有效日期後查詢 TEST 房態'}</span></div>`;
   }
 
   function stepTwo() {
@@ -293,11 +366,14 @@
   function stepThree() {
     if (!state.form.species) return `${sectionHeading('🏡', '挑選舒服的房間', '先選擇寵物種類，我們再為你顯示合適房型。', 'STEP 03')}${notice('blue', '💡', '選好種類後，就會看到適合毛孩的房型和每晚收費。')}`;
     const rooms = ROOMS[state.form.species] || [];
-    const status = roomAvailabilityFor(datesAreValid());
     return `${sectionHeading('🏡', '挑選舒服的房間', `${SPECIES[state.form.species].label}適用房型 · 選擇一款最合適的小窩。`, 'STEP 03')}
       <div class="room-grid" role="radiogroup" aria-label="選擇房型">
-        ${rooms.map((room) => `<label class="room-card ${state.form.roomId === room.id ? 'is-selected' : ''}"><input type="radio" name="roomId" data-field="roomId" value="${room.id}" ${state.form.roomId === room.id ? 'checked' : ''}><div class="room-photo-wrap">${room.image ? `<img class="room-photo" src="assets/${room.image}" alt="${room.name}房間實景" loading="lazy">` : `<span class="room-photo-fallback" aria-hidden="true">${room.icon}</span>`}<span class="room-check" aria-hidden="true">✓</span></div><strong>${room.name}</strong><span class="room-price">${money(room.price)} <small>/ 晚</small></span><span class="room-meta">最多 ${room.max} 隻 · ${room.note}</span><span class="room-status" data-status="${status}">${AVAILABILITY[status]}</span></label>`).join('')}
+        ${rooms.map((room) => {
+          const status = state.availabilityByRoomId[room.id] || (state.availabilityLoading ? 'checking' : 'unknown');
+          return `<label class="room-card ${state.form.roomId === room.id ? 'is-selected' : ''}"><input type="radio" name="roomId" data-field="roomId" value="${room.id}" ${state.form.roomId === room.id ? 'checked' : ''} ${status !== 'available' ? 'disabled' : ''}><div class="room-photo-wrap">${room.image ? `<img class="room-photo" src="assets/${room.image}" alt="${room.name}房間實景" loading="lazy">` : `<span class="room-photo-fallback" aria-hidden="true">${room.icon}</span>`}<span class="room-check" aria-hidden="true">✓</span></div><strong>${room.name}</strong><span class="room-price">${money(room.price)} <small>/ 晚</small></span><span class="room-meta">最多 ${room.max} 隻 · ${room.note}</span><span class="room-status" data-room-id="${room.id}" data-status="${status}">${AVAILABILITY[status]}</span></label>`;
+        }).join('')}
       </div>
+      <div id="availabilityRecovery" ${state.availabilityError ? '' : 'hidden'}><p class="field-help" role="status">目前未能確認部分房型狀態；你填寫的資料已保留，請重新查詢。</p><button type="button" class="button button-quiet" data-retry-availability ${state.availabilityLoading ? 'disabled' : ''}>重新查詢房態</button></div>
       <div class="quantity-row"><div class="quantity-copy"><strong>入住毛孩數量 <span class="required-mark">*</span></strong><p>${state.form.roomId ? `此房型最多 ${selectedRoom()?.max || 0} 隻。` : '選擇房型後查看可入住數量。'}</p></div><div class="field"><label class="visually-hidden" for="quantity">毛孩數量</label><input type="number" id="quantity" data-field="quantity" min="1" max="${selectedRoom()?.max || 1}" step="1" inputmode="numeric" value="${escapeHtml(state.form.quantity)}" aria-describedby="quantityError"></div><p id="quantityError" class="quantity-error" ${quantityIsValid() || !state.form.roomId ? 'hidden' : ''}>${getQuantityError()}</p></div>
       ${notice('yellow', '🐾', '數量必須為整數，且不能超出所選房型上限。更改房型後請再次確認數量。')}`;
   }
@@ -446,7 +522,7 @@
         ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong>')}
       </section>
       <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🤍</span>提交前請確認</h3><p class="field-help">六項同意都需要勾選，才能繼續。</p><div class="terms-list">${TERMS.map((term, index) => `<div class="term-row"><label class="term-item"><input type="checkbox" data-term-index="${index}" ${state.terms[index] ? 'checked' : ''}><span>${escapeHtml(term)}</span></label>${index === 3 ? `<a class="term-service-link" href="${escapeHtml(TERMS_URL)}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁查看 LittleLand 小寵物酒店服務條款">查看「小寵物酒店服務」<span aria-hidden="true">↗</span></a>` : ''}</div>`).join('')}</div><p class="terms-error" id="termsError" ${state.terms.every(Boolean) ? 'hidden' : ''}>請勾選以上六項同意事項。</p></section>
-      ${notice('blue', '💬', '提交後的下一頁是<strong>模擬完成畫面</strong>。本示範不會傳送任何預約資料、建立正式預約或處理付款。')}`;
+      ${notice('blue', '💬', '提交後會建立<strong>TEST 環境預約申請</strong>；只有 TEST API 成功回傳有效 Booking ID 後才顯示完成頁。此為 TEST 記錄，不代表正式確認或付款。')}`;
   }
 
   function updateStepper() {
@@ -461,7 +537,12 @@
   }
 
   function renderStep() {
-    refreshAvailability();
+    if (state.step !== 3) {
+      state.availabilityRequestToken += 1;
+      state.availabilityLoading = false;
+    } else {
+      startAvailabilityQuery();
+    }
     if (state.completed) {
       el.stepContent.innerHTML = completionMarkup();
       el.stepper.hidden = true;
@@ -477,15 +558,18 @@
     const views = { 1: stepOne, 2: stepTwo, 3: stepThree, 4: stepFour, 5: stepFive };
     el.stepContent.innerHTML = views[state.step]();
     el.backButton.disabled = state.step === 1;
-    el.nextButton.innerHTML = state.step === 5 ? '模擬提交申請 <span aria-hidden="true">✦</span>' : '下一步 <span aria-hidden="true">→</span>';
-    el.actionHint.textContent = state.step === 5 ? '僅展示模擬流程，不會傳送資料' : `第 ${state.step}／5 步 · 約 3 分鐘完成`;
+    el.nextButton.disabled = state.isSubmitting;
+    el.nextButton.innerHTML = state.step === 5
+      ? `${state.submitFailed ? '重試提交申請' : '提交預約申請'} <span aria-hidden="true">✦</span>`
+      : '下一步 <span aria-hidden="true">→</span>';
+    el.actionHint.textContent = state.step === 5 ? '只會提交至 TEST 環境' : `第 ${state.step}／5 步 · 約 3 分鐘完成`;
     el.formAlert.hidden = true;
     updateSummary();
   }
 
   function updateSummary() {
     if (!el.summaryPreview) return;
-    const price = currentPricing();
+    const price = visiblePricing();
     const entries = [
       ['入住日期', state.form.checkin ? `${formatDate(state.form.checkin)} · ${state.form.checkinTime || '時段未選'}` : '尚未選擇'],
       ['退房日期', state.form.checkout ? `${formatDate(state.form.checkout)} · ${state.form.checkoutTime || '時段未選'}` : '尚未選擇'],
@@ -520,15 +604,16 @@
     if (inlineQuote && state.step === 5 && !state.completed) inlineQuote.innerHTML = detailedQuoteMarkup();
     const banner = document.getElementById('availabilityBanner');
     if (banner) {
-      banner.dataset.status = state.availability;
-      document.getElementById('availabilityLabel').textContent = AVAILABILITY[state.availability];
-      document.getElementById('availabilityMeta').textContent = datesAreValid() ? `${dateNights()} 晚 · 示範房態` : '選擇有效日期後顯示示範房態';
+      banner.dataset.status = 'unknown';
+      document.getElementById('availabilityLabel').textContent = datesAreValid() ? '房態將於房型步驟即時查詢' : '選擇有效日期後查詢 TEST 房態';
+      document.getElementById('availabilityMeta').textContent = datesAreValid() ? `${dateNights()} 晚 · 房型頁將查詢 TEST 房態` : '選擇有效日期後查詢 TEST 房態';
     }
-    document.querySelectorAll('.room-status').forEach((node) => {
-      const status = roomAvailabilityFor(datesAreValid());
-      node.dataset.status = status;
-      node.textContent = AVAILABILITY[status];
-    });
+  }
+
+  function visiblePricing() {
+    const local = currentPricing();
+    const serverPrice = state.serverBooking && state.serverBooking.price;
+    return serverPrice ? { ...local, ...serverPrice, room: selectedRoom() } : local;
   }
 
   function displayError(message, targetSelector) {
@@ -638,10 +723,15 @@
     if (!Number.isInteger(quantity) || quantity < 1) return { message: '毛孩數量必須是大於或等於 1 的整數。', target: '#quantity' };
     const room = selectedRoom();
     if (room && quantity > room.max) return { message: `此房型最多入住 ${room.max} 隻，請更改數量或選擇其他房型。`, target: '#quantity' };
+    const status = state.availabilityByRoomId[state.form.roomId];
+    if (status !== 'available') {
+      return { message: status === 'unavailable' ? '此房型目前不可預訂，請選擇其他房型。' : '目前未能確認房態；請重新查詢後再選擇房型。', target: status === 'unavailable' ? '.room-card input:checked' : '[data-retry-availability]' };
+    }
     return null;
   }
 
-  function advance() {
+  async function advance() {
+    if (state.isSubmitting) return;
     const error = validateStep(state.step);
     if (error) return displayError(error.message, error.target);
     el.formAlert.hidden = true;
@@ -651,7 +741,7 @@
       renderStep();
       el.stepContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
-      simulateSubmit();
+      await submitBooking();
     }
   }
 
@@ -663,19 +753,160 @@
     el.stepContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  function simulateSubmit() {
-    // Demonstration only: no API request and no customer data is transmitted.
-    clearDraft();
-    const stamp = (state.form.checkin || localDateValue(new Date())).replace(/-/g, '');
-    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-    state.mockBookingId = `DEMO-LL-${stamp}-${suffix}`;
-    state.completed = true;
-    renderStep();
-    el.stepContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  function formForApi() {
+    const hamster = state.form.species === 'hamster';
+    const pets = state.form.pets.slice(0, quantityNumber()).map((pet) => ({
+      name: pet.name.trim(),
+      breed: pet.breed.trim(),
+      ageValue: pet.ageValue,
+      ageUnit: pet.ageUnit,
+      sex: pet.sex,
+      sterilized: hamster ? '' : pet.sterilized,
+      pregnant: hamster || pet.sex !== 'female' ? '' : pet.pregnant,
+      recentSurgery: pet.recentSurgery,
+      vetVisit: pet.vetVisit,
+      vetDetails: pet.vetDetails,
+      infectiousDisease: pet.infectiousDisease,
+      infectiousDetails: pet.infectiousDetails,
+      chronicDisease: pet.chronicDisease,
+      chronicDetails: pet.chronicDetails,
+      medication: pet.medication,
+      medicationDetails: pet.medicationDetails,
+      specialCare: pet.specialCare,
+      fleaTreatment: hamster ? '' : pet.fleaTreatment
+    }));
+    return {
+      checkin: state.form.checkin,
+      checkout: state.form.checkout,
+      checkinTime: state.form.checkinTime,
+      checkoutTime: state.form.checkoutTime,
+      species: state.form.species,
+      roomId: state.form.roomId,
+      quantity: quantityNumber(),
+      pets,
+      parentName: state.form.parentName.trim(),
+      phone: state.form.phone.trim(),
+      email: state.form.email.trim(),
+      emergency1: state.form.emergency1.trim(),
+      emergency2: state.form.emergency2.trim(),
+      vet: state.form.vet.trim(),
+      foodMain: state.form.foodMain,
+      hay: hamster ? '' : state.form.hay,
+      feeding: hamster ? '' : state.form.feeding,
+      vegetables: hamster ? '' : state.form.vegetables,
+      groomingOnce: Boolean(state.form.groomingOnce),
+      groomingDaily: Boolean(state.form.groomingDaily),
+      medicine: state.form.medicine,
+      earlyCheckin: Boolean(state.form.earlyCheckin),
+      lateCheckout: Boolean(state.form.lateCheckout)
+    };
+  }
+
+  function bookingPayload() {
+    const price = currentPricing();
+    return {
+      form: formForApi(),
+      terms: state.terms.slice(),
+      clientQuote: {
+        priceVersion: PRICE_VERSION,
+        roomPrice: price.room ? price.room.price : 0,
+        nights: price.nights,
+        baseRoomFee: price.baseRoomFee,
+        extraPetFee: price.extraPetFee,
+        weekendFee: price.weekendFee,
+        serviceFees: price.serviceFees,
+        totalSurcharges: price.totalSurcharges,
+        estimatedTotal: price.estimatedTotal,
+        depositAmount: price.depositAmount,
+        remainingBalance: price.remainingBalance,
+        cashDeposit: price.cashDeposit
+      }
+    };
+  }
+
+  function newIdempotencyKey() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return `web-${window.crypto.randomUUID()}`;
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      return `web-${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`;
+    }
+    return `web-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function payloadWithIdempotency(payload) {
+    const fingerprint = JSON.stringify(payload);
+    if (!state.pendingSubmission || state.pendingSubmission.fingerprint !== fingerprint) {
+      state.pendingSubmission = { fingerprint, key: newIdempotencyKey() };
+    }
+    return { ...payload, idempotencyKey: state.pendingSubmission.key };
+  }
+
+  function setSubmissionButtons(isSubmitting) {
+    state.isSubmitting = isSubmitting;
+    el.backButton.disabled = isSubmitting || state.step === 1;
+    el.nextButton.disabled = isSubmitting;
+    if (state.step === 5) {
+      el.nextButton.innerHTML = isSubmitting
+        ? '正在提交…'
+        : `${state.submitFailed ? '重試提交申請' : '提交預約申請'} <span aria-hidden="true">✦</span>`;
+      el.actionHint.textContent = isSubmitting ? '正在提交至 LittleLand TEST API…' : '只會提交至 TEST 環境';
+    }
+  }
+
+  function submissionErrorMessage(error) {
+    const code = error && error.code;
+    if (code === 'PRICE_VERSION_EXPIRED' || code === 'PRICE_CLIENT_MISMATCH') return '費用預覽需要更新；資料已保留，請重新核對費用後再提交。';
+    if (code === 'VALIDATION_FAILED' || code === 'PET_QTY_INVALID' || code === 'PET_QTY_EXCEEDS_LIMIT' || code === 'PET_AGE_BELOW_MINIMUM' || code === 'PET_PREGNANT_NOT_ACCEPTED' || code === 'PET_RECENT_SURGERY_NOT_ACCEPTED') return '預約資料未能通過系統檢查；資料已保留，請返回相關步驟核對後重試。';
+    return '暫時未能完成 TEST 預約申請；你已填寫的資料已保留，請稍後重試。';
+  }
+
+  function validBookingResult(result) {
+    const price = result && result.price;
+    const requiredPrice = ['roomPrice', 'nights', 'baseRoomFee', 'extraPetFee', 'weekendFee', 'serviceFees', 'totalSurcharges', 'estimatedTotal', 'depositAmount', 'remainingBalance', 'cashDeposit'];
+    return Boolean(result && window.LittleLandBookingApi &&
+      window.LittleLandBookingApi.validBookingId(result.bookingId) &&
+      result.bookingStatus === 'PENDING_CONFIRMATION' && result.roomTypeId === state.form.roomId &&
+      price && requiredPrice.every((key) => Number.isFinite(Number(price[key])) && Number(price[key]) >= 0));
+  }
+
+  async function submitBooking() {
+    try {
+      if (!window.LittleLandBookingApi) throw { code: 'NETWORK_ERROR' };
+      saveDraft();
+      state.submitFailed = false;
+      setSubmissionButtons(true);
+      const payload = payloadWithIdempotency(bookingPayload());
+      const result = await window.LittleLandBookingApi.createBooking(payload);
+      if (!validBookingResult(result)) throw { code: 'INVALID_BOOKING_RESPONSE' };
+
+      state.serverBooking = result;
+      state.pendingSubmission = null;
+      state.isSubmitting = false;
+      state.submitFailed = false;
+      state.completed = true;
+      clearDraft();
+      renderStep();
+      el.stepContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+      state.isSubmitting = false;
+      if (error && error.code === 'ROOM_NO_LONGER_AVAILABLE') {
+        state.pendingSubmission = null;
+        state.submitFailed = false;
+        state.step = 3;
+        renderStep();
+        displayError('所選房型剛被其他預約取得；已返回房型頁重新查詢，請選擇目前可預訂的房型。');
+        el.stepContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      state.submitFailed = true;
+      setSubmissionButtons(false);
+      displayError(submissionErrorMessage(error));
+    }
   }
 
   function completionMarkup() {
-    const price = currentPricing();
+    const price = visiblePricing();
     const names = state.form.pets.map((pet) => pet.name.trim()).filter(Boolean).join('、');
     const petType = SPECIES[state.form.species]?.label || '寵物';
     const petDescription = `${petType} · ${price.quantity || '—'} 隻${names ? `（${names}）` : ''}`;
@@ -685,7 +916,7 @@
       '',
       '你好，我已提交預約申請，以下是簡單摘要，麻煩協助確認：',
       '',
-      `🧾 預約申請編號：${state.mockBookingId}`,
+      `🧾 預約申請編號：${state.serverBooking.bookingId}`,
       `👤 家長：${state.form.parentName}`,
       `📞 聯絡電話：${state.form.phone}`,
       `🐾 寵物：${petDescription}`,
@@ -704,8 +935,8 @@
     return `<div class="completion-screen"><div class="completion-badge" aria-hidden="true">🎉</div>
       <h2>已收到您的預約申請！</h2>
       <p>謝謝你把毛孩的照顧需要告訴我們。LittleLand 將確認預約及提供訂金付款安排。</p>
-      <span class="demo-label">⚠ 模擬示範 · 沒有建立正式預約</span>
-      <div><span class="booking-reference">示範編號：${escapeHtml(state.mockBookingId)}</span></div>
+      <span class="demo-label">TEST 預約記錄 · 尚待 LittleLand 確認</span>
+      <div><span class="booking-reference">Booking ID：${escapeHtml(state.serverBooking.bookingId)}</span></div>
       <div class="completion-details"><h3>本次畫面摘要</h3>
         ${completionRow('家長', state.form.parentName)}
         ${completionRow('寵物', petDescription)}
@@ -716,7 +947,7 @@
         ${completionRow('預計尾數（入住當日支付）', money(price.remainingBalance))}
         ${completionRow('現金備用金／按金', money(price.cashDeposit))}
       </div>
-      ${notice('green', '🌱', '<strong>LittleLand 將確認預約及提供訂金付款安排。</strong> 完成訂金付款及確認後，房間才正式保留。')}
+      ${notice('green', '🌱', '<strong>LittleLand 將確認預約及提供訂金付款安排。</strong> 完成訂金付款及確認後，房間才正式保留；此 TEST 記錄不代表正式確認。')}
       ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong>')}
       <div class="cash-deposit-reminder"><strong>💰 現金備用金／按金 HK$1,000／隻</strong><span>合計 ${money(price.cashDeposit)}</span><p>請於入住當日準備，不計入住宿總額、訂金或尾數。</p></div>
       <div class="completion-actions"><a class="button button-primary" href="${escapeHtml(whatsappHref)}" target="_blank" rel="noopener noreferrer">📲 WhatsApp LittleLand · 62886598 <span aria-hidden="true">↗</span></a></div>
@@ -757,6 +988,8 @@
     if (target.dataset.termIndex !== undefined) {
       const index = Number(target.dataset.termIndex);
       if (Number.isInteger(index) && index >= 0 && index < state.terms.length) state.terms[index] = target.checked;
+      state.submitFailed = false;
+      if (state.step === 5 && !state.isSubmitting) setSubmissionButtons(false);
       const error = document.getElementById('termsError');
       if (error) error.hidden = state.terms.every(Boolean);
       return;
@@ -775,11 +1008,13 @@
     }
     const key = target.dataset.field;
     if (!key || !(key in state.form)) return;
+    state.submitFailed = false;
     if (target.type === 'checkbox') state.form[key] = target.checked;
     else state.form[key] = target.value;
 
     if (key === 'species') {
       state.form.roomId = '';
+      invalidateAvailability();
       state.form.foodMain = '';
       state.form.hay = '';
       state.form.feeding = '';
@@ -801,9 +1036,10 @@
       updateRoomSelection();
       updateQuantityFeedback();
     }
-    if (key === 'checkin' || key === 'checkout') refreshAvailability();
+    if (key === 'checkin' || key === 'checkout') invalidateAvailability();
     saveDraft();
     updateSummary();
+    if (state.step === 5 && !state.isSubmitting) setSubmissionButtons(false);
   }
 
   function updateRoomSelection() {
@@ -815,6 +1051,7 @@
     if (quantity) quantity.max = String(selectedRoom()?.max || 1);
     const copy = document.querySelector('.quantity-copy p');
     if (copy) copy.textContent = selectedRoom() ? `此房型最多 ${selectedRoom().max} 隻。` : '選擇房型後查看可入住數量。';
+    updateAvailabilityUI();
   }
 
   function updateQuantityFeedback() {
@@ -832,7 +1069,11 @@
     state.terms = Array(6).fill(false);
     state.step = 1;
     state.completed = false;
-    state.mockBookingId = '';
+    state.serverBooking = null;
+    state.pendingSubmission = null;
+    state.isSubmitting = false;
+    state.submitFailed = false;
+    invalidateAvailability();
     state.availability = 'unknown';
     clearDraft();
     el.stepper.hidden = false;
@@ -856,6 +1097,7 @@
   });
   el.stepContent.addEventListener('click', (event) => {
     if (event.target.closest('[data-reset]')) resetForm();
+    if (event.target.closest('[data-retry-availability]')) startAvailabilityQuery();
   });
   el.stepContent.addEventListener('focusin', (event) => {
     event.target.removeAttribute('aria-invalid');
@@ -878,6 +1120,5 @@
   document.addEventListener('error', handleSpeciesIllustration, true);
 
   ensurePetCount();
-  refreshAvailability();
   renderStep();
 })();

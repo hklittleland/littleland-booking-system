@@ -206,3 +206,46 @@
 - 唯讀 live smoke check：匿名 GET `action=availability` 回 HTTP 200、`success:true`、`code:OK`、`available:true`。沒有發出 POST；沒有建立或修改預約、寵物、付款、Logs、IdempotencyKeys 記錄。
 - 自動測試命令 `node --test tests/apps-script/*.test.js tests/pricing.test.js`：60 passed、0 failed。
 - 本次沒有變更 Apps Script 業務邏輯，沒有接線前台，沒有合併 `develop` 或 `main`。部署回執見 `docs/TEST-API-DEPLOYMENT.md`。
+
+
+# TASK-008 — 客人預約前台連接 TEST API
+
+狀態：已完成（2026-10-31）。已連接 TEST API，完成自動測試及一筆合成資料的網站→TEST API→Google Sheets E2E；只改資料連線與狀態處理，不重新設計 UI。
+
+### 真實房態查詢
+
+- 驗收：選擇 2026-11-23 至 2026-11-24、兔子後，以 TEST API 查詢四種可選房型；豪華房 `DELUXE_ROOM` 回傳可預訂。房態對客人只顯示四種允許狀態，沒有顯示內部房號或其他客人資料。
+
+- 日期選好後，網站使用 TEST API 查詢 `LittleLand_TEST` 的真實房態；依有效日期、寵物種類及可選房型查詢 Availability。
+- 房型對客人只顯示「可預訂」、「不可預訂」、「查詢中」、「暫時無法確認」；不可顯示內部 S1/S2/S3、SS1/SSR1、待付訂金原因或其他客人資料。
+
+### 真實建單及成功頁
+
+- 提交預約時改用 TEST Create Booking API；提交期間停用提交按鈕，避免重複 Submit。
+- API 成功且取得有效 Booking ID 後，才可以顯示「已收到您的預約申請」。
+- 完成頁顯示 Booking ID、房型、入住／退房、寵物、住宿總額、訂金、尾數及現金按金。
+- 若 API 回傳房間剛被其他客人取得，返回房型頁重新查詢，不可顯示成功。
+
+### 失敗保護與資料邊界
+
+- API 或網路失敗時保留客人已填資料並提供重試，不可建立假成功結果。
+- 全部只使用 TEST API 及 TEST 資料；不可連 Production、不可開始 Staff Dashboard、不可 Merge main。
+- 使用者明確要求經網站→TEST API→Google Sheets→Booking ID 完成至少一張預約；只能使用明確合成的 TEST 客人／寵物資料，不使用真實客人資料。
+- 完成回報修改檔案、Availability 測試、Create Booking 測試、TEST Booking ID、Sheets 寫入結果、錯誤處理測試、Branch、Commit SHA、已知問題；完成後停止。
+- 程式碼及驗收文件只推送 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`，不推送／merge `main`。
+
+
+### Create Booking 與 Sheets 寫入驗證
+
+- 使用合成測試資料 `TEST Guest`／`TEST Bunny` 經預約頁提交；API 回 HTTP 200、`success:true`、`code:OK`，有效 ID 為 `TEST-LL-20261031-087BFA29`，狀態 `PENDING_CONFIRMATION`。完成頁只在驗證有效 Booking ID 後出現。
+- Google Sheets 唯讀讀回確認：`Bookings` 恰有 1 列該 ID，資料為 2026-11-23 至 24、兔子、`DELUXE_ROOM`、1 晚／1 隻；`baseRoomFee HK$178`、`estimatedTotal HK$178`、`depositAmount HK$89`、`remainingBalance HK$89`、`cashDepositAmount HK$1,000`。`Pets` 有一列對應合成毛孩；`Logs` 有 `CREATE_BOOKING`；`IdempotencyKeys` 狀態為 `COMPLETED`。未建立正式預約、未付款。
+- 首次建單請求超過前端原 25 秒等待上限，頁面保留資料並提供重試；沿用同一幂等 key 重試後取得同一 Booking ID，Sheet 核對只有一列。為避免 Sheets 寫入延遲導致誤報失敗，adapter timeout 改為 60 秒，並新增 regression test。
+
+### 錯誤處理與自動測試
+
+- Availability 對選定日期/物種的四個房型送出 TEST 查詢；只有允許的四種房態字樣會呈現，不洩露內部資料。
+- 以不連線、不寫入 Sheet 的前端 fake network failure 驗證：顯示重試、保留已填資料、不顯示成功頁；以 fake `ROOM_NO_LONGER_AVAILABLE` 驗證：返回房型步驟重新查詢、不顯示成功。真實提交期間已確認提交按鈕停用。
+- 語法檢查：`node --check booking/api-client.js`、`node --check booking/booking.js`、`node --check tests/booking-api-client.test.js` 均通過；`python3 -m json.tool manus-routes.json` 及 `git diff --check` 通過。
+- 完整自動測試：`node --test tests/apps-script/*.test.js tests/pricing.test.js tests/booking-api-client.test.js` — 69 passed、0 failed。
+- Branch：`feature/test-booking-api`。無 production 連接、Staff Dashboard、或 `main` merge。
+- 已知風險：Apps Script Web App 為匿名可呼叫（部署設定 `Anyone`），故只應使用合成 TEST 資料；POST 可能新增 TEST 列。API URL 與 TEST-only 安全提示記於 `docs/TEST-API-DEPLOYMENT.md`。

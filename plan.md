@@ -137,3 +137,29 @@
 ## TEST Apps Script 專案綁定檢查點（2026-10-30）
 
 使用者後續明確授權建立 TEST Apps Script 專案及設定 target。已在登入的 LittleLand Google 帳戶中建立綁定至唯一 `LittleLand_TEST` 試算表的 Apps Script 專案，將 `LITTLELAND_TEST_SPREADSHEET_ID` 設為已核實的 TEST spreadsheet ID，並重新載入設定頁確認保存值仍存在。Spreadsheet ID 不寫入 repository。這是後續整合前的設定準備，不改變 TASK-005／006／007 只交付 code + mock tests 的範圍；尚未上傳 LittleLand 程式碼、執行 initializer／API、寫入任何 Sheets row、建立 Web App deployment 或產生 API URL。任何程式碼上傳、實表測試與部署均留待後續使用者明確指示。
+
+
+# TASK-008 — Guest Booking ↔ TEST API Integration
+
+## 目標與範圍
+
+只把已接受的 `booking/` 前台接至已部署的 Apps Script TEST API。不可重新設計或改動既有視覺；保留目前流程、計價摘要及手機版樣式，僅在原有房態徽章、表單錯誤提示及完成頁位置呈現真實 API 狀態。只用目前部署文件記錄的公開 TEST endpoint 和 `LittleLand_TEST`；不呼叫 Production、不建立 Staff Dashboard、不合併 `main`。
+
+## 實作決定
+
+- 新增 `booking/api-client.js` 作為瀏覽器／Node 可共用的無相依 API adapter；固定呼叫部署紀錄內的 TEST URL，不接受使用者輸入 Spreadsheet ID。Availability 使用 `GET ?action=availability&checkin&checkout&species&roomTypeId&quantity`，只讀 envelope 的 `success/code/data.available`，並以 `available` 布林值映射為「可預訂／不可預訂／查詢中／暫時無法確認」，不在 UI 暴露房間 ID、客人或內部原因。日期或寵物種類／房型改動會使舊房態失效；進入房型步驟時依有效日期及所選物種查詢該物種可選房型。
+- Create Booking POST 傳 `{idempotencyKey, form, terms, clientQuote}`。使用 `text/plain;charset=utf-8` 傳 JSON，避免跨來源 JSON preflight；以伺服器回覆為準。Quote 必須帶 TASK-002 SHA `6f002fd9ea921c313ecf90502091f1de051f332c` 及引擎的完整費用欄位。防重 key 僅留在記憶體，同一份 payload 重試重用 key，資料變更則更新 key。只有 `success:true`、`code:"OK"`、符合有效格式的真實 TEST Booking ID、`bookingStatus:"PENDING_CONFIRMATION"` 及伺服器費用摘要都驗證成功後，才清除草稿及顯示「已收到您的預約申請」；完成頁使用真實 ID、房型、日期、寵物和伺服器回傳住宿總額／訂金／尾數／現金按金。
+- 提交期間停用提交按鈕。若回 `ROOM_NO_LONGER_AVAILABLE`，不得顯示成功；返回房型步驟，顯示通用房態，並以新 query token 重新查詢所選物種的可選房型。其他 API／網路錯誤、無效 JSON/envelope、缺失或無效 Booking ID 均保留表單資料／草稿及重試能力，不生成假 Booking ID、不清除草稿。
+- 實測 Sheets-backed Create Booking 可能超過原 25 秒 timeout；adapter 設為 60 秒等待上限。任何 timeout 後仍以同一 payload fingerprint 重用同一 idempotency key，避免盲目建立重複申請；較長等待期間提交按鈕保持停用。
+- 在 `tests/booking-api-client.test.js` 使用 Node 內建測試和 fake `fetch` 檢查 query／POST schema／simple content type、V3.0 envelope、有效 Booking ID 檢核、網路失敗及安全錯誤碼。最後以合成 TEST 客資料經預覽前台→已部署 TEST API→`LittleLand_TEST` 完成一張預約，回查 Booking／Pets／Logs／IdempotencyKeys 寫入及 ID；錯誤流程以不寫入資料的 fake/network/無效請求測試。
+
+## 專案結構與版本控制
+
+- `booking/api-client.js`：純 JavaScript TEST API adapter 與 response validation；不存放 secrets。
+- `booking/booking.js`：沿用現有流程及 UI，接上房態查詢、async submit、重試狀態及真實完成摘要。
+- `booking/index.html`：僅按 script 順序載入 adapter；不改版面／文案結構。
+- `tests/booking-api-client.test.js`：API adapter mock fetch 測試。
+- `manus-routes.json`：宣告靜態網站唯一路由 `/booking/`。
+- `TODO.md`、`docs/TEST-API-DEPLOYMENT.md`：記錄驗收狀態及已部署 TEST URL／安全界線，不保存 Spreadsheet ID。
+
+此次對公開的 TEST endpoint 送出 1 張純合成預約資料是使用者明確要求的驗收範圍；不輸入真實客人資料。所有測試寫入僅限 allow-listed `LittleLand_TEST`。完成後提交及推送至 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`；不得推送 `main`、不得 merge。
