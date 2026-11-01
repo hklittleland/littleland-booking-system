@@ -509,7 +509,12 @@
         b.cashDepositRefundDue != null
           ? b.cashDepositRefundDue
           : get(b, "cashDepositRefundDue", "cashDepositRefundAmount"),
-      services = serviceItems(b);
+      services = serviceItems(b),
+      visibleServices = services.filter((item) => {
+        if (typeof item === "string") return true;
+        const rawAmount = get(item, "amount", "fee", "totalAmount");
+        return rawAmount === "" || Number(rawAmount) !== 0;
+      });
     const manualAdjustmentTotal = adjustments.filter((entry) => ["SURCHARGE", "REVERSAL"].includes(String(entry.type))).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
     const feeDisplay = Object.assign({}, b, {
       manualAdjustmentTotal,
@@ -520,7 +525,7 @@
       ? window.LittleLandBookingChangesView.render({ booking: b, pets: pets, payments: payments, adjustments: adjustments, pending: pendingAction })
       : "";
     const whatsappPanel = window.LittleLandWhatsAppMessages
-      ? window.LittleLandWhatsAppMessages.render({ booking: feeDisplay, pets, payments, roomNames, allocatedRooms: parseRooms(b), roomConflict: conflict })
+      ? window.LittleLandWhatsAppMessages.render({ booking: feeDisplay, pets, payments, adjustments, roomNames, allocatedRooms: parseRooms(b), roomConflict: conflict })
       : "";
     return `${head("Booking Detail", idOf(b))}${conflict ? `<div class="danger-box" role="alert"><strong>房間衝突：</strong>${b.depositStatus === "PAID" || store.state.depositConflictBookingId === String(idOf(b)) ? "訂金已收" : "訂金尚未確認已收"}；目前沒有可用房間。未有房間分配，預約未確認。請員工手動聯絡客人跟進；請勿承諾房間。</div>` : ""}<section class="card"><h2>預約 ${esc(idOf(b))} ${status(s)} ${depositBadge(b)} ${followupBadge(b)}</h2>${kv(
       b,
@@ -580,7 +585,9 @@
                 ["杜蝨處理", "fleaTreatment"],
                 ["健康審核狀態", "healthReviewStatus"],
               ],
-            )}</article>`,
+            )}${window.LittleLandBookingChangesView && typeof window.LittleLandBookingChangesView.renderPetAdjustmentControls === "function"
+              ? window.LittleLandBookingChangesView.renderPetAdjustmentControls({ booking: b, pet: p, adjustments, pending: pendingAction })
+              : ""}</article>`,
         )
         .join("") || '<div class="empty">沒有寵物資料</div>'
     }</section>${removedPets.length ? `<section class="card"><h2>已移除寵物（保留歷史）</h2>${removedPets.map((pet) => `<article class="pet archived"><h3>🐾 ${esc(get(pet,"name","petName"))} · 已移除</h3><p>${esc(get(pet,"removeReason"))}</p><small>${esc(friendly(get(pet,"removedAt")))}</small></article>`).join("")}</section>` : ""}<section class="card"><h2>收費</h2>${kv(feeDisplay, [
@@ -588,15 +595,14 @@
       ["額外寵物費", "extraPetFee"],
       ["週末附加費", "weekendFee"],
       ["服務費合計", "serviceFees"],
-      ["原 Pricing Engine 附加費合計", "totalSurcharges"],
       ["人工附加費／減項淨額", "manualAdjustmentTotal"],
-      ["目前附加費合計（含人工調整）", "displaySurcharges"],
+      ["附加費合計（含人工調整）", "displaySurcharges"],
       ["目前住宿總額", "currentTotal"],
       ["訂金", "depositAmount"],
       ["尾數", "remainingBalance"],
       ["現金按金", "cashDepositAmount"],
       ["應退現金按金", refund],
-    ])}<h3>客人同意</h3>${kv(b, [
+    ].filter(([label, key]) => ["額外寵物費", "週末附加費", "服務費合計", "人工附加費／減項淨額", "附加費合計（含人工調整）"].indexOf(label) < 0 || Number(feeDisplay[key] || 0) !== 0))}<h3>客人同意</h3>${kv(b, [
       ["現金按金同意", "consentCashDeposit"],
       ["訂金及尾數同意", "consentDepositAndBalance"],
       ["訂金不退同意", "consentDepositNonRefundable"],
@@ -604,7 +610,16 @@
       ["健康申報同意", "consentHealthDeclaration"],
       ["緊急獸醫同意", "consentEmergencyVet"],
       ["同意時間", "consentedAt"],
-    ])}<h3>額外服務</h3>${services.map((x) => `<p>${esc(typeof x === "string" ? x : get(x, "label", "name", "serviceName", "serviceId", "id"))}${typeof x === "object" ? ` · ${esc(get(x, "amount"))}` : ""}</p>`).join("") || "<p>沒有額外服務</p>"}</section><section class="card"><h2>付款紀錄</h2>${kv(
+    ])}${visibleServices.length ? `<h3>額外服務</h3>${visibleServices.map((item) => {
+      const label = typeof item === "string" ? item : get(item, "label", "name", "serviceName", "serviceId", "id");
+      const petAssignmentId = get(item, "petId", "petIdSnapshot");
+      const petNameSnapshot = get(item, "petNameSnapshot", "petName");
+      const assignedPetNames = petNameSnapshot ? [petNameSnapshot] : pets.filter((pet) => String(pet.petId) === String(petAssignmentId)).map((pet) => get(pet, "name", "petName"));
+      const isPetService = /梳毛|餵藥|藥物|groom|medicine/i.test(String(label));
+      const petNote = isPetService ? ` · ${assignedPetNames.length ? "毛孩：" + assignedPetNames.map(esc).join("、") : "毛孩未指定"}` : "";
+      const amountValue = typeof item === "object" ? get(item, "amount", "fee", "totalAmount") : "";
+      return `<p>${esc(label)}${petNote}${amountValue !== "" ? ` · ${esc(amount(amountValue))}` : ""}</p>`;
+    }).join("")}` : ""}</section><section class="card"><h2>付款紀錄</h2>${kv(
       b,
       [
         ["訂金狀態", "depositStatus"],
@@ -911,6 +926,8 @@
     }
     const changesView = window.LittleLandBookingChangesView;
     if (changesView) changesView.bind(app);
+    const whatsappMessages = window.LittleLandWhatsAppMessages;
+    if (whatsappMessages && typeof whatsappMessages.bind === "function") whatsappMessages.bind(app, toast);
     const detailState = store.state.detail || {};
     const currentBooking = detailState.detail || detailState.booking || {};
     const currentBookingId = currentBooking.bookingId || StaffRouter.current().id;
@@ -929,6 +946,27 @@
       if (!confirm(`確認${sign < 0 ? "減少／抵扣" : "新增"}附加費：${description}，${scope}HK$${enteredAmount.toFixed(2)}？若形成多收款項，不會自動退款。`)) return;
       submitApi("addSurcharge", Object.assign({}, currentVersion, { data }), adjustmentForm);
     };
+    app.querySelectorAll("[data-pet-adjustment-form]").forEach((petForm) => {
+      petForm.onsubmit = (event) => {
+        event.preventDefault();
+        const petId = String(petForm.dataset.petId || "");
+        const petName = String(petForm.dataset.petName || "此毛孩");
+        const description = petForm.elements.description.value.trim();
+        const reason = petForm.elements.reason.value.trim();
+        const enteredAmount = Number(petForm.elements.amount.value);
+        if (!petId || !description || !reason || !Number.isFinite(enteredAmount) || enteredAmount <= 0) {
+          const error = petForm.querySelector(".form-error") || document.createElement("p");
+          error.className = "form-error"; error.setAttribute("role", "alert");
+          error.textContent = "請確認毛孩資料、項目名稱、有效金額及原因均已填妥。";
+          if (!error.isConnected) petForm.prepend(error);
+          return;
+        }
+        const sign = petForm.elements.direction.value === "reduce" ? -1 : 1;
+        const data = { description, amount: Math.round(enteredAmount * sign * 100) / 100, reason, petIds: [petId] };
+        if (!confirm(`確認${sign < 0 ? "減少／抵扣" : "新增"}「${petName}」${description}：HK$${enteredAmount.toFixed(2)}？若形成多收款項，不會自動退款。`)) return;
+        submitApi("addSurcharge", Object.assign({}, currentVersion, { data }), petForm);
+      };
+    });
     const refundForm = app.querySelector("#bookingRefundForm");
     if (refundForm) refundForm.onsubmit = (event) => {
       event.preventDefault();
@@ -996,20 +1034,6 @@
       readCache.clear();
       await loadPageData("revenue", { force: true });
       paint();
-    });
-    app.querySelectorAll("[data-copy-whatsapp]").forEach((button) => button.onclick = async () => {
-      let text;
-      try { text = decodeURIComponent(button.dataset.copyWhatsapp || ""); }
-      catch (_) { toast("草稿內容無法讀取，請重新整理頁面。"); return; }
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
-        else {
-          const input = document.createElement("textarea"); input.value = text; input.setAttribute("readonly", ""); input.style.position = "fixed"; input.style.opacity = "0";
-          document.body.appendChild(input); input.select(); const copied = document.execCommand("copy"); input.remove();
-          if (!copied) throw new Error("clipboard unavailable");
-        }
-        toast("WhatsApp 草稿已複製；傳送前請核對內容。");
-      } catch (_) { toast("無法自動複製，請展開訊息預覽後手動複製。"); }
     });
     app.querySelectorAll("[data-adjust='earlyCheckout']").forEach((button) => button.onclick = () => {
       const actualCheckoutDate = prompt("輸入實際退房日期 YYYY-MM-DD");

@@ -370,3 +370,10 @@ Booking Detail's change Logs and follow-up history must visibly identify the res
 
 ## V3.1 TEST 實際執行記錄（2026-11-01 18:12 HKT）
 使用者後續明確選擇繼續 TEST-only，並要求原始入住條款頁維持原樣。依此授權，LittleLand_TEST 以 add-only 方式新增 `ScheduleEmployees` tab，沒有清除或改寫既有預約資料；既有 TEST Apps Script Web App 更新至 V11，deployment ID／`/exec` URL 和權限保持不變。V11 只做一筆無客人資料的 availability GET smoke test（HTTP 200、available），沒有建立預約或付款。Production 未連接或修改。程式碼與文件留在 `feature/test-booking-api`，沒有合併 main。
+
+
+## V3.1.1 增補：每隻寵物費用入口與五款 WhatsApp 草稿
+- Booking Detail 的每隻有效寵物卡內加入專屬 fee form，自動以該寵物 ID 呼叫既有 `staff.surchargeAdd`（`petIds:[id]`）；常用項目按已確認單價與入住晚數預填，員工可更改金額、加減方向及原因；通用費用表單降級為進階共用／批次用途。既有 API append-only、idempotency、recordVersion、Logs 不變。
+- 以使用者最新逐字提供的五款 WhatsApp 草稿取代舊版自創訊息。五張卡固定呈現，只有狀態/訂金/房態/日期條件符合才啟用；不符合時顯示原因。只取代 `{...}` 欄位，不自動傳送，不引入未提供的第六款訊息。未知付款連結或早退退款額保持可編輯欄位；未填完整不可複製／開啟。
+- `staff/whatsapp-messages.js` 負責模板正文、條件與草稿按鈕，`booking-changes-view.js` 負責 per-pet controls，`app.js` 組合 TEST booking payload 和 mutation，`styles.css` 提供 mobile-first 狀態色；Node automated tests 對五款完整正文逐字比對，並覆蓋 eligibility matrix 和單隻 pet IDs。
+- 本輪維持既有 LittleLand_TEST V11；新增內容全為 Staff 前端/renderer/tests，不寫 Production、客人資料、付款或實際 WhatsApp，不部署 Google Apps Script、不 merge main。

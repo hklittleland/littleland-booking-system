@@ -111,3 +111,54 @@ test("cancelled bookings allow manual refunds but not new fee or pet changes", (
   assert.match(html, /CANCELLED-DEP/);
   assert.doesNotMatch(html, /bookingAdjustmentForm|bookingPetCountForm/);
 });
+
+
+test("each pet card exposes a fee form bound only to that pet ID", () => {
+  const view = loadView();
+  const html = view.renderPetAdjustmentControls({
+    booking: { bookingStatus: "CONFIRMED", nights: 2 },
+    pet: { petId: "PET-1", name: "Mochi" },
+    adjustments: [
+      { petId: "PET-1", petNameSnapshot: "Mochi", description: "每日梳毛", amount: 100, reason: "照顧需要", status: "RECORDED", createdByStaffName: "Yip" },
+      { petId: "PET-2", petNameSnapshot: "Pudding", description: "餵藥", amount: 160, reason: "另一隻毛孩", status: "RECORDED" },
+    ],
+  });
+  assert.match(html, /data-pet-adjustment-form/);
+  assert.match(html, /data-pet-id="PET-1"/);
+  assert.match(html, /data-pet-name="Mochi"/);
+  assert.match(html, /只會套用到 Mochi/);
+  assert.match(html, /每日餵藥 1 次 · HK\$80 × 晚數/);
+  assert.match(html, /每日餵藥 2 次 · HK\$150 × 晚數/);
+  assert.match(html, /每日梳毛/);
+  assert.match(html, /Yip/);
+  assert.doesNotMatch(html, /Pudding|PET-2|另一隻毛孩/);
+});
+
+test("per-pet fee presets use the approved fixed prices multiplied by the actual stay nights", () => {
+  const view = loadView();
+  assert.equal(view.feePreset("groom_once", 4).amount, 70);
+  assert.equal(view.feePreset("groom_daily", 4).amount, 200);
+  assert.equal(view.feePreset("medicine_once", 4).amount, 320);
+  assert.equal(view.feePreset("medicine_twice", 4).amount, 600);
+  assert.equal(view.feePreset("groom_daily", 4).formula, "HK$50 × 4 晚 = HK$200.00");
+  assert.equal(view.feePreset("custom", 4), null);
+});
+
+test("per-pet fees are not editable for cancelled bookings and missing pet IDs are not guessed", () => {
+  const view = loadView();
+  const cancelled = view.renderPetAdjustmentControls({
+    booking: { bookingStatus: "CANCELLED", nights: 1 },
+    pet: { petId: "PET-1", name: "Mochi" },
+    adjustments: [],
+  });
+  assert.doesNotMatch(cancelled, /data-pet-adjustment-form/);
+  assert.match(cancelled, /已取消預約不可新增費用/);
+
+  const missingId = view.renderPetAdjustmentControls({
+    booking: { bookingStatus: "CONFIRMED", nights: 1 },
+    pet: { name: "Legacy Pet" },
+    adjustments: [],
+  });
+  assert.doesNotMatch(missingId, /data-pet-adjustment-form/);
+  assert.match(missingId, /缺少寵物 ID/);
+});

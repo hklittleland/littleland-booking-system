@@ -70,6 +70,68 @@
       '</fieldset>';
   }
 
+  function feePreset(key, nights) {
+    var count = Math.max(1, Math.floor(Number(nights) || 1));
+    var presets = {
+      groom_once: { description: "單次梳毛", unit: 70, multiplier: 1, unitLabel: "次" },
+      groom_daily: { description: "每日梳毛", unit: 50, multiplier: count, unitLabel: "晚" },
+      medicine_once: { description: "每日餵藥 1 次", unit: 80, multiplier: count, unitLabel: "晚" },
+      medicine_twice: { description: "每日餵藥 2 次", unit: 150, multiplier: count, unitLabel: "晚" },
+    };
+    var preset = presets[String(key || "")];
+    if (!preset) return null;
+    var total = Math.round(preset.unit * preset.multiplier * 100) / 100;
+    return {
+      description: preset.description,
+      amount: total,
+      formula: "HK$" + preset.unit + " × " + preset.multiplier + " " + preset.unitLabel + " = " + money(total),
+    };
+  }
+
+  function renderPetAdjustmentControls(options) {
+    options = options || {};
+    var booking = options.booking || {};
+    var pet = options.pet || {};
+    var adjustments = Array.isArray(options.adjustments) ? options.adjustments : [];
+    var pending = Boolean(options.pending);
+    var petId = String(pet.petId || "");
+    var petName = String(pet.name || pet.petName || "此毛孩");
+    if (!petId) {
+      return '<div class="pet-fee-tools notice">此毛孩資料缺少寵物 ID，暫不能新增個別附加費；請先檢查預約資料。</div>';
+    }
+    var rows = adjustments.filter(function (item) {
+      return String(item.petId || "") === petId || (!item.petId && String(item.petNameSnapshot || "") === petName);
+    }).map(function (item) {
+      var signed = Number(item.amount || 0);
+      var colorClass = signed < 0 ? "money-credit" : "money-charge";
+      return '<article class="change-line"><div><strong>' + escapeHtml(item.description || item.type || "費用調整") + '</strong>' +
+        '<p>' + escapeHtml(item.reason || "") + '</p><small>' + escapeHtml(item.createdAt || "") + ' · ' +
+        escapeHtml(item.createdByStaffName || item.createdByStaffId || "") + ' · ' + escapeHtml(item.status || "") +
+        '</small></div><strong class="' + colorClass + '">' + (signed < 0 ? "−" : "+") +
+        escapeHtml(money(Math.abs(signed))) + '</strong></article>';
+    }).join("") || '<p class="muted">此毛孩暫無附加費紀錄。</p>';
+    var disabled = pending ? " disabled" : "";
+    if (booking.bookingStatus === "CANCELLED") {
+      return '<section class="pet-fee-tools"><strong>🐾 ' + escapeHtml(petName) + ' 個別附加費</strong>' +
+        '<p class="muted">已取消預約不可新增費用；保留此毛孩的歷史紀錄。</p><div class="pet-fee-ledger">' + rows + '</div></section>';
+    }
+    return '<details class="pet-fee-tools"><summary>🐾 為「' + escapeHtml(petName) + '」新增／減少附加費</summary>' +
+      '<p class="muted">這張表只會套用到 ' + escapeHtml(petName) + '；其他毛孩的費用不會改變。不同毛孩需不同服務或金額時，請在各自資料卡分開記錄。</p>' +
+      '<form class="field pet-fee-form" data-pet-adjustment-form data-pet-id="' + escapeHtml(petId) + '" data-pet-name="' +
+      escapeHtml(petName) + '" data-nights="' + escapeHtml(booking.nights || 1) + '" autocomplete="off">' +
+      '<label>常用項目（會按住宿晚數預填）</label><select data-pet-fee-preset name="preset"' + disabled + '>' +
+      '<option value="">自訂項目</option><option value="groom_once">單次梳毛 · HK$70 一次</option>' +
+      '<option value="groom_daily">每日梳毛 · HK$50 × 晚數</option><option value="medicine_once">每日餵藥 1 次 · HK$80 × 晚數</option>' +
+      '<option value="medicine_twice">每日餵藥 2 次 · HK$150 × 晚數</option></select>' +
+      '<p class="field-help" data-pet-fee-preset-help>可選常用項目或輸入自訂服務；預填金額仍可修改。</p>' +
+      '<label>項目名稱</label><input name="description" data-pet-fee-description maxlength="160" required' + disabled + '>' +
+      '<label>操作</label><select name="direction" data-pet-fee-direction' + disabled + '><option value="add">新增收費</option><option value="reduce">減少／抵扣</option></select>' +
+      '<label>金額（HK$）</label><input name="amount" data-pet-fee-amount type="number" min="0.01" step="0.01" inputmode="decimal" required' + disabled + '>' +
+      '<label>原因</label><textarea name="reason" rows="2" maxlength="500" required' + disabled + '></textarea>' +
+      '<button class="btn" type="submit"' + disabled + '>儲存「' + escapeHtml(petName) + '」費用</button></form>' +
+      '<div class="pet-fee-ledger"><h4>此毛孩附加費紀錄</h4>' + rows + '</div></details>';
+  }
+
   function render(options) {
     options = options || {};
     var booking = options.booking || {};
@@ -142,11 +204,11 @@
       (creditDue > 0 ? '<p class="money-credit">多收／待人工退款 ' + escapeHtml(money(creditDue)) + '；不會自動退款。</p>' : "") +
       (depositExceedsTotal > 0 ? '<p class="notice">目前住宿總額低於應收訂金 ' + escapeHtml(money(depositExceedsTotal)) + '；訂金仍按基本房費 50% 計算，請人工核對費用調整。</p>' : "") +
       '<small>現金備用金／按金獨立計算，不加入住宿總額、訂金或尾數。</small></div>' +
-      '<details class="change-panel"><summary>增加／減少附加費（可指定每隻寵物）</summary>' +
+      '<details class="change-panel"><summary>整張預約／多隻寵物費用調整（進階）</summary>' +
       '<form id="bookingAdjustmentForm" class="field change-form"><label>項目說明</label><input name="description" maxlength="160" required>' +
       '<label>操作</label><select name="direction"><option value="add">新增收費</option><option value="reduce">減少／抵扣</option></select>' +
       '<label>每項／每隻金額（HK$）</label><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required>' +
-      '<fieldset><legend>寵物範圍</legend><p class="muted">不選寵物代表整張預約的項目；選多隻時按每隻金額各建立一行。不同毛孩有不同服務或金額時，請每次只選一隻分開新增／減少。</p>' + petOptions + '</fieldset>' +
+      '<fieldset><legend>適用範圍（進階）</legend><p class="muted">單隻毛孩的梳毛／餵藥請使用上方對應毛孩資料卡的專屬表單；這裏適合整張預約費用或多隻毛孩同額的批次操作。不同金額請逐隻記錄。</p>' + petOptions + '</fieldset>' +
       '<label>原因</label><textarea name="reason" rows="2" maxlength="500" required></textarea>' +
       '<button class="btn"' + disabled + '>儲存費用更改</button></form></details>' +
       refundPanel +
@@ -164,6 +226,25 @@
 
   function bind(app) {
     if (!app) return;
+    app.querySelectorAll("[data-pet-adjustment-form]").forEach(function (form) {
+      var presetSelect = form.querySelector("[data-pet-fee-preset]");
+      var descriptionInput = form.querySelector("[data-pet-fee-description]");
+      var amountInput = form.querySelector("[data-pet-fee-amount]");
+      var helper = form.querySelector("[data-pet-fee-preset-help]");
+      if (!presetSelect) return;
+      presetSelect.addEventListener("change", function () {
+        var preset = feePreset(presetSelect.value, form.dataset.nights);
+        if (!preset) {
+          if (descriptionInput) descriptionInput.value = "";
+          if (amountInput) amountInput.value = "";
+          if (helper) helper.textContent = "輸入自訂項目及金額；如不同毛孩費用不同，請逐隻記錄。";
+          return;
+        }
+        if (descriptionInput) descriptionInput.value = preset.description;
+        if (amountInput) amountInput.value = preset.amount.toFixed(2);
+        if (helper) helper.textContent = preset.formula + "；你仍可修改金額。";
+      });
+    });
     var petForm = app.querySelector("#bookingPetCountForm");
     if (petForm) {
       var addToggle = petForm.querySelector('[name="addPet"]');
@@ -252,6 +333,8 @@
 
   root.LittleLandBookingChangesView = Object.freeze({
     render: render,
+    renderPetAdjustmentControls: renderPetAdjustmentControls,
+    feePreset: feePreset,
     bind: bind,
     activePets: activePets,
     roomLimit: roomLimit,

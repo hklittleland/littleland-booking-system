@@ -1170,3 +1170,101 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-
   .whatsapp-template-card .action-grid { grid-template-columns: 1fr; }
   .whatsapp-template-card .action-grid .btn { width: 100%; }
 }
+
+
+/* Per-pet surcharge controls: visible in each pet card, separate from booking-wide adjustments. */
+.pet-fee-tools {
+  min-width: 0;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #eadcf2;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fff8fc, #f7f5ff);
+}
+.pet-fee-tools > summary {
+  color: #68439e;
+  font-weight: 800;
+  cursor: pointer;
+  line-height: 1.45;
+}
+.pet-fee-tools > p { margin: 9px 0; }
+.pet-fee-form {
+  display: grid;
+  gap: 9px;
+  margin: 10px 0 14px;
+  padding: 12px;
+  border: 1px solid #eee4f5;
+  border-radius: 12px;
+  background: rgba(255,255,255,.88);
+}
+.pet-fee-form .btn { width: 100%; }
+.pet-fee-ledger { min-width: 0; margin-top: 10px; }
+.pet-fee-ledger h4 { margin: 0 0 8px; color: #53436c; }
+.money-credit { color: #247443; }
+.money-charge { color: #a3473f; }
+
+/* Five fixed WhatsApp templates stay visible with a clear state and reason. */
+.whatsapp-message-panel > header { margin-bottom: 12px; }
+.whatsapp-message-panel > header p { margin: 4px 0 0; color: #696174; }
+.whatsapp-template-list { display: grid; gap: 12px; min-width: 0; }
+.whatsapp-template-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #e6dfee;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #fff, #fcf8ff);
+}
+.whatsapp-template-card[data-wa-eligible="false"] { background: #faf9fb; border-color: #e8e4ea; }
+.whatsapp-template-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.whatsapp-template-heading h3 { margin: 0; }
+.whatsapp-template-heading > div { min-width: 0; }
+.whatsapp-template-number {
+  display: inline-grid;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #8c65d9, #e98ab8);
+  font-weight: 800;
+}
+.whatsapp-template-state {
+  display: inline-block;
+  margin: 5px 0 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.whatsapp-template-state.is-available { color: #226c3d; background: #e6f5e9; }
+.whatsapp-template-state.is-unavailable { color: #9b3e3e; background: #fdecec; }
+.whatsapp-template-help { margin: 0; color: #765245; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.whatsapp-draft-label { font-weight: 700; color: #4f4262; }
+.whatsapp-template-card textarea[data-wa-draft] {
+  width: 100%;
+  min-width: 0;
+  min-height: 180px;
+  box-sizing: border-box;
+  padding: 11px;
+  border: 1px solid #ded6e8;
+  border-radius: 10px;
+  background: #fff;
+  color: #302a36;
+  font: 13px/1.55 "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.whatsapp-template-card textarea[data-wa-draft][readonly] { background: #f5f3f7; color: #655e6b; }
+.whatsapp-template-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.whatsapp-template-actions > * { min-width: 0; width: 100%; }
+.whatsapp-template-actions button:disabled { opacity: .52; cursor: not-allowed; }
+@media (max-width: 520px) {
+  .pet-fee-tools { padding: 10px; }
+  .pet-fee-form { padding: 10px; }
+  .whatsapp-template-card { padding: 11px; }
+  .whatsapp-template-actions { grid-template-columns: 1fr; }
+  .whatsapp-template-card textarea[data-wa-draft] { min-height: 210px; font-size: 12.5px; }
+}
