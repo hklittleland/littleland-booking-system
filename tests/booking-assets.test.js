@@ -15,6 +15,12 @@ function assertWebp(relativePath) {
   assert.equal(image.toString('ascii', 0, 4), 'RIFF', `${relativePath} must be a WebP RIFF file`);
   assert.equal(image.toString('ascii', 8, 12), 'WEBP', `${relativePath} must be a WebP image`);
 }
+function rulesFor(selector) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const matches = [...css.matchAll(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`, 'g'))];
+  assert.ok(matches.length, `expected CSS rule for ${selector}`);
+  return matches.map((match) => match[1]);
+}
 test('booking brand mark points to the supplied LittleLand logo asset', () => {
   assert.match(html, /src="assets\/littleland-logo\.jpg\?v=20261101-flowfix1"/);
   assert.match(html, /alt="LittleLand 小寵物酒店標誌"/);
@@ -23,6 +29,7 @@ test('booking brand mark points to the supplied LittleLand logo asset', () => {
 });
 test('public guest page loads the TEST API client before the booking application', () => {
   assert.match(html, /api-client\.js\?v=20261101-flowfix1[\s\S]*?booking\.js\?v=20261101-flowfix1/);
+  assert.match(html, /styles\.css\?v=20261101-visualfix2/);
   assert.ok(fs.existsSync(path.join(bookingRoot, 'api-client.js')));
   assert.match(fs.readFileSync(path.join(bookingRoot, 'api-client.js'), 'utf8'), /availability/);
 });
@@ -43,14 +50,19 @@ test('every room photo referenced by the room choices exists', () => {
   assert.ok(roomImages.length >= 5, 'expected room photos for priced room choices');
   for (const image of roomImages) assert.ok(fs.existsSync(assetPath(image)), `missing booking room image: ${image}`);
 });
-test('hamster box photo keeps its full square content inside the shared room-photo frame', () => {
+test('hamster box photo fills the same 16:9 room-photo frame and is enlarged', () => {
   assert.match(js, /id:\s*'HAMSTER_BOX',[^\n]*price:\s*65[^\n]*image:\s*'room-065\.webp'/);
   assert.match(js, /room-card--contained-photo/);
   assert.match(css, /\.room-photo-wrap\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
-  assert.match(css, /\.room-card--contained-photo \.room-photo\s*\{[^}]*object-fit:\s*contain/);
+  const photoRules = rulesFor('.room-card--contained-photo .room-photo');
+  assert.ok(photoRules.some((rule) => /object-fit:\s*cover/.test(rule) && /object-position:\s*center\s+24%/.test(rule) && /padding:\s*0/.test(rule)));
   assertWebp('room-065.webp');
 });
-test('brand and hero image edges blend softly into the booking-page palette', () => {
-  assert.match(css, /\.brand-mark\s*\{[^}]*mask-image:/);
-  assert.match(css, /\.hero-pets\s*\{[^}]*mask-image:/);
+test('logo, hero artwork and photo edges use the final visual rules, not earlier resets', () => {
+  const logoRules = rulesFor('.brand img.brand-mark');
+  const heroBackdropRules = rulesFor('.hero-art::before');
+  const heroImageRules = rulesFor('.hero-pets');
+  assert.ok(logoRules.some((rule) => /border-radius:\s*50%/.test(rule) && /box-shadow:\s*0 7px 18px/.test(rule)));
+  assert.ok(heroBackdropRules.some((rule) => /filter:\s*blur\(12px\)/.test(rule)));
+  assert.ok(heroImageRules.some((rule) => /-webkit-mask-image:\s*radial-gradient/.test(rule) && /filter:\s*drop-shadow/.test(rule)));
 });
