@@ -8,6 +8,7 @@ var LITTLELAND_API_RETRYABLE_CODES = Object.freeze([
 ]);
 
 function doGet(event) {
+  littlelandResetTestSpreadsheetRequestCache_();
   var requestId = littlelandNewRequestId_();
   try {
     var parameters = event && event.parameter ? event.parameter : {};
@@ -54,6 +55,7 @@ function doGet(event) {
 }
 
 function doPost(event) {
+  littlelandResetTestSpreadsheetRequestCache_();
   var requestId = littlelandNewRequestId_();
   var lock = null;
   var request = null;
@@ -344,13 +346,19 @@ function littlelandBookingSuccess_(bookingId, form, pricing, requestId) {
 }
 
 function littlelandCreateBookingId_(existingBookings) {
-  var existingIds = {};
-  existingBookings.forEach(function (booking) { existingIds[String(booking.bookingId || '')] = true; });
+  var existingIds = {},
+    existingReferences = {};
+  existingBookings.forEach(function (booking) {
+    var id = String(booking.bookingId || ''),
+      match = id.match(/^TEST-LL-\d{8}-([A-Z0-9]{8})$/i);
+    existingIds[id] = true;
+    if (match) existingReferences[match[1].toUpperCase()] = true;
+  });
   for (var attempt = 0; attempt < 5; attempt += 1) {
     var datePart = Utilities.formatDate(new Date(), 'Asia/Hong_Kong', 'yyyyMMdd');
     var uuidPart = Utilities.getUuid().replace(/-/g, '').substring(0, 8).toUpperCase();
     var bookingId = 'TEST-LL-' + datePart + '-' + uuidPart;
-    if (!existingIds[bookingId]) return bookingId;
+    if (!existingIds[bookingId] && !existingReferences[uuidPart]) return bookingId;
   }
   throw littlelandApiError_('SYSTEM_UNAVAILABLE', '無法產生唯一 TEST Booking ID。', true);
 }

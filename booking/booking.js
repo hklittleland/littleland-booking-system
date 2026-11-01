@@ -907,6 +907,8 @@
 
   function completionMarkup() {
     const price = visiblePricing();
+    const fullBookingId = state.serverBooking.bookingId;
+    const shortReference = window.LittleLandBookingReference.format(fullBookingId);
     const names = state.form.pets.map((pet) => pet.name.trim()).filter(Boolean).join('、');
     const petType = SPECIES[state.form.species]?.label || '寵物';
     const petDescription = `${petType} · ${price.quantity || '—'} 隻${names ? `（${names}）` : ''}`;
@@ -916,7 +918,7 @@
       '',
       '你好，我已提交預約申請，以下是簡單摘要，麻煩協助確認：',
       '',
-      `🧾 預約申請編號：${state.serverBooking.bookingId}`,
+      `🧾 預約參考號：${shortReference}`,
       `👤 家長：${state.form.parentName}`,
       `📞 聯絡電話：${state.form.phone}`,
       `🐾 寵物：${petDescription}`,
@@ -936,7 +938,7 @@
       <h2>已收到您的預約申請！</h2>
       <p>謝謝你把毛孩的照顧需要告訴我們。LittleLand 將確認預約及提供訂金付款安排。</p>
       <span class="demo-label">TEST 預約記錄 · 尚待 LittleLand 確認</span>
-      <div><span class="booking-reference">Booking ID：${escapeHtml(state.serverBooking.bookingId)}</span></div>
+      <div><span class="booking-reference">Booking reference：${escapeHtml(shortReference)}</span></div>
       <div class="completion-details"><h3>本次畫面摘要</h3>
         ${completionRow('家長', state.form.parentName)}
         ${completionRow('寵物', petDescription)}

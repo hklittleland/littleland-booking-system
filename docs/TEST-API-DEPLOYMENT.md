@@ -2,7 +2,7 @@
 
 **Environment:** TEST only
 **Apps Script project:** `LittleLand TEST Booking API`
-**Deployment:** Version 8 (updated 2026-10-31; existing TEST Web App deployment, same URL)
+**Deployment:** Version 9 (updated 2026-11-01; existing TEST Web App deployment, same URL)
 **Deployment ID:** `AKfycby6ecJFVBzQHAwGXS9VZlMLOQ3q3DbZh12Ssjg5nxUBGn1S61Sq_MGzZpmIgNm5EQ_i`
 
 ## API URL
@@ -88,3 +88,47 @@ This final result supersedes the earlier “pending” checkpoint above. It used
 - Google Sheets read-back verified both `Payments` rows (`DEPOSIT`, HK$32.50, `PAID`), one `Pets` row per booking, both `staff.confirmDeposit` Logs, the two completed Idempotency rows, and current room allocations. For the overlapping interval, the only active booking is the first booking using `C1`; the pending conflict booking has no allocation. The TEST `Sessions` sheet contained 13 rows and 0 active sessions after logout.
 - The earlier `fetch failed` symptom was not reproduced: the v8 login followed the usual Apps Script redirect and returned HTTP 200; logout also returned HTTP 200. Its historical root cause remains unproven. The prior v7 date blocker was `DATE_CHECKOUT_NOT_AFTER_CHECKIN` when a Sheet timestamp was passed to a strict date-only room validator. Version 8 normalizes Sheet Date/ISO values at the Staff inventory boundary while leaving Guest API date validation strict.
 - Latest full local automated suite: `node --test tests/apps-script/*.test.js tests/*.test.js` — **111 passed, 0 failed**. The existing live 390×844 Playwright smoke covered all eight Staff navigation sections and no horizontal overflow; Version 8 changes only backend date normalization, not the Staff UI.
+
+
+## Staff UX baseline before v9 — 2026-11-01
+
+A read-only TEST API probe (synthetic account; one login/logout; no booking/payment mutation) measured `login 12,433 ms`, `dashboard 31,039 ms`, `calendar 15,387 ms`, `bookings 18,122 ms`, `followups 16,048 ms`, `payments 14,008 ms`, `customers 13,081 ms`, `revenue 14,311 ms`, `bookingDetail 13,848 ms`, `logout 6,870 ms`. The API returned 12 bookings and 12 customers; the requested-month payment list had 0 entries. Critically, the calendar response contained 0 bookings despite TEST bookings existing. Code inspection identified that raw Google Sheets `Date` cells were compared with date-only `YYYY-MM-DD` values before HKT normalization. The v9 change is intended to correct this, and post-deploy data/latency must be measured before claiming improvement.
+
+
+## Staff UX v9 performance and mobile verification — 2026-11-01
+
+The existing TEST Web App deployment was updated to Version 9; deployment ID and API URL are unchanged. All requests and read-backs below used `LittleLand_TEST` and synthetic accounts/data only. No Production data was accessed or modified.
+
+### Read-only API timing comparison
+
+Each cell is one request-level measurement in the same cloud test setup, not a p50/p95 benchmark or a guarantee of iPhone Safari network latency.
+
+| Action | v8 baseline (ms) | v9 (ms) |
+| --- | ---: | ---: |
+| Login | 12,433 | 9,896 |
+| Dashboard | 31,039 | 7,518 |
+| Calendar | 15,387 | 4,532 |
+| Bookings | 18,122 | 4,003 |
+| Follow-ups | 16,048 | 6,805 |
+| Payments | 14,008 | 6,516 |
+| Customers | 13,081 | 4,684 |
+| Revenue | 14,311 | 5,324 |
+| Confirmed Booking Detail | 13,848 | 4,458 |
+| Deposit-conflict Booking Detail | n/a | 4,873 |
+| Logout | 6,870 | 4,295 |
+
+The v9 probe returned 12 bookings and 12 customers; November 2026 calendar returned 12 bookings; Dashboard and Follow-ups each surfaced one room conflict/follow-up. The November payment list returned 0 items; the payment summary displayed HK$89 received today. Login and all API requests, including logout, succeeded. The measurements are faster than the v8 baseline, but login and several reads still take multiple seconds; manual iPhone Safari UX acceptance remains outstanding.
+
+### 390×844 mobile UI smoke
+
+The read-only mobile smoke visited Dashboard, Room Calendar, Bookings, Follow-ups, the conflict Booking Detail, Payments, Customers, Revenue and Settings/Logout. Every page remained 390 px wide with no horizontal overflow, no page JavaScript errors and no TEST API network failures. The calendar showed 12 API bookings across 16 marked days and 10 room cards (2 green markers, 16 orange markers and 1 red marker). Staff time strings displayed `HH:mm` and date-plus-`HH:mm`, without seconds or timezone offsets.
+
+The conflict detail remained `PENDING_DEPOSIT`, `depositStatus=PAID`, with no allocated room and a room-conflict flag. Computed styles showed the unpaid/follow-up badges red (`rgb(255, 240, 242)` background, `rgb(166, 45, 64)` text) and the paid-deposit badge green (`rgb(230, 245, 235)` background, `rgb(36, 122, 81)` text); colors did not change booking or payment state.
+
+### Synthetic data read-back and edit-form regression
+
+Direct Sheets read-back confirmed 12 Bookings, 25 Pets, 3 Payments, 37 Logs, 34 IdempotencyKeys and 42 Sessions. All Booking/Pet IDs remained unchanged; only approved fictional profile/contact and pet-name fields changed; payment rows and booking business fields were unchanged. All 12 parent contacts use `TEST-####` phone placeholders and `example.test` email addresses, and all 25 pets have names. Staff edit operations have 14 Logs and 14 unique completed idempotency records. Sessions created by the final smoke/probe were logged out; three unrevoked, unexpired session rows pre-dated this audit and were left untouched to avoid invalidating a possible user session.
+
+A read-only mobile form regression also verified that a male rabbit's pregnancy field is hidden/disabled and omitted from the edit payload; changing to female reveals a required answer; changing back to male clears the stale value; changing to female again requires a fresh answer. The form was not submitted.
+
+The final automated suite is `node --test tests/apps-script/*.test.js tests/*.test.js` — **120 passed, 0 failed**. iPhone Safari manual UX approval is still pending; no commit, push, merge or Production deployment was performed for this follow-up.

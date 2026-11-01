@@ -11,11 +11,16 @@
     ["customers", "客戶", "♡"],
     ["revenue", "基本營收", "↗"],
     ["settings", "設定／登出", "⚙"],
+    ["schedule", "員工排班", "▦"],
+    ["new-booking", "新增預約", "+"],
   ];
   const rooms = ["S1", "S2", "S3", "A1", "A2", "A3", "B1", "B2", "C1", "F1"];
   let errorText = "",
     busy = false,
-    pendingAction = false;
+    pendingAction = false,
+    loadSequence = 0;
+  const readCache = new Map(),
+    readCacheTtlMs = 5000;
   const esc = (v) =>
     String(v == null || v === "" ? "—" : v).replace(
       /[&<>"']/g,
@@ -28,6 +33,7 @@
           "'": "&#39;",
         })[c],
     );
+  const escValue = StaffEditFormUtils.escapeFormValue;
   const arr = (v) => (Array.isArray(v) ? v : []);
   const get = (o, ...ks) => {
     for (const k of ks) if (o && o[k] != null && o[k] !== "") return o[k];
@@ -35,7 +41,9 @@
   };
   const amount = (v) =>
     v == null || v === "" ? "—" : `HK$${Number(v).toLocaleString("zh-HK")}`;
-  const idOf = (b) => get(b, "bookingId", "id"),
+  const fullIdOf = (b) => String(get(b, "bookingId", "id")),
+    shortRef = (b) => window.LittleLandBookingReference ? window.LittleLandBookingReference.format(fullIdOf(b)) : fullIdOf(b),
+    idOf = (b) => get(b, "bookingId", "id"),
     statusOf = (b) => get(b, "bookingStatus", "status");
   const labels = {
     PENDING_CONFIRMATION: "待確認",
@@ -60,8 +68,33 @@
     GUINEA_PIG: "天竺鼠",
     HAMSTER: "倉鼠",
   };
-  const friendly = (v) =>
-    ({
+  function formatStaffTime(value) {
+    const text = value instanceof Date ? value.toISOString() : String(value ?? "");
+    if (!text || text === "—") return text;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    const range = text.match(
+      /^(\d{1,2}:\d{2})(?::\d{2})?\s*[–-]\s*(\d{1,2}:\d{2})(?::\d{2})?$/,
+    );
+    if (range) return `${range[1]}–${range[2]}`;
+    const clock = text.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (clock) return `${clock[1].padStart(2, "0")}:${clock[2]}`;
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(text)) return text;
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) return text;
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Hong_Kong",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}`;
+  }
+  const friendly = (v) => {
+    const translated = ({
       male: "男孩子",
       female: "女孩子",
       month: "月",
@@ -72,9 +105,34 @@
       NO: "否",
       yes: "是",
       no: "否",
-    })[String(v)] || v;
-  const status = (v) =>
-    `<span class="badge ${["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "COMPLETED"].includes(v) ? "status-green" : ["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].includes(v) ? "status-orange" : v === "CANCELLED" ? "status-gray" : "status-purple"}">${esc(labels[v] || v)}</span>`;
+    })[String(v)];
+    if (translated !== undefined) return translated;
+    return typeof v === "string" || v instanceof Date ? formatStaffTime(v) : v;
+  };
+  const status = (v) => {
+    const className =
+      ["CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "COMPLETED"].includes(v)
+        ? "status-green"
+        : v === "PENDING_DEPOSIT"
+          ? "status-red"
+          : v === "PENDING_CONFIRMATION"
+            ? "status-orange"
+            : v === "CANCELLED"
+              ? "status-gray"
+              : "status-purple";
+    return `<span class="badge ${className}">${esc(labels[v] || v)}</span>`;
+  };
+  const truthy = (v) => v === true || String(v).toLowerCase() === "true";
+  function depositBadge(b) {
+    if (String(b?.depositStatus || "").toUpperCase() === "PAID")
+      return '<span class="badge status-green">已收訂金</span>';
+    return "";
+  }
+  function followupBadge(b) {
+    return b?.roomConflict === true || truthy(b?.followUpRequired)
+      ? '<span class="badge status-red">需跟進</span>'
+      : "";
+  }
   function toast(t) {
     const e = document.getElementById("toast");
     if (e) {
@@ -84,9 +142,19 @@
     }
   }
   function clearPrivate() {
+    readCache.clear();
     store.clear();
     store.state.followupDraft = "";
     store.state.depositConflictBookingId = "";
+  }
+  function pageCacheKey(page) {
+    const current = StaffRouter.current();
+    if (page === "detail") return `detail:${String(current.id || "")}`;
+    if (page === "calendar" || page === "payments" || page === "revenue") {
+      const d = page === "calendar" ? store.state.calendarDate || new Date() : new Date();
+      return `${page}:${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    }
+    return page;
   }
   function handleAuth(e) {
     if (
@@ -119,8 +187,10 @@
         store.setToken(d.token);
         store.state.staff = d.staff || {};
         errorText = "";
+        if (StaffRouter.current().page !== "dashboard") {
+          history.replaceState(null, "", "#/dashboard");
+        }
         await loadPageData("dashboard");
-        StaffRouter.go("dashboard");
       } catch (x) {
         errorText = x.message;
       } finally {
@@ -164,13 +234,13 @@
     return `<span class="room-conflict-warning" role="alert"><strong>房間衝突</strong> — ${paid ? "訂金已收" : "訂金尚未確認已收"}；目前沒有可用房間。未有房間分配，預約未確認。請員工手動聯絡客人跟進；請勿承諾房間。</span>`;
   }
   function card(b) {
-    return `<button class="booking-card" data-detail="${esc(idOf(b))}"><span class="title">🐾 ${esc(idOf(b))} · ${esc(get(b, "customerName", "parentName"))}</span>${conflictNotice(b)}<span class="meta">${esc(get(b, "petNames"))}　${esc(get(b, "checkinDate", "checkInDate"))} ${esc(get(b, "checkinTime"))} → ${esc(get(b, "checkoutDate", "checkOutDate"))} ${esc(get(b, "checkoutTime"))}</span><br>${status(statusOf(b))} <span class="meta">${esc(roomNames[b.roomTypeId] || get(b, "roomTypeId"))}</span></button>`;
+    return `<button class="booking-card" data-detail="${esc(fullIdOf(b))}"><span class="title">🐾 ${esc(shortRef(b))} <small>${esc(fullIdOf(b))}</small> · ${esc(get(b, "customerName", "parentName"))}</span>${conflictNotice(b)}<span class="meta">${esc(get(b, "petNames"))}　${esc(get(b, "checkinDate", "checkInDate"))} ${esc(friendly(get(b, "checkinTime")))} → ${esc(get(b, "checkoutDate", "checkOutDate"))} ${esc(friendly(get(b, "checkoutTime")))}</span><br>${status(statusOf(b))} ${depositBadge(b)} ${followupBadge(b)} <span class="meta">${esc(roomNames[b.roomTypeId] || get(b, "roomTypeId"))}</span></button>`;
   }
   const list = (a, e = "目前沒有資料") =>
     arr(a).length
       ? arr(a).map(card).join("")
       : `<div class="empty">${esc(e)}</div>`;
-  async function loadPageData(page) {
+  async function loadPageData(page, options = {}) {
     if (!store.token) return;
     const map = {
         dashboard: "dashboard",
@@ -182,24 +252,39 @@
         revenue: "revenue",
         settings: "settings",
         detail: "bookingDetail",
+        schedule: "schedules",
       },
       action = map[page];
     if (!action) return;
+    const cacheKey = pageCacheKey(page),
+      cachedAt = readCache.get(cacheKey);
+    if (!options.force && cachedAt && Date.now() - cachedAt < readCacheTtlMs) {
+      store.state.loading = false;
+      errorText = "";
+      return;
+    }
+    const sequence = ++loadSequence;
     store.state.loading = true;
     errorText = "";
     paint();
     try {
       let p = {};
       if (page === "detail") p = { bookingId: StaffRouter.current().id };
+      if (page === "schedule") { const d=store.state.calendarDate||new Date(); p.month=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
+      if (page === "revenue") {
+        p.year = store.state.revenueYear || "2026";
+        p.month = store.state.revenueMonth || `${p.year}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+      }
       if (page === "calendar") {
         const d = store.state.calendarDate || new Date();
         p.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       }
-      if (page === "revenue" || page === "payments") {
+      if (page === "payments") {
         const d = new Date();
         p.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       }
       const d = await StaffAPI.request(action, p, store.token);
+      if (sequence !== loadSequence) return;
       if (page === "dashboard") {
         store.state.dashboard = d;
         store.state.summary = d.counts || {};
@@ -215,21 +300,24 @@
       } else if (page === "customers")
         store.state.customers = d.customers || [];
       else if (page === "revenue") store.state.revenue = d;
+      else if (page === "schedule") store.state.schedules = d;
       else if (page === "settings") store.state.settings = d;
       else if (page === "detail") {
         store.state.detail = d;
         store.state.booking = d.detail || d.booking || {};
       }
+      readCache.set(cacheKey, Date.now());
     } catch (e) {
+      if (sequence !== loadSequence) return;
       if (!handleAuth(e)) errorText = e.message;
     } finally {
-      store.state.loading = false;
+      if (sequence === loadSequence) store.state.loading = false;
     }
   }
   function dashboard() {
-    const d = store.state.dashboard || {},
-      c = d.counts || {};
-    return `${head("概覽", "今日營運與近期預約")}<div class="stats">${stat("今日入住", c.todayCheckins)}${stat("今日退房", c.todayCheckouts)}${stat("待確認", c.pendingConfirmation)}${stat("待付訂金", c.pendingDeposit)}${stat("已確認", c.confirmed)}${stat("待跟進", c.followUp)}${stat("房間衝突", c.roomConflicts ?? d.roomConflictCount ?? arr(d.roomConflicts).length)}</div><section class="card"><h2>房間衝突</h2>${list(d.roomConflicts, "目前沒有房間衝突")}</section><section class="card"><h2>今日入住／退房時間表</h2>${list(d.todaySchedule, "今日沒有入住／退房預約")}</section><section class="card"><h2>需要跟進</h2>${list(d.followups, "目前沒有需要跟進的預約")}</section><section class="card"><h2>近期預約</h2>${list(d.recent, "目前沒有近期預約")}</section>`;
+    const d = store.state.dashboard || {}, c = d.counts || {};
+    const revenue = store.state.revenue || {};
+    return `${head("概覽", "今日營運與近期預約")}<div class="stats">${stat("今日入住", c.todayCheckins)}${stat("今日退房", c.todayCheckouts)}${stat("待確認", c.pendingConfirmation)}${stat("待付訂金", c.pendingDeposit)}${stat("本月預訂住宿", amount(revenue.monthBookedRevenue ?? revenue.monthAccommodationRevenue))}${stat("本月實際收款", amount(revenue.monthCollected))}</div><p><button class="btn secondary" data-go="schedule">查看員工排班</button> <button class="btn" data-go="new-booking">新增預約</button></p><section class="card"><h2>今日入住／退房提醒</h2>${list(d.todaySchedule, "今日沒有入住／退房預約")}</section><section class="card"><h2>房間衝突／待跟進</h2>${list(d.roomConflicts || d.followups, "目前沒有需處理事項")}</section><section class="card"><h2>近期預約</h2>${list(d.recent, "目前沒有近期預約")}</section>`;
   }
   function bookings() {
     return `${head("預訂", "搜尋及篩選目前 TEST API 預訂清單")}<div class="filters"><div class="field"><label for="bookingQ">Booking ID／客人／電話／寵物</label><input id="bookingQ" placeholder="搜尋"></div><div class="field"><label for="bookingStatus">預訂狀態</label><select id="bookingStatus"><option value="">全部</option>${Object.entries(
@@ -256,62 +344,14 @@
     return arr(v).filter((x) => rooms.includes(x));
   }
   function calendar() {
-    const d = store.state.calendar || {},
-      now = store.state.calendarDate || new Date(),
-      y = now.getFullYear(),
-      m = now.getMonth(),
-      first = new Date(y, m, 1),
-      days = new Date(y, m + 1, 0).getDate(),
-      offset = (first.getDay() + 6) % 7,
-      today = new Date(),
-      selected =
-        store.state.selectedCalendarDate ||
-        (today.getFullYear() === y && today.getMonth() === m
-          ? `${y}-${String(m + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`
-          : `${y}-${String(m + 1).padStart(2, "0")}-01`),
-      bookings = arr(d.bookings),
-      cells = Array(offset).fill(
-        '<div class="day-cell muted" aria-hidden="true"></div>',
-      );
-    for (let n = 1; n <= days; n++) {
-      const date = `${y}-${String(m + 1).padStart(2, "0")}-${String(n).padStart(2, "0")}`,
-        active = bookings.filter(
-          (b) =>
-            ["CONFIRMED", "CHECKED_IN"].includes(statusOf(b)) &&
-            String(b.checkinDate || "") <= date &&
-            String(b.checkoutDate || "") > date &&
-            parseRooms(b).length,
-        ),
-        pend = bookings.some(
-          (b) =>
-            ["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].includes(statusOf(b)) &&
-            String(b.checkinDate || "") <= date &&
-            String(b.checkoutDate || "") > date,
-        );
-      cells.push(
-        `<button class="day-cell ${date === selected ? "selected" : ""}" data-date="${date}" aria-label="${n}日${active.length ? "有已分配房間" : ""}${pend ? "有待處理申請" : ""}"><b>${n}</b><span class="day-markers">${active.length ? '<i class="marker green"></i>' : ""}${pend ? '<i class="marker orange"></i>' : ""}</span></button>`,
-      );
-    }
-    const active = bookings.filter(
-        (b) =>
-          ["CONFIRMED", "CHECKED_IN"].includes(statusOf(b)) &&
-          String(b.checkinDate || "") <= selected &&
-          String(b.checkoutDate || "") > selected,
-      ),
-      pending = bookings.filter(
-        (b) =>
-          ["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].includes(statusOf(b)) &&
-          String(b.checkinDate || "") <= selected &&
-          String(b.checkoutDate || "") > selected,
-      );
-    const roomCards = rooms
-      .map((r) => {
-        const allocations = active.filter((x) => parseRooms(x).includes(r));
-        const conflictRoom = allocations.length > 1;
-        return `<div class="room ${conflictRoom ? "conflict" : allocations.length ? "busy" : ""}"><b>${esc(r)}</b>${conflictRoom ? '<strong class="room-conflict-label">房態衝突</strong>' : allocations.length ? "<strong>已佔房</strong>" : "<span>空房</span>"}${allocations.map((b) => `<article class="room-booking"><p>🐾 ${esc(get(b, "petNames"))}</p><p>${esc(get(b, "checkinDate"))} ${esc(get(b, "checkinTime"))} → ${esc(get(b, "checkoutDate"))} ${esc(get(b, "checkoutTime"))}</p><button class="btn secondary" data-detail="${esc(idOf(b))}">Detail · ${esc(idOf(b))}</button></article>`).join("")}</div>`;
-      })
-      .join("");
-    return `${head("房間月曆", "依入住日含、退房日不含顯示實體房；待處理申請不佔房。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-month="-1">‹ 上月</button><h2>${y}年${m + 1}月</h2><button class="btn secondary" data-month="1">下月 ›</button></div><div class="month-grid">${["一", "二", "三", "四", "五", "六", "日"].map((x) => `<div class="weekday">${x}</div>`).join("")}${cells.join("")}</div><p class="meta">綠色：已確認／入住　橙色：待處理（不佔房）</p></section><section class="card"><h2>${esc(selected)} · 實體房況</h2><div class="room-list">${roomCards}</div><h3 class="section-title">當日待處理申請（不佔房）</h3>${list(pending, "當日沒有待處理申請")}</section>`;
+    const d = store.state.calendar || {}, now = store.state.calendarDate || new Date();
+    const hkt = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Hong_Kong", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const todayISO = hkt.replace(/\//g, "-");
+    const selected = store.state.selectedCalendarDate || (todayISO.slice(0,7) === `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}` ? todayISO : `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`);
+    const helper = window.LittleLandCalendarView;
+    const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.schedules),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
+    const selectedItems = arr(d.bookings).filter(b => String(b.checkinDate||"") === selected || String(b.checkoutDate||"") === selected || (["CONFIRMED","CHECKED_IN"].includes(statusOf(b)) && String(b.checkinDate||"") <= selected && String(b.checkoutDate||"") > selected));
+    return `${head("房間月曆", "香港時間今日提醒；退房日不佔房。待確認及待付訂金不會顯示為佔房。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-month="-1">‹ 上月</button><h2>${now.getFullYear()}年${now.getMonth()+1}月</h2><button class="btn secondary" data-month="1">下月 ›</button><button class="btn" data-today>今日</button></div>${monthHtml}</section><section class="card"><h2>${esc(selected)} · 當日詳情</h2>${list(selectedItems,"當日沒有入住、退房或在住房間")}<h3>在職房間／寵物</h3>${rooms.map(r=>{const b=selectedItems.find(x=>["CONFIRMED","CHECKED_IN"].includes(statusOf(x)) && String(x.checkinDate||"")<=selected && String(x.checkoutDate||"")>selected && parseRooms(x).includes(r)); return `<p>${esc(r)} · ${b?`🐾 ${esc(get(b,"petNames"))} · ${esc(roomNames[b.roomTypeId]||b.roomTypeId)} · ${esc(fullIdOf(b))}`:"空房"}</p>`}).join("")}</section>`;
   }
   function whatsapp(b) {
     const phone = String(b.phone || "").replace(/\D/g, "");
@@ -321,7 +361,7 @@
   }
   function followups() {
     const rows = arr(store.state.followups);
-    return `${head("待跟進", "員工手動聯絡；WhatsApp 僅開啟草稿，不會自動發送。")}${rows.length ? rows.map((b) => `<article class="card"><p><b>${esc(idOf(b))} · ${esc(get(b, "parentName", "customerName"))}</b> ${status(statusOf(b))}</p>${conflictNotice(b)}<p>${esc(get(b, "phone"))} · ${esc(roomNames[b.roomTypeId] || get(b, "roomTypeId"))} · 入住 ${esc(get(b, "checkinDate"))}</p><p>最後聯絡：${esc(get(b, "lastContactedAt"))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p><div class="row">${whatsapp(b)}<button class="btn secondary" data-follow="${esc(idOf(b))}">記錄已聯絡／備註</button><button class="btn" data-detail="${esc(idOf(b))}">開啟預約</button></div></article>`).join("") : '<div class="empty">沒有待跟進預約</div>'}`;
+    return `${head("待跟進", "員工手動聯絡；WhatsApp 僅開啟草稿，不會自動發送。")}${rows.length ? rows.map((b) => `<article class="card followup-item"><p><b>${esc(idOf(b))} · ${esc(get(b, "parentName", "customerName"))}</b> ${status(statusOf(b))} ${depositBadge(b)} ${followupBadge(b)}</p>${conflictNotice(b)}<p>${esc(get(b, "phone"))} · ${esc(roomNames[b.roomTypeId] || get(b, "roomTypeId"))} · 入住 ${esc(get(b, "checkinDate"))}</p><p>最後聯絡：${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p><div class="row">${whatsapp(b)}<button class="btn secondary" data-follow="${esc(idOf(b))}">記錄已聯絡／備註</button><button class="btn" data-detail="${esc(idOf(b))}">開啟預約</button></div></article>`).join("") : '<div class="empty">沒有待跟進預約</div>'}`;
   }
   function payments() {
     const d = store.state.paymentData || {},
@@ -330,7 +370,7 @@
   }
   function customers() {
     const rows = arr(store.state.customers);
-    return `${head("客戶", "搜尋姓名、電話或 Email；歷史預訂連到共同 detail")}<div class="field"><label for="customerQ">姓名／電話／Email</label><input id="customerQ" placeholder="搜尋客戶"></div><div id="customerResults">${
+    return `${head("客戶", "只按標準化電話號碼聚合／搜尋；不會預填客人資料。歷史預訂連到共同 detail")}<div class="field"><label for="customerQ">電話號碼</label><input id="customerQ" placeholder="電話號碼" inputmode="tel"></div><div id="customerResults">${
       rows
         .map(
           (c) =>
@@ -355,9 +395,26 @@
     );
   }
   function revenue() {
-    const d = store.state.revenue || {};
-    return `${head("基本營收", "本月 TEST 營運摘要")}<div class="notice">以下為已收住宿款項，不包括現金按金。</div><div class="stats">${stat("本月已收訂金", amount(d.monthDepositsReceived))}${stat("本月已收尾數", amount(d.monthBalancesReceived))}${stat("本月住宿收入", amount(d.monthAccommodationRevenue))}</div><div class="grid two"><section class="card"><h2>按房型</h2>${groups(d.byRoomType, roomNames)}</section><section class="card"><h2>按寵物種類</h2>${groups(d.bySpecies, speciesNames)}</section></div>`;
+    const d = store.state.revenue || {},
+      year = String(store.state.revenueYear || d.year || "2026"),
+      selectedMonth = String(store.state.revenueMonth || d.month || `${year}-${String(new Date().getMonth() + 1).padStart(2, "0")}`),
+      chart = window.LittleLandRevenueChart
+        ? window.LittleLandRevenueChart.renderRevenueChart(d, selectedMonth)
+        : '<p class="empty">營收圖表元件未載入。</p>';
+    return `${head("營收分析", `${year} 全年 12 個月 TEST 營收總覽；住宿預訂按入住月份、實際收款按付款日統計；現金按金不計住宿收入。`)}<form id="revenueYearForm" class="revenue-year-form"><label for="revenueYear">檢視年度</label><input id="revenueYear" name="year" type="number" min="2020" max="2100" value="${escValue(year)}"><button class="btn secondary">載入年度</button></form><section class="card">${chart}</section><div class="grid two"><section class="card"><h2>按房型</h2>${groups(d.byRoomType, roomNames)}</section><section class="card"><h2>按寵物種類</h2>${groups(d.bySpecies, speciesNames)}</section></div>`;
   }
+  function schedule() {
+    const d = store.state.schedules || {}, date = store.state.calendarDate || new Date();
+    const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date())}) : '<p class="empty">排班月曆元件未載入。</p>';
+    return `${head("員工排班", "TEST 員工排班、休息日及月度當值日數。未排班日期明確標示。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-schedule-month="-1">‹ 上月</button><button class="btn secondary" data-schedule-month="1">下月 ›</button></div>${html}</section><section class="card"><h2>新增／更新班表</h2><form id="scheduleForm" class="field"><label>日期</label><input name="date" type="date" required><label>員工</label><select name="staffId" required>${arr(d.staff).map(x=>`<option value="${esc(x.staffId)}">${esc(x.displayName||x.staffId)}</option>`).join("")}</select><label>安排</label><select name="status"><option value="WORK">當值</option><option value="REST">休息</option></select><label>開始時間（可留空）</label><input name="startTime" type="time"><label>結束時間（可留空）</label><input name="endTime" type="time"><label>備註</label><input name="note"><button class="btn">儲存班表</button></form><form id="swapForm" class="field"><h3>交換班次（稽核記錄）</h3><label>日期</label><input name="date" type="date" required><label>員工 A</label><select name="staffId" required>${arr(d.staff).map(x=>`<option value="${esc(x.staffId)}">${esc(x.displayName||x.staffId)}</option>`).join("")}</select><label>員工 B</label><select name="targetStaffId" required>${arr(d.staff).map(x=>`<option value="${esc(x.staffId)}">${esc(x.displayName||x.staffId)}</option>`).join("")}</select><button class="btn secondary">交換班次</button></form></section>`;
+  }
+  function newBooking() {
+    const view = window.LittleLandStaffNewBookingView;
+    if (!view) return `${head("新增預約")}<section class="card"><div class="error">新預約表單未載入，請重新整理頁面。</div></section>`;
+    if (!store.state.newBookingDraft) store.state.newBookingDraft = view.blankDraft();
+    return view.render({ draft: store.state.newBookingDraft, availability: store.state.newBookingAvailability, pending: pendingAction });
+  }
+
   function kv(o, fields) {
     return `<div class="kv">${fields.map(([l, ...ks]) => `<div><b>${esc(l)}</b>${esc(friendly(get(o, ...ks)))}</div>`).join("")}</div>`;
   }
@@ -379,8 +436,11 @@
     if (!d)
       return `${head("Booking Detail")}<div class="empty">尚未載入預約資料。</div>`;
     const b = d.detail || d.booking || {},
-      pets = arr(d.pets),
+      allPets = arr(d.pets),
+      pets = window.LittleLandBookingChangesView ? window.LittleLandBookingChangesView.activePets(allPets) : allPets,
+      removedPets = allPets.filter((pet) => ["REMOVED", "ARCHIVED"].includes(String(pet.petStatus || "").toUpperCase())),
       payments = arr(d.payments),
+      adjustments = arr(d.adjustments),
       logs = arr(d.logs),
       history = arr(d.followupHistory),
       s = b.bookingStatus;
@@ -389,13 +449,13 @@
       actions.push(["confirmData", "確認資料"]);
     if (s === "PENDING_DEPOSIT")
       actions.push(["confirmDeposit", "確認已收訂金"]);
-    if (s === "CHECKED_IN" && b.balanceStatus === "UNPAID")
+    if (["CHECKED_IN", "CHECKED_OUT", "COMPLETED"].includes(s) && b.depositStatus === "PAID" && Number(b.remainingBalance || 0) > 0)
       actions.push(["recordBalance", "記錄尾數"]);
     if (s === "CHECKED_IN" && b.cashDepositStatus === "NOT_COLLECTED")
       actions.push(["cashDepositCollect", "收現金按金"]);
     if (["COLLECTED", "PARTIALLY_USED"].includes(b.cashDepositStatus)) {
       if (
-        Number(b.cashDepositAmount || 0) -
+        Number(b.cashDepositCollectedAmount || b.cashDepositAmount || 0) -
           Number(b.cashDepositUsedAmount || 0) -
           Number(b.cashDepositRefundedAmount || 0) >
         0
@@ -413,6 +473,7 @@
     if (["PENDING_CONFIRMATION", "PENDING_DEPOSIT", "CONFIRMED"].includes(s))
       actions.push(["cancel", "取消預約"]);
     actions.push(["edit", "更新資料"]);
+    if (s === "CHECKED_IN") actions.push(["earlyCheckout","記錄提早退房"]);
     const conflict =
         b.roomConflict === true ||
         (d.confirmed === false && d.roomConflict === true) ||
@@ -422,7 +483,16 @@
           ? b.cashDepositRefundDue
           : get(b, "cashDepositRefundDue", "cashDepositRefundAmount"),
       services = serviceItems(b);
-    return `${head("Booking Detail", idOf(b))}${conflict ? `<div class="danger-box" role="alert"><strong>房間衝突：</strong>${b.depositStatus === "PAID" || store.state.depositConflictBookingId === String(idOf(b)) ? "訂金已收" : "訂金尚未確認已收"}；目前沒有可用房間。未有房間分配，預約未確認。請員工手動聯絡客人跟進；請勿承諾房間。</div>` : ""}<section class="card"><h2>預約 ${esc(idOf(b))} ${status(s)}</h2>${kv(
+    const manualAdjustmentTotal = adjustments.filter((entry) => ["SURCHARGE", "REVERSAL"].includes(String(entry.type))).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const feeDisplay = Object.assign({}, b, {
+      manualAdjustmentTotal,
+      displaySurcharges: Number(b.totalSurcharges || 0) + manualAdjustmentTotal,
+      currentTotal: Number(b.estimatedTotal || 0) + manualAdjustmentTotal,
+    });
+    const bookingChangeControls = window.LittleLandBookingChangesView
+      ? window.LittleLandBookingChangesView.render({ booking: b, pets: pets, payments: payments, adjustments: adjustments, pending: pendingAction })
+      : "";
+    return `${head("Booking Detail", idOf(b))}${conflict ? `<div class="danger-box" role="alert"><strong>房間衝突：</strong>${b.depositStatus === "PAID" || store.state.depositConflictBookingId === String(idOf(b)) ? "訂金已收" : "訂金尚未確認已收"}；目前沒有可用房間。未有房間分配，預約未確認。請員工手動聯絡客人跟進；請勿承諾房間。</div>` : ""}<section class="card"><h2>預約 ${esc(idOf(b))} ${status(s)} ${depositBadge(b)} ${followupBadge(b)}</h2>${kv(
       b,
       [
         ["提交時間", "createdAt", "submittedAt"],
@@ -483,13 +553,15 @@
             )}</article>`,
         )
         .join("") || '<div class="empty">沒有寵物資料</div>'
-    }</section><section class="card"><h2>收費</h2>${kv(b, [
+    }</section>${removedPets.length ? `<section class="card"><h2>已移除寵物（保留歷史）</h2>${removedPets.map((pet) => `<article class="pet archived"><h3>🐾 ${esc(get(pet,"name","petName"))} · 已移除</h3><p>${esc(get(pet,"removeReason"))}</p><small>${esc(friendly(get(pet,"removedAt")))}</small></article>`).join("")}</section>` : ""}<section class="card"><h2>收費</h2>${kv(feeDisplay, [
       ["基本房費", "baseRoomFee"],
       ["額外寵物費", "extraPetFee"],
       ["週末附加費", "weekendFee"],
       ["服務費合計", "serviceFees"],
-      ["附加費合計", "totalSurcharges"],
-      ["預計住宿總額", "estimatedTotal"],
+      ["原 Pricing Engine 附加費合計", "totalSurcharges"],
+      ["人工附加費／減項淨額", "manualAdjustmentTotal"],
+      ["目前附加費合計（含人工調整）", "displaySurcharges"],
+      ["目前住宿總額", "currentTotal"],
       ["訂金", "depositAmount"],
       ["尾數", "remainingBalance"],
       ["現金按金", "cashDepositAmount"],
@@ -513,19 +585,29 @@
         ["已使用按金", "cashDepositUsedAmount"],
         ["應退按金", refund],
       ],
-    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(get(p, "paidAt"))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section><section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(get(b, "lastContactedAt"))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(get(x, "createdAt"))} · ${esc(get(x, "staffName"))} · ${esc(get(x, "note"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${esc(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(get(x, "createdAt"))} · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
+    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(friendly(get(p, "paidAt")))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section>${bookingChangeControls}<section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(friendly(get(x, "createdAt", "time")))} · ${esc(get(x, "staffName", "actorStaffNameSnapshot", "actorStaffId"))} · ${esc(get(x, "note", "summary"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${escValue(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(friendly(get(x, "createdAt")))} · <strong>${esc(get(x, "actorStaffNameSnapshot", "staffName") || get(x, "actorStaffId") || (x.actorType === "SYSTEM" ? "系統" : "未知操作者"))}</strong> · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => a === "earlyCheckout" ? `<button class="btn secondary" data-adjust="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>` : `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
       const draft = store.state.editDraft || {}, fieldValue = (key, fallback) => draft[key] !== undefined ? draft[key] : (fallback == null ? "" : fallback);
-      const textField = (label, key, fallback, type = "text") => `<label>${esc(label)}</label><input name="${esc(key)}" type="${type}" value="${esc(fieldValue(key, fallback))}">`;
-      const selectField = (label, key, value, options) => `<label>${esc(label)}</label><select name="${esc(key)}">${options.map(([v, title]) => `<option value="${esc(v)}" ${String(fieldValue(key, value)) === String(v) ? "selected" : ""}>${esc(title)}</option>`).join("")}</select>`;
-      const yesNo = [["true", "是"], ["false", "否"]];
+      const textField = (label, key, fallback, type = "text") => `<label>${esc(label)}</label><input name="${esc(key)}" type="${type}" value="${escValue(fieldValue(key, fallback))}">`;
+      const selectField = (label, key, value, options) => `<label>${esc(label)}</label><select name="${esc(key)}">${options.map(([v, title]) => `<option value="${escValue(v)}" ${String(fieldValue(key, value)) === String(v) ? "selected" : ""}>${esc(title)}</option>`).join("")}</select>`;
+      const yesNo = [["yes","是"],["no","否"]];
       const petFields = pets.map((pet, i) => {
         const pd = draft.pets && draft.pets[i] || {}, pv = (key) => pd[key] !== undefined ? pd[key] : (pet[key] == null ? "" : pet[key]);
-        const pselect = (key, label, options, fallback) => `<label>${esc(label)}</label><select data-pet-field="${i}:${esc(key)}">${options.map(([v,t]) => `<option value="${esc(v)}" ${String(pv(key) === "" ? fallback : pv(key)) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
-        const pinput = (key, label, type = "text") => `<label>${esc(label)}</label><input data-pet-field="${i}:${esc(key)}" type="${type}" value="${esc(pv(key))}">`;
-        const hamster = b.species === "HAMSTER", male = String(pv("sex") || pet.sex).toLowerCase() === "male";
-        return `<article class="pet edit-pet"><h3>寵物 ${i + 1} · ${esc(get(pet,"name","petName"))}</h3>${pinput("name","名稱")}${pinput("breed","品種")}${pinput("ageValue","年齡數值","number")}${pselect("ageUnit","年齡單位",[["month","月"],["year","歲"]],"month")}${pselect("sex","性別",[["male","男孩子"],["female","女孩子"]],"female")}${!hamster ? pselect("sterilized","絕育",yesNo,false) : ""}${!hamster && !male ? pselect("pregnant","懷孕",yesNo,false) : ""}${pselect("recentSurgery30Days","最近 30 日手術",yesNo,false)}${pselect("vetVisit","最近看獸醫",yesNo,false)}${pinput("vetDetails","獸醫詳情")}${pselect("infectiousDisease","傳染病",yesNo,false)}${pinput("infectiousDetails","傳染病詳情")}${pselect("chronicDisease","慢性疾病",yesNo,false)}${pinput("chronicDetails","慢性疾病詳情")}${pselect("medication","正在服藥",yesNo,false)}${pinput("medicationDetails","藥物詳情")}${pinput("specialCare","特殊照顧")}${!hamster ? pselect("fleaTreatment","一個月內杜蝨",yesNo,false) : ""}</article>`;
+        const pselect = (key, label, options, fallback) => {
+          const selectedValue = StaffEditFormUtils.toYesNoOption(key, pv(key), fallback);
+          return `<label>${esc(label)}</label><select data-pet-field="${i}:${esc(key)}">${options.map(([v,t]) => `<option value="${escValue(v)}" ${String(selectedValue) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+        };
+        const pinput = (key, label, type = "text") => `<label>${esc(label)}</label><input data-pet-field="${i}:${esc(key)}" type="${type}" value="${escValue(pv(key))}">`;
+        const hamster = StaffEditFormUtils.isHamsterSpecies(b.species), male = String(pv("sex") || pet.sex).toLowerCase() === "male";
+        const pregnancyField = !hamster
+          ? (() => {
+              const selected = StaffEditFormUtils.toYesNoOption("pregnant", pv("pregnant"), "");
+              const options = [["", "請選擇"], ...yesNo].map(([v, t]) => `<option value="${escValue(v)}" ${String(selected) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("");
+              return `<label data-pregnancy-label="${i}" ${male ? "hidden" : ""}>懷孕</label><select data-pet-field="${i}:pregnant" ${male ? "hidden disabled" : "required"}>${options}</select>`;
+            })()
+          : "";
+        return `<article class="pet edit-pet"><h3>寵物 ${i + 1} · ${esc(get(pet,"name","petName"))}</h3>${pinput("name","名稱")}${pinput("breed","品種")}${pinput("ageValue","年齡數值","number")}${pselect("ageUnit","年齡單位",[["month","月"],["year","歲"]],"month")}${pselect("sex","性別",[["male","男孩子"],["female","女孩子"]],"female")}${!hamster ? pselect("sterilized","絕育",yesNo,false) : ""}${pregnancyField}${pselect("recentSurgery30Days","最近 30 日手術",yesNo,false)}${pselect("vetVisit","最近看獸醫",yesNo,false)}${pinput("vetDetails","獸醫詳情")}${pselect("infectiousDisease","傳染病",yesNo,false)}${pinput("infectiousDetails","傳染病詳情")}${pselect("chronicDisease","慢性疾病",yesNo,false)}${pinput("chronicDetails","慢性疾病詳情")}${pselect("medication","正在服藥",yesNo,false)}${pinput("medicationDetails","藥物詳情")}${pinput("specialCare","特殊照顧")}${!hamster ? pselect("fleaTreatment","一個月內杜蝨",yesNo,false) : ""}</article>`;
       }).join("");
-      return `<section class="card"><h2>更新資料</h2><form id="editForm" class="field">${textField("家長姓名","parentName",b.parentName || b.customerName || "")}${textField("電話","phone",b.phone,"tel")}${textField("Email","email",b.email,"email")}${textField("緊急聯絡人 1","emergency1",b.emergency1)}${textField("緊急聯絡人 2","emergency2",b.emergency2)}${textField("指定獸醫／診所","vet",b.vet)}${selectField("入住時間","checkinTime",b.checkinTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${selectField("退房時間","checkoutTime",b.checkoutTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${textField("主糧","foodMain",b.foodMain)}${textField("牧草","hay",b.hay)}${textField("餵食","feeding",b.feeding)}${selectField("蔬菜","vegetables",b.vegetables,[["","—"],["yes","是"],["no","否"]])}<h3>寵物資料</h3>${petFields}<button class="btn" ${pendingAction ? "disabled" : ""}>更新資料</button></form></section>`;
+      return `<section class="card"><h2>更新資料</h2><form id="editForm" class="field">${textField("家長姓名","parentName",b.parentName || b.customerName || "")}${textField("電話","phone",b.phone,"tel")}${textField("Email","email",b.email,"email")}${textField("緊急聯絡人 1","emergency1",b.emergency1)}${textField("緊急聯絡人 2","emergency2",b.emergency2)}${textField("指定獸醫／診所","vet",b.vet)}${selectField("入住時間","checkinTime",b.checkinTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${selectField("退房時間","checkoutTime",b.checkoutTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${textField("主糧","foodMain",b.foodMain)}${textField("牧草","hay",b.hay)}${textField("餵食","feeding",b.feeding)}${selectField("蔬菜","vegetables",StaffEditFormUtils.toVegetablesOption(b.vegetables),[["","—"],["是","是"],["否","否"]])}<h3>寵物資料</h3>${petFields}<button class="btn" ${pendingAction ? "disabled" : ""}>更新資料</button></form></section>`;
     })()}`;
   }
   function settings() {
@@ -548,13 +630,16 @@
         revenue,
         settings,
         detail,
+        schedule,
+        "new-booking": newBooking,
       };
     shell(p, (views[p] || dashboard)());
     bind(p);
   }
   function bind(page) {
     const retry = app.querySelector("[data-retry]");
-    if (retry) retry.onclick = () => loadPageData(page).then(paint);
+    if (retry) retry.onclick = () => loadPageData(page, { force: true }).then(paint);
+    const todayButton = app.querySelector("[data-today]"); if (todayButton) todayButton.onclick = async () => { const t = new Date(new Date().toLocaleString("en-US", {timeZone:"Asia/Hong_Kong"})); store.state.calendarDate=t; store.state.selectedCalendarDate=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()); await loadPageData("calendar",{force:true}); paint(); };
     app.querySelectorAll("[data-month]").forEach(
       (x) =>
         (x.onclick = async () => {
@@ -634,15 +719,7 @@
     }
     const cq = app.querySelector("#customerQ");
     if (cq)
-      cq.oninput = () =>
-        app
-          .querySelectorAll(".customer")
-          .forEach(
-            (x) =>
-              (x.hidden = !x.textContent
-                .toLowerCase()
-                .includes(cq.value.toLowerCase())),
-          );
+      cq.oninput = () => { const norm = v => String(v||"").replace(/\D/g,"").replace(/^852(?=\d{8}$)/,"").replace(/^00852(?=\d{8}$)/,""); const term=norm(cq.value); app.querySelectorAll(".customer").forEach(x => { const phone=norm(x.querySelector("p")?.textContent); x.hidden=!!term && !phone.includes(term); }); };
     const form = app.querySelector("#followForm");
     if (form) {
       form.note.oninput = () => {
@@ -659,27 +736,27 @@
         );
       };
     }
-    const ef = app.querySelector("#editForm");
-    if (ef) {
-      const yesKeys = new Set(["sterilized", "pregnant", "recentSurgery30Days", "vetVisit", "infectiousDisease", "chronicDisease", "medication", "fleaTreatment"]);
+      const ef = app.querySelector("#editForm");
+      if (ef) {
       const readEdit = () => {
-        const data = {};
+        const data = {}, detailState = store.state.detail || {};
+        const currentBooking = detailState.detail || detailState.booking || {};
         ["parentName", "phone", "email", "emergency1", "emergency2", "vet", "checkinTime", "checkoutTime", "foodMain", "hay", "feeding", "vegetables"].forEach((k) => { const el = ef.elements.namedItem(k); if (el) data[k] = el.value; });
-        data.pets = arr((store.state.detail || {}).pets).map((pet, i) => {
-          const item = { petId: pet.petId };
+        data.pets = arr((store.state.detail || {}).pets).filter((pet) => ["", "ACTIVE", "STAYING"].includes(String(pet.petStatus || "").toUpperCase())).map((pet, i) => {
+          const fields = {};
           ef.querySelectorAll(`[data-pet-field^="${i}:"]`).forEach((el) => {
             const key = el.dataset.petField.slice(el.dataset.petField.indexOf(":") + 1);
-            item[key] = yesKeys.has(key) ? el.value === "true" : el.value;
+            fields[key] = el.value;
           });
-          const age = Number(item.ageValue);
-          item.ageInMonths = item.ageUnit === "year" ? age * 12 : age;
-          return item;
+          return StaffEditFormUtils.createPetEditInput(pet.petId, fields, currentBooking.species);
         });
         return data;
       };
       ef.querySelectorAll('[data-pet-field$=":sex"]').forEach((el) => el.addEventListener("change", () => {
-        const i = el.dataset.petField.split(":")[0], pregnancy = ef.querySelector(`[data-pet-field="${i}:pregnant"]`);
-        if (pregnancy) { pregnancy.hidden = el.value === "male"; if (pregnancy.previousElementSibling) pregnancy.previousElementSibling.hidden = el.value === "male"; }
+        const i = el.dataset.petField.split(":")[0], isMale = el.value === "male";
+        const pregnancy = ef.querySelector(`[data-pet-field="${i}:pregnant"]`), label = ef.querySelector(`[data-pregnancy-label="${i}"]`);
+        if (pregnancy) { pregnancy.hidden = isMale; pregnancy.disabled = isMale; pregnancy.required = !isMale; if (isMale) pregnancy.value = ""; }
+        if (label) label.hidden = isMale;
       }));
       ef.onsubmit = (e) => {
         e.preventDefault();
@@ -689,8 +766,150 @@
         mutate("edit", StaffRouter.current().id, { data }, ef);
       };
     }
-    app
-      .querySelectorAll("[data-action]")
+    const submitApi = async (action, payload, form) => {
+      if (pendingAction) return;
+      const requestBody = Object.assign({}, payload);
+      const fingerprint = JSON.stringify(requestBody);
+      if (form) {
+        if (form.dataset.idempotencyFingerprint !== fingerprint || !form.dataset.idempotencyKey) {
+          form.dataset.idempotencyFingerprint = fingerprint;
+          form.dataset.idempotencyKey = uuid();
+        }
+        requestBody.idempotencyKey = form.dataset.idempotencyKey;
+      } else {
+        requestBody.idempotencyKey = uuid();
+      }
+      pendingAction = true;
+      if (form) form.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+      let repaint = false;
+      try {
+        let mutationSucceeded = false;
+        try {
+          await StaffAPI.request(action, requestBody, store.token);
+          mutationSucceeded = true;
+          if (form) { delete form.dataset.idempotencyFingerprint; delete form.dataset.idempotencyKey; }
+          readCache.clear();
+          toast("TEST API 已確認操作。");
+        } catch (e) {
+          const handled = handleAuth(e);
+          if (handled) repaint = true;
+          else if (form && form.isConnected) {
+            let error = form.querySelector(".form-error");
+            if (!error) { error = document.createElement("p"); error.className = "form-error"; error.setAttribute("role", "alert"); form.prepend(error); }
+            error.textContent = e.message;
+            form.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+          } else {
+            errorText = e.message;
+            repaint = true;
+          }
+        }
+        if (mutationSucceeded) {
+          try { await loadPageData(StaffRouter.current().page, { force: true }); }
+          catch (refreshError) { errorText = "操作已成功，但無法重新載入資料；請重新整理頁面。"; }
+          repaint = true;
+        }
+      } finally {
+        pendingAction = false;
+        if (repaint) paint();
+        else if (form && form.isConnected) form.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+      }
+    };
+    const changesView = window.LittleLandBookingChangesView;
+    if (changesView) changesView.bind(app);
+    const detailState = store.state.detail || {};
+    const currentBooking = detailState.detail || detailState.booking || {};
+    const currentBookingId = currentBooking.bookingId || StaffRouter.current().id;
+    const currentVersion = { bookingId: currentBookingId, expectedRecordVersion: currentBooking.recordVersion, expectedStatus: currentBooking.bookingStatus };
+    const adjustmentForm = app.querySelector("#bookingAdjustmentForm");
+    if (adjustmentForm) adjustmentForm.onsubmit = (event) => {
+      event.preventDefault();
+      const description = adjustmentForm.elements.description.value.trim();
+      const reason = adjustmentForm.elements.reason.value.trim();
+      const enteredAmount = Number(adjustmentForm.elements.amount.value);
+      const selectedPets = Array.from(adjustmentForm.querySelectorAll('[name="petIds"]:checked')).map((input) => input.value);
+      if (!description || !reason || !Number.isFinite(enteredAmount) || enteredAmount <= 0) return;
+      const sign = adjustmentForm.elements.direction.value === "reduce" ? -1 : 1;
+      const data = { description, amount: Math.round(enteredAmount * sign * 100) / 100, reason, petIds: selectedPets };
+      const scope = selectedPets.length ? `${selectedPets.length} 隻寵物 × ` : "整張預約 × ";
+      if (!confirm(`確認${sign < 0 ? "減少／抵扣" : "新增"}附加費：${description}，${scope}HK$${enteredAmount.toFixed(2)}？若形成多收款項，不會自動退款。`)) return;
+      submitApi("addSurcharge", Object.assign({}, currentVersion, { data }), adjustmentForm);
+    };
+    const refundForm = app.querySelector("#bookingRefundForm");
+    if (refundForm) refundForm.onsubmit = (event) => {
+      event.preventDefault();
+      const sourcePaymentId = refundForm.elements.sourcePaymentId.value;
+      const enteredAmount = Number(refundForm.elements.amount.value);
+      const reason = refundForm.elements.reason.value.trim();
+      const selected = refundForm.elements.sourcePaymentId.options[refundForm.elements.sourcePaymentId.selectedIndex];
+      const refundable = Number(selected && selected.dataset.refundable || 0);
+      if (!sourcePaymentId || !reason || !refundForm.elements.confirmRefund.checked || !Number.isFinite(enteredAmount) || enteredAmount <= 0 || enteredAmount > refundable) {
+        const error = refundForm.querySelector(".form-error") || document.createElement("p");
+        error.className = "form-error"; error.setAttribute("role", "alert"); error.textContent = "退款金額須大於零且不可超過該筆住宿款的尚可退款額；請確認已在系統外實際完成退款。";
+        if (!error.isConnected) refundForm.prepend(error);
+        return;
+      }
+      const data = { sourcePaymentId, amount: Math.round(enteredAmount * 100) / 100, reason, confirmRefund: true };
+      if (!confirm(`確認記錄已實際退回 HK$${enteredAmount.toFixed(2)}？此動作只記錄人工退款，不會執行付款。`)) return;
+      submitApi("refundDeposit", Object.assign({}, currentVersion, { data }), refundForm);
+    };
+    const petCountForm = app.querySelector("#bookingPetCountForm");
+    if (petCountForm) petCountForm.onsubmit = (event) => {
+      event.preventDefault();
+      const removePetIds = Array.from(petCountForm.querySelectorAll('[name="removePetIds"]:checked')).map((input) => input.value);
+      const reason = petCountForm.elements.reason.value.trim();
+      const addPet = petCountForm.elements.addPet.checked;
+      const newPetMap = [];
+      if (addPet) petCountForm.querySelectorAll('[name^="newPets["]').forEach((input) => {
+        if (input.disabled) return;
+        const match = input.name.match(/^newPets\[(\d+)\]\.([A-Za-z0-9]+)$/);
+        if (!match) return;
+        const index = Number(match[1]);
+        newPetMap[index] = newPetMap[index] || {};
+        newPetMap[index][match[2]] = input.value;
+      });
+      const newPets = newPetMap.filter(Boolean);
+      if (!reason || (!removePetIds.length && !newPets.length)) {
+        const error = petCountForm.querySelector(".form-error") || document.createElement("p");
+        error.className = "form-error"; error.setAttribute("role", "alert"); error.textContent = "請選擇新增／移除寵物，並填寫變更原因。";
+        if (!error.isConnected) petCountForm.prepend(error);
+        return;
+      }
+      if (!confirm(`確認入住寵物數量由 ${Number(currentBooking.quantity || 0)} 改為 ${Number(currentBooking.quantity || 0) - removePetIds.length + newPets.length}？系統會依原 Pricing Engine 重算費用；已收訂金金額會保留，並只更新尾數。`)) return;
+      submitApi("petCountUpdate", Object.assign({}, currentVersion, { data: { removePetIds, newPets, reason } }), petCountForm);
+    };
+    const newBookingView = window.LittleLandStaffNewBookingView;
+    if (newBookingView) newBookingView.bind({
+      app, store, api: StaffAPI, router: StaffRouter, readCache, toast, handleAuth, paint,
+      isPending: () => pendingAction,
+      setPending: (value) => { pendingAction = value; },
+      setError: (value) => { errorText = value || ""; },
+    });
+    const sf=app.querySelector("#scheduleForm"); if(sf) sf.onsubmit=e=>{e.preventDefault();submitApi("scheduleSave",{schedule:{workDate:sf.date.value,staffId:sf.staffId.value,status:sf.status.value,startTime:sf.startTime.value,endTime:sf.endTime.value,notes:sf.note.value}},sf);};
+    const sw=app.querySelector("#swapForm"); if(sw) sw.onsubmit=e=>{e.preventDefault();if(sw.staffId.value===sw.targetStaffId.value){errorText="請選擇兩位不同員工。";paint();return;}submitApi("scheduleSwap",{schedule:{workDate:sw.date.value,staffId:sw.staffId.value,targetStaffId:sw.targetStaffId.value}},sw);};
+    const rf = app.querySelector("#revenueYearForm");
+    if (rf) rf.onsubmit = (event) => {
+      event.preventDefault();
+      const year = String(rf.elements.year.value);
+      store.state.revenueYear = year;
+      if (!String(store.state.revenueMonth || "").startsWith(year + "-")) store.state.revenueMonth = `${year}-01`;
+      readCache.clear();
+      loadPageData("revenue", { force: true }).then(paint);
+    };
+    app.querySelectorAll("[data-revenue-month]").forEach((button) => button.onclick = async () => {
+      store.state.revenueMonth = button.dataset.revenueMonth;
+      store.state.revenueYear = button.dataset.revenueMonth.slice(0, 4);
+      readCache.clear();
+      await loadPageData("revenue", { force: true });
+      paint();
+    });
+    app.querySelectorAll("[data-adjust='earlyCheckout']").forEach((button) => button.onclick = () => {
+      const actualCheckoutDate = prompt("輸入實際退房日期 YYYY-MM-DD");
+      if (!actualCheckoutDate) return;
+      const reason = prompt("提早退房原因");
+      if (!reason || !confirm(`確認記錄實際退房日 ${actualCheckoutDate}？`)) return;
+      submitApi("earlyCheckout", Object.assign({}, currentVersion, { data: { actualCheckoutDate, reason, description: "員工記錄提早退房" } }), null);
+    });
+    app.querySelectorAll("[data-action]")
       .forEach(
         (x) =>
           (x.onclick = () =>
@@ -838,6 +1057,7 @@
       if (action === "followup" && payload.data?.required)
         store.state.followupDraft = "";
       if (action === "edit") store.state.editDraft = null;
+      readCache.clear();
       await loadPageData(currentPage === "detail" ? "detail" : currentPage);
     } catch (e) {
       if (!handleAuth(e))
@@ -882,4 +1102,8 @@
         paint();
       });
   else paint();
+  ["booking-reference.js", "calendar-view.js", "revenue-chart.js", "schedule-view.js"].forEach((src) => {
+    if (src === "booking-reference.js" && window.LittleLandBookingReference) return;
+    const script = document.createElement("script"); script.src = src; script.onload = () => { if (store.token) route(); else paint(); }; document.head.appendChild(script);
+  });
 })();

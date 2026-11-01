@@ -2,6 +2,14 @@
  * Runtime access helpers for the dedicated LittleLand TEST spreadsheet.
  * This source never accepts a spreadsheet ID from an API request.
  */
+var LITTLELAND_REQUEST_SPREADSHEET_CACHE_ = null;
+var LITTLELAND_REQUEST_SPREADSHEET_CACHE_ID_ = '';
+
+function littlelandResetTestSpreadsheetRequestCache_() {
+  LITTLELAND_REQUEST_SPREADSHEET_CACHE_ = null;
+  LITTLELAND_REQUEST_SPREADSHEET_CACHE_ID_ = '';
+}
+
 var LITTLELAND_API_WRITE_SHEETS = Object.freeze({
   Bookings: true,
   Pets: true,
@@ -9,7 +17,9 @@ var LITTLELAND_API_WRITE_SHEETS = Object.freeze({
   Logs: true,
   IdempotencyKeys: true,
   Staff: true,
-  Sessions: true
+  Sessions: true,
+  StaffSchedules: true,
+  BookingAdjustments: true
 });
 
 function littlelandApiError_(code, message, retryable) {
@@ -26,9 +36,9 @@ function littlelandRequire_(condition, code, message, retryable) {
 
 function littlelandTestSpreadsheet_() {
   littlelandRequire_(
-    typeof LITTLELAND_TEST_SHEET_DEFINITIONS !== 'undefined' &&
+      typeof LITTLELAND_TEST_SHEET_DEFINITIONS !== 'undefined' &&
       Array.isArray(LITTLELAND_TEST_SHEET_DEFINITIONS) &&
-      LITTLELAND_TEST_SHEET_DEFINITIONS.length === 8,
+      LITTLELAND_TEST_SHEET_DEFINITIONS.length === 10,
     'SYSTEM_UNAVAILABLE',
     'TEST schema 未載入。',
     false
@@ -42,6 +52,11 @@ function littlelandTestSpreadsheet_() {
     'TEST spreadsheet allow-list 未設定。',
     false
   );
+
+  if (
+    LITTLELAND_REQUEST_SPREADSHEET_CACHE_ &&
+    LITTLELAND_REQUEST_SPREADSHEET_CACHE_ID_ === allowedId
+  ) return LITTLELAND_REQUEST_SPREADSHEET_CACHE_;
 
   var spreadsheet;
   try {
@@ -90,6 +105,8 @@ function littlelandTestSpreadsheet_() {
     );
   });
 
+  LITTLELAND_REQUEST_SPREADSHEET_CACHE_ = spreadsheet;
+  LITTLELAND_REQUEST_SPREADSHEET_CACHE_ID_ = allowedId;
   return spreadsheet;
 }
 

@@ -225,6 +225,10 @@ a {
 .booking-card:hover {
   border-color: var(--purple);
 }
+.followup-item {
+  border-left: 4px solid #c84656;
+  background: linear-gradient(90deg, #fff4f5 0, #fff 42%);
+}
 .booking-card .title {
   font-weight: 800;
 }
@@ -247,6 +251,11 @@ a {
 .status-orange {
   background: var(--orangebg);
   color: var(--orange);
+}
+.status-red {
+  border: 1px solid #f0c5cc;
+  background: #fff0f2;
+  color: #a62d40;
 }
 .status-gray {
   background: var(--graybg);
@@ -431,6 +440,9 @@ a {
 }
 .marker.orange {
   background: #e89124;
+}
+.marker.red {
+  background: #c83e4f;
 }
 .room-list {
   display: grid;
@@ -643,4 +655,480 @@ pre {
 }
 .booking-card:has(.room-conflict-warning) {
   border-left-color: #c12c3e;
+}
+
+
+/* V3 Staff workspace: spacious desktop shell, compact phone-first controls. */
+:root {
+  --blue: #246b96;
+  --blue-bg: #eaf4fb;
+  --calendar-line: #dce3eb;
+  --calendar-ink: #293447;
+}
+
+/* The same original logo asset is used in login and both persistent brand areas. */
+.brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+  color: var(--deep);
+}
+.brand::before {
+  display: block;
+  width: 120px;
+  height: 42px;
+  flex: 0 0 auto;
+  background: url("../assets/brand/littleland-logo.png") center / contain no-repeat;
+  content: "";
+}
+.brand small { min-width: 0; }
+.login-card > .brand {
+  display: block;
+  min-height: 74px;
+  padding-top: 2px;
+  font-size: 0;
+}
+.login-card > .brand::before {
+  width: min(220px, 100%);
+  height: 70px;
+}
+.login-card > .brand small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+}
+.shell { background: #f6f7fb; }
+.shell > main { min-width: 0; }
+.sidebar {
+  border-right-color: #e5e0ed;
+  box-shadow: 4px 0 24px #38285208;
+}
+.sidebar > .brand {
+  min-height: 54px;
+  padding: 3px 7px;
+  font-size: 0;
+}
+.sidebar > .brand::before { width: 190px; height: 58px; }
+.sidebar > .brand small { display: block; font-size: 11px; }
+.side-nav button { min-height: 46px; }
+.side-nav button.active { box-shadow: inset 3px 0 var(--deep); }
+.topbar {
+  height: 72px;
+  padding-inline: clamp(16px, 3vw, 42px);
+  box-shadow: 0 4px 18px #38285208;
+}
+.topbar > .brand { font-size: 0; }
+.topbar > .brand::before { width: 142px; height: 50px; }
+.topbar > .brand small { font-size: 12px; }
+.content {
+  width: min(100%, 1600px);
+  max-width: 1600px;
+  padding: 25px clamp(14px, 2.8vw, 42px) 112px;
+}
+.page-head { align-items: center; margin: 4px 0 22px; }
+.page-head h1 { color: #26243a; font-size: clamp(24px, 2.2vw, 32px); letter-spacing: -.02em; }
+.card { border-color: #e8e5ef; box-shadow: 0 5px 20px #3828520a; }
+.grid { gap: 17px; }
+.card h2, .card h3 { color: #302840; }
+.btn, .bottom-nav button, .side-nav button { touch-action: manipulation; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #176b9e;
+  outline-offset: 3px;
+}
+
+/* Helper-rendered full day cards. */
+.staff-calendar {
+  min-width: 0;
+  padding: clamp(10px, 1.4vw, 20px);
+  border: 1px solid #e7e3ed;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+.calendar-weekdays, .calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 5px;
+}
+.calendar-weekdays { margin-bottom: 6px; }
+.calendar-weekdays .weekday {
+  min-height: 32px;
+  padding: 5px 2px;
+  color: #51485f;
+  font-size: 12px;
+  font-weight: 800;
+}
+.calendar-grid { margin-top: 0; }
+.day-cell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 96px;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 7px;
+  overflow: hidden;
+  border: 1px solid var(--calendar-line);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--calendar-ink);
+  text-align: left;
+}
+.calendar-grid .day-cell:not(.muted) { cursor: pointer; }
+.calendar-grid .day-cell:not(.muted):hover { border-color: #9c84d1; background: #fbf9ff; }
+.day-cell.muted { min-height: 0; border: 0; background: transparent; }
+.day-cell.today { border: 2px solid #247ba5; background: #f0f8fd; }
+.day-cell.selected { border: 2px solid var(--deep); background: #f4effc; box-shadow: 0 0 0 2px #7650c81a; }
+.day-cell.today.selected { border-color: #176b9e; box-shadow: inset 0 0 0 1px #176b9e; }
+.day-number { display: flex; min-height: 25px; align-items: center; gap: 5px; font-size: 14px; font-weight: 800; }
+.today-label { padding: 2px 6px; border-radius: 99px; background: #dceefa; color: #145577; font-size: 10px; font-weight: 800; }
+.day-summaries { display: grid; min-width: 0; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.calendar-booking {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  padding: 4px 5px;
+  border-left: 3px solid #8d99a8;
+  border-radius: 5px;
+  background: #f3f5f7;
+  color: #354052;
+  font-size: 10px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.calendar-booking.check-in { border-left-color: #247a51; background: #e8f5ed; color: #195f3d; }
+.calendar-booking.check-out { border-left-color: #b63346; background: #fff0f2; color: #8d2638; }
+.calendar-booking.in-house { border-left-color: #247a51; background: #edf7ef; color: #195f3d; }
+.calendar-booking.pending, .calendar-booking.pending-followup { border-left-color: #a45c10; background: #fff3df; color: #75420d; }
+.calendar-booking.followup { border-left-color: #b63346; background: #fff0f2; color: #8d2638; }
+.booking-label { font-weight: 800; }
+.booking-room, .booking-pet { min-width: 0; overflow-wrap: anywhere; }
+.calendar-more { padding: 2px 4px; color: #514276; font-size: 10px; font-weight: 800; }
+.empty-summary { color: #9a9daa; font-size: 11px; }
+.calendar-schedules { margin-top: 19px; padding: 15px; border: 1px solid #e8e5ef; border-radius: 14px; background: #faf9fc; }
+.calendar-schedules h3 { margin: 0 0 9px; font-size: 16px; }
+.selected-schedules { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.selected-schedules .schedule { display: flex; min-height: 44px; align-items: center; gap: 8px; padding: 8px 11px; border-radius: 10px; background: #e8f5ed; color: #195f3d; }
+.selected-schedules .schedule.rest { background: #fff1dc; color: #75420d; }
+.schedule-empty { margin: 0; color: var(--muted); }
+
+/* Schedule, revenue chart, booking/detail forms and V3 content cards. */
+.schedule-view, .revenue-chart { min-width: 0; padding: clamp(12px, 2vw, 22px); border: 1px solid #e8e5ef; border-radius: 18px; background: #fff; box-shadow: var(--shadow); }
+.schedule-view__header, .schedule-view h2, .revenue-chart h2 { margin: 0 0 14px; color: #302840; font-size: 20px; }
+.schedule-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 5px; }
+.schedule-weekday { padding: 5px 2px; color: #51485f; font-size: 11px; font-weight: 800; text-align: center; }
+.schedule-day { min-width: 0; min-height: 102px; padding: 7px; border: 1px solid var(--calendar-line); border-radius: 10px; background: #fff; }
+.schedule-day--outside { border-color: transparent; background: transparent; }
+.schedule-day--today { border: 2px solid #247ba5; background: #f0f8fd; }
+.schedule-day__header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-weight: 800; }
+.schedule-today-label { color: #145577; font-size: 10px; }
+.schedule-assignments { display: grid; gap: 4px; margin: 7px 0 0; padding: 0; list-style: none; }
+.schedule-assignment { display: grid; gap: 1px; padding: 4px; border-radius: 6px; background: #e8f5ed; color: #195f3d; font-size: 10px; overflow-wrap: anywhere; }
+.schedule-assignment--rest { background: #fff1dc; color: #75420d; }
+.schedule-assignment--unscheduled { background: #f1f2f4; color: #515967; }
+.schedule-label { font-weight: 800; }
+.schedule-summary { margin-top: 15px; padding: 12px; border-radius: 12px; background: #faf9fc; }
+.schedule-summary ul { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 0; padding: 0; list-style: none; }
+.revenue-chart { overflow: hidden; }
+.revenue-chart > div { max-width: 100%; }
+.revenue-chart svg { max-width: 100%; }
+.revenue-legend-item { display: inline-flex; align-items: center; gap: 7px; color: #33434d; font-size: 13px; }
+.revenue-legend-item i { width: 12px; height: 12px; border-radius: 50%; }
+.revenue-summary-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 9px; margin: 14px 0; }
+.revenue-summary { display: grid; gap: 3px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; }
+.revenue-summary span { color: var(--muted); font-size: 12px; }
+.revenue-summary strong { color: var(--deep); }
+form.field, #bookingForm, #createBookingForm, #editForm { min-width: 0; }
+form.field > .field, form > .field { margin-bottom: 4px; }
+input, select, textarea { max-width: 100%; }
+input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-color: var(--deep); }
+.field input:invalid:not(:placeholder-shown), .field select:invalid { border-color: #ad3042; }
+.pet, .edit-pet { background: #fdfcff; }
+.v3-card, .section-card, .booking-form-card { min-width: 0; padding: clamp(14px, 2vw, 22px); border: 1px solid #e8e5ef; border-radius: 16px; background: #fff; box-shadow: var(--shadow); }
+.booking-card, .stat, .card, .pet { overflow-wrap: anywhere; }
+
+.bottom-nav { box-shadow: 0 -5px 20px #38285212; }
+.bottom-nav button { min-height: 52px; border-radius: 10px; }
+.bottom-nav button.active { background: #f4effc; }
+
+@media (min-width: 760px) {
+  .shell { grid-template-columns: 252px minmax(0, 1fr); }
+  .sidebar { height: 100dvh; padding: 24px 15px; }
+  .content { padding: 28px clamp(22px, 3vw, 48px) 48px; }
+  .staff-calendar { padding: 18px; }
+  .calendar-weekdays, .calendar-grid { gap: 7px; }
+  .calendar-weekdays .weekday { min-height: 36px; font-size: 13px; }
+  .day-cell { min-height: clamp(122px, 13vw, 172px); padding: 9px; }
+  .day-number { font-size: 15px; }
+  .calendar-booking { padding: 5px 6px; font-size: 11px; }
+  .calendar-schedules { padding: 18px; }
+  .schedule-day { min-height: 130px; padding: 9px; }
+  .schedule-assignment { font-size: 11px; }
+  .bottom-nav { display: none; }
+}
+@media (min-width: 1250px) {
+  .shell { grid-template-columns: 270px minmax(0, 1fr); }
+  .staff-calendar { padding: 22px; }
+  .calendar-weekdays, .calendar-grid, .schedule-month-grid { gap: 9px; }
+  .day-cell { min-height: 172px; padding: 10px; }
+  .calendar-booking { font-size: 12px; }
+}
+@media (max-width: 480px) {
+  .brand::before { width: 102px; height: 38px; }
+  .topbar { height: 62px; padding-inline: 12px; }
+  .topbar > .brand::before { width: 116px; height: 42px; }
+  .topbar .btn { min-height: 44px; padding-inline: 11px; }
+  .content { padding: 15px 10px 132px; }
+  .page-head { gap: 8px; margin-bottom: 15px; }
+  .page-head h1 { font-size: 23px; }
+  .staff-calendar { padding: 7px; border-radius: 13px; }
+  .calendar-weekdays, .calendar-grid { gap: 3px; }
+  .calendar-weekdays .weekday { min-height: 30px; font-size: 11px; }
+  .day-cell { min-height: 61px; padding: 4px 3px; border-radius: 7px; }
+  .day-number { min-height: 21px; gap: 2px; font-size: 12px; }
+  .today-label { padding: 1px 4px; font-size: 9px; }
+  .day-summaries { gap: 2px; }
+  .calendar-booking { display: block; padding: 3px; font-size: 9px; line-height: 1.25; }
+  .calendar-booking .booking-room, .calendar-booking .booking-pet { display: none; }
+  .calendar-booking .booking-label { display: block; overflow-wrap: anywhere; }
+  .calendar-more { padding: 1px 2px; font-size: 9px; }
+  .empty-summary { font-size: 9px; }
+  .calendar-schedules { margin-top: 12px; padding: 11px; }
+  .schedule-month-grid { gap: 3px; }
+  .schedule-day { min-height: 83px; padding: 4px 3px; }
+  .schedule-day__header { font-size: 11px; }
+  .schedule-assignments { gap: 3px; margin-top: 5px; }
+  .schedule-assignment { padding: 3px; font-size: 9px; }
+  .schedule-staff, .schedule-time { overflow-wrap: anywhere; }
+  .schedule-weekday { font-size: 10px; }
+  .login-card { padding: 21px; }
+  .revenue-chart { padding: 12px; }
+}
+@media (max-width: 360px) {
+  .calendar-booking { font-size: 8px; }
+  .day-cell { min-height: 55px; }
+}
+
+/* Full Staff booking-entry workflow: readable on iPhone, denser on desktop. */
+*[hidden] { display: none !important; }
+.new-booking-form { display: grid; min-width: 0; gap: 2px; }
+.new-booking-form > .card { min-width: 0; }
+.new-booking-form .grid { min-width: 0; }
+.new-booking-form .page-head { margin-top: 2px; }
+.new-booking-form .notice { overflow-wrap: anywhere; }
+.notice.warning { border: 1px solid #efce92; background: #fff7e8; color: #75420d; }
+.notice.info { border: 1px solid #c8deed; background: var(--blue-bg); color: #205675; }
+.pet-form-card { min-width: 0; margin: 12px 0; padding: 14px; border: 1px solid #efd9e7; border-radius: 15px; background: #fff8fc; }
+.pet-form-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px; margin-bottom: 11px; }
+.pet-form-head h3 { margin: 0; }
+.pet-health { display: grid; gap: 10px; margin-top: 14px; padding: 12px; border-radius: 12px; background: #f7f6fb; }
+.pet-health h4 { margin: 0; font-size: 15px; }
+.health-question { min-width: 0; }
+.pet-health-detail { margin: 5px 0 0 3px; padding-left: 10px; border-left: 3px solid #d4c2ef; }
+.pet-review-notice { margin: 0; }
+.availability-row { align-items: center; margin: 14px 0 6px; }
+.availability-row .meta { min-width: 0; flex: 1 1 190px; overflow-wrap: anywhere; }
+.service-options { min-width: 0; margin: 14px 0 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.service-options legend { padding: 0 5px; color: #51485f; font-weight: 800; }
+.choice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.choice-row > label, .service-options > .choice-row { min-height: 40px; }
+.choice-row input, .consent-row input { flex: 0 0 auto; }
+.consent-list { display: grid; gap: 9px; margin: 12px 0 18px; }
+.consent-row { display: flex; min-width: 0; align-items: flex-start; gap: 10px; padding: 11px; border: 1px solid #e6e1ee; border-radius: 11px; background: #fcfbfe; }
+.consent-row span { min-width: 0; overflow-wrap: anywhere; }
+.create-booking-btn { width: 100%; min-height: 50px; }
+.pricing-summary { border-color: #dfd3f2; background: linear-gradient(135deg, #f6f0ff, #fff1f7); }
+.new-booking-price-meta { margin-bottom: 10px; color: var(--muted); font-size: 13px; font-weight: 700; }
+.price-lines { display: grid; gap: 0; }
+.price-line { display: flex; min-width: 0; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e8e0f0; }
+.price-line span { min-width: 0; overflow-wrap: anywhere; }
+.price-line strong { flex: 0 0 auto; white-space: nowrap; }
+.price-line.surcharge strong, .price-line.surcharge span, .price-line.total-surcharge strong, .price-line.total-surcharge span { color: #b52c3e; }
+.price-line.total-surcharge { font-weight: 800; }
+.price-line.estimated-total { margin-top: 4px; font-size: 17px; font-weight: 800; }
+.price-line.deposit { color: #246b51; font-weight: 800; }
+.price-line.cash-deposit { margin-top: 7px; padding: 10px; border: 0; border-radius: 10px; background: var(--blue-bg); color: #205675; font-weight: 800; }
+.pricing-summary .meta { margin-bottom: 0; }
+@media (min-width: 760px) {
+  .new-booking-form { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  .new-booking-form > .page-head, .new-booking-form > .notice, .new-booking-form > #newBookingForm { grid-column: 1 / -1; }
+  .new-booking-form > section.card { margin-bottom: 0; }
+  #newBookingForm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  #newBookingForm > .card:nth-of-type(5), #newBookingForm > .card:nth-of-type(6) { grid-column: 1 / -1; }
+  .create-booking-btn { max-width: 420px; }
+}
+
+
+/* Booking Detail adjustments, refunds and pet-count controls */
+.booking-changes {
+  min-width: 0;
+}
+.current-settlement {
+  margin: 10px 0 14px;
+  padding: 13px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f5efff, #fff2f7);
+  overflow-wrap: anywhere;
+}
+.current-settlement p {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 5px 0;
+}
+.current-settlement strong {
+  text-align: right;
+}
+.current-settlement small,
+.muted {
+  color: var(--muted);
+}
+.change-panel {
+  min-width: 0;
+  margin: 9px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.change-panel > summary {
+  color: var(--deep);
+  font-weight: 800;
+  cursor: pointer;
+}
+.change-form {
+  min-width: 0;
+  margin-top: 12px;
+}
+.change-form input,
+.change-form select,
+.change-form textarea,
+.new-pet-fields input,
+.new-pet-fields select,
+.new-pet-fields textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.change-form fieldset,
+.new-pet-fields {
+  min-width: 0;
+  margin: 10px 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.change-form legend,
+.new-pet-fields legend {
+  padding: 0 5px;
+  color: var(--deep);
+  font-weight: 700;
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.check-row input {
+  flex: 0 0 auto;
+  width: 18px;
+  min-width: 18px;
+  margin: 2px 0 0;
+}
+.field-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(85px, 0.7fr);
+  gap: 8px;
+}
+.change-ledger {
+  min-width: 0;
+  margin-top: 14px;
+}
+.change-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.change-line > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.change-line p {
+  margin: 5px 0;
+}
+.change-line small {
+  display: block;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.change-line > strong:last-child {
+  flex: 0 0 auto;
+  text-align: right;
+  white-space: nowrap;
+}
+.money-charge,
+.form-error {
+  color: #b4233b;
+}
+.money-credit {
+  color: #197447;
+}
+.form-error {
+  margin: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #fff1f2;
+  overflow-wrap: anywhere;
+}
+.refund-limit {
+  margin: 0;
+  color: #197447;
+  font-weight: 700;
+}
+.notice {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff8df;
+  color: #725613;
+  overflow-wrap: anywhere;
+}
+.archived {
+  background: #f7f7fa;
+  color: var(--muted);
+}
+
+@media (min-width: 760px) {
+  .change-form {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.4fr) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 14px;
+  }
+  .change-form label,
+  .change-form fieldset,
+  .change-form .refund-limit,
+  .change-form .notice,
+  .change-form button,
+  .change-form .form-error {
+    grid-column: 1 / -1;
+  }
+  .change-form input,
+  .change-form select,
+  .change-form textarea {
+    margin-bottom: 4px;
+  }
+  .change-line {
+    align-items: center;
+  }
 }

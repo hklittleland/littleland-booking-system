@@ -29,7 +29,8 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
       'consentCashDeposit', 'consentDepositAndBalance',
       'consentDepositNonRefundable', 'consentBoardingTerms',
       'consentHealthDeclaration', 'consentEmergencyVet', 'consentedAt',
-      'followUpRequired', 'lastContactedAt', 'lastContactedBy', 'followUpNote'
+      'followUpRequired', 'lastContactedAt', 'lastContactedBy', 'followUpNote',
+      'cashDepositCollectedAmount'
     ]
   },
   {
@@ -39,7 +40,8 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
       'ageInMonths', 'sex', 'sterilized', 'pregnant', 'recentSurgery30Days',
       'vetVisit', 'vetDetails', 'infectiousDisease', 'infectiousDetails',
       'chronicDisease', 'chronicDetails', 'medication', 'medicationDetails',
-      'specialCare', 'fleaTreatment', 'healthReviewStatus', 'createdAt', 'updatedAt'
+      'specialCare', 'fleaTreatment', 'healthReviewStatus', 'createdAt', 'updatedAt',
+      'petStatus', 'removedAt', 'removedByStaffId', 'removeReason'
     ]
   },
   {
@@ -47,7 +49,7 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
     headers: [
       'paymentId', 'bookingId', 'paymentType', 'amount', 'currency', 'paymentStatus',
       'paymentMethod', 'transactionReference', 'paidAt', 'recordedByStaffId',
-      'refundAmount', 'refundedAt', 'note', 'createdAt'
+      'refundAmount', 'refundedAt', 'note', 'createdAt', 'sourcePaymentId'
     ]
   },
   {
@@ -61,7 +63,7 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
     name: 'Logs',
     headers: [
       'logId', 'createdAt', 'actorType', 'actorStaffId', 'action', 'entityType',
-      'entityId', 'requestId', 'summary', 'changedFieldsJson'
+      'entityId', 'requestId', 'summary', 'changedFieldsJson', 'actorStaffNameSnapshot'
     ]
   },
   {
@@ -84,8 +86,34 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
       'sessionId', 'staffId', 'tokenHash', 'roleSnapshot', 'createdAt', 'expiresAt',
       'revokedAt', 'lastSeenAt'
     ]
+  },
+  {
+    name: 'StaffSchedules',
+    headers: [
+      'scheduleId', 'workDate', 'staffId', 'staffNameSnapshot', 'status',
+      'startTime', 'endTime', 'swapGroupId', 'swappedFromStaffId', 'notes',
+      'createdAt', 'updatedAt', 'createdByStaffId', 'updatedByStaffId', 'idempotencyKey'
+    ]
+  },
+  {
+    name: 'BookingAdjustments',
+    headers: [
+      'adjustmentId', 'bookingId', 'type', 'description', 'amount', 'currency',
+      'status', 'sourcePaymentId', 'paymentId', 'reason', 'effectiveDate',
+      'reversesAdjustmentId', 'createdAt', 'updatedAt', 'createdByStaffId',
+      'updatedByStaffId', 'idempotencyKey', 'petId', 'petNameSnapshot', 'groupId'
+    ]
   }
 ];
+
+// Existing TEST headers may be upgraded only by appending these known columns.
+var LITTLELAND_TEST_ADDITIVE_COLUMNS = Object.freeze({
+  Bookings: Object.freeze(['cashDepositCollectedAmount']),
+  Pets: Object.freeze(['petStatus', 'removedAt', 'removedByStaffId', 'removeReason']),
+  Payments: Object.freeze(['sourcePaymentId']),
+  Logs: Object.freeze(['actorStaffNameSnapshot']),
+  BookingAdjustments: Object.freeze(['petId', 'petNameSnapshot', 'groupId'])
+});
 
 // Only static room master data is seeded. SS1 and SSR1 are virtual combinations.
 var LITTLELAND_TEST_ROOM_SEED = [
@@ -110,7 +138,7 @@ var LITTLELAND_TEST_ROOM_SEED = [
  * equal the allow-listed TEST spreadsheet ID.
  *
  * @param {string=} spreadsheetId Optional, allow-listed TEST spreadsheet ID.
- * @return {{spreadsheetId:string,spreadsheetName:string,sheetsCreated:string[],headersCreated:string[],roomIdsAdded:string[],roomIdsAlreadyPresent:string[]}}
+ * @return {{spreadsheetId:string,spreadsheetName:string,sheetsCreated:string[],headersCreated:string[],columnsAdded:string[],roomIdsAdded:string[],roomIdsAlreadyPresent:string[]}}
  */
 function initializeLittleLandTestSheets(spreadsheetId) {
   var scriptProperties = PropertiesService.getScriptProperties();
@@ -153,6 +181,7 @@ function initializeLittleLandTestSheets(spreadsheetId) {
   }
 
   var existingSheets = {};
+  var plannedColumnMigrations = [];
   definitions.forEach(function (definition) {
     var sheet = spreadsheet.getSheetByName(definition.name);
     if (!sheet) return;
@@ -162,20 +191,29 @@ function initializeLittleLandTestSheets(spreadsheetId) {
     var lastColumn = sheet.getLastColumn();
     if (lastRow === 0 && lastColumn === 0) return;
 
-    if (lastColumn !== definition.headers.length) {
-      throw new Error(
-        'Safety stop: header width mismatch in ' + definition.name +
-        '; nothing was cleared or overwritten.'
-      );
-    }
-
-    var existingHeaders = sheet.getRange(1, 1, 1, definition.headers.length)
+    var existingHeaders = sheet.getRange(1, 1, 1, lastColumn)
       .getDisplayValues()[0];
     if (!littlelandTestArraysEqual_(existingHeaders, definition.headers)) {
-      throw new Error(
-        'Safety stop: header mismatch in ' + definition.name +
-        '; nothing was cleared or overwritten.'
-      );
+      var allowedAppend = LITTLELAND_TEST_ADDITIVE_COLUMNS[definition.name] || [];
+      var isKnownPrefix = existingHeaders.length < definition.headers.length &&
+        existingHeaders.every(function (header, index) {
+          return String(header) === String(definition.headers[index]);
+        });
+      var missingHeaders = definition.headers.slice(existingHeaders.length);
+      var onlyKnownAdditions = missingHeaders.length > 0 && missingHeaders.every(function (header) {
+        return allowedAppend.indexOf(header) >= 0;
+      });
+      if (!isKnownPrefix || !onlyKnownAdditions) {
+        throw new Error(
+          'Safety stop: header mismatch in ' + definition.name +
+          '; nothing was cleared or overwritten.'
+        );
+      }
+      plannedColumnMigrations.push({
+        sheet: sheet,
+        startColumn: existingHeaders.length + 1,
+        headers: missingHeaders
+      });
     }
   });
 
@@ -210,6 +248,13 @@ function initializeLittleLandTestSheets(spreadsheetId) {
       existingRoomIds[roomId] = true;
     });
   }
+
+  var columnsAdded = [];
+  plannedColumnMigrations.forEach(function (migration) {
+    migration.sheet.getRange(1, migration.startColumn, 1, migration.headers.length)
+      .setValues([migration.headers]);
+    migration.headers.forEach(function (header) { columnsAdded.push(header); });
+  });
 
   var sheetsCreated = [];
   var headersCreated = [];
@@ -256,6 +301,7 @@ function initializeLittleLandTestSheets(spreadsheetId) {
     spreadsheetName: spreadsheet.getName(),
     sheetsCreated: sheetsCreated,
     headersCreated: headersCreated,
+    columnsAdded: columnsAdded,
     roomIdsAdded: roomIdsAdded,
     roomIdsAlreadyPresent: roomIdsAlreadyPresent
   };

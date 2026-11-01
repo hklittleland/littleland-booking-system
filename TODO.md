@@ -355,3 +355,154 @@
 - v8 live TEST deposit/conflict E2E 使用兩張既有合成預約（沒有額外建單）：`TEST-LL-20261031-9CECA2C7` 與 `TEST-LL-20261031-1B66EC7B`，均為 2026-11-15 入住、2026-11-16 退房、1 隻倉鼠、HAMSTER_BOX。第一張房費 HK$65、週末附加費 HK$250、服務費 HK$80、住宿總額 HK$395、訂金 HK$32.50、尾數 HK$362.50、現金按金 HK$1,000；付款記錄 HK$32.50 後成為 `CONFIRMED` 並獲分配 `C1`。第二張房費 HK$65、週末附加費 HK$250、服務費 HK$0、住宿總額 HK$315、訂金 HK$32.50、尾數 HK$282.50、現金按金 HK$1,000；付款記錄 HK$32.50 後仍為 `PENDING_DEPOSIT`、allocation `[]`、`followUpRequired=TRUE`，API 回報 room conflict，沒有確認或分配實體房。
 - 重新讀回 LittleLand_TEST Sheets 核對兩個 Payments（各 HK$32.50、PAID）、兩個 Pets（各 1 隻）、`staff.confirmDeposit` Logs、兩個 v8 deposit Idempotency key（均 `COMPLETED`，沒有重複 Booking）。重疊日期唯一有效實體佔房是第一張的 `C1`；第二張無 allocation。Staff detail、Dashboard 及 Follow-ups 三處均出現第二張房態衝突提示。Sessions 共 13 筆、有效 Session 0。
 - 正式產品驗收及任何 Production 部署仍待使用者另行決定；不得 merge `develop`／`main`，本次只更新 `feature/test-booking-api`。
+
+
+## Staff UX follow-up — 2026-11-01（程式實作完成，待 iPhone 人工 UX 驗收）
+
+### Data reads and operations responsiveness
+- Staff 資料讀取與操作目前體感太慢；縮短前後端等待，減少一次 API request 內重複的 Spreadsheet open／schema validation 及不必要工作表讀取。登入後的快速頁面切換可重用短暫的記憶體資料，但成功修改後必須更新資料；不得將 Staff 個資寫入 LocalStorage；confirm deposit 每次必須重新檢查最新房態，不能使用快取房態。
+
+### Room calendar displays TEST bookings
+- Staff 房間月曆目前顯示完全沒有資料／沒有更新。修正 Google Sheets `Date`／ISO timestamp 與 Staff `YYYY-MM-DD` 比較格式不一致的問題，讓 TEST Bookings 能在正確入住日顯示；退房日不計入住日期。只標示 Staff 已授權看到的 TEST 預訂；不可改變任何房間分配／入住狀態規則。
+
+### Deposit and follow-up status colors
+- 未收訂金、待跟進的狀態以清晰紅色區別；已收訂金以清晰綠色區別。已收訂金但房態衝突仍須另外顯示紅色需跟進提示；顏色只反映 API 資料，不能改變狀態或付款記錄。
+
+### Time display
+- 一般 Staff 畫面顯示時間只至小時及分鐘（`HH:mm`）；時間戳可保留日期及 `HH:mm`，但不可顯示秒數、原始 UTC 時區偏移或冗長時區內容。
+
+### Fictional TEST display data
+- 所有 LittleLand_TEST 示範聯絡人與寵物資料必須虛構；人名／寵物名使用易辨識、自然的繁體中文示範值。電話使用明確 `TEST-####`、不可撥打／不可 WhatsApp 的佔位字串；不可從外部搜尋或猜測真正人士資料。若更新既有合成資料，只可改顯示姓名、寵物名及測試聯絡欄位，不改 Booking ID、日期、數量、價格、訂金／付款、房號、booking status 或 follow-up state。
+
+### Environment guard
+- 全部改動與資料核對只限 LittleLand_TEST 及目前 Staff-only TEST preview；不接 Production、不改客人 `/booking/`、不改核心商業規則、不 merge `develop`／`main`、不推到 internal `origin`。
+
+
+### Verification update — 2026-11-01 12:02 HKT
+
+- Staff v9 的後端 request-scoped spreadsheet handle、lazy reads、HKT calendar 日期正規化、5 秒前端記憶體快取、紅／綠狀態顯示及 `HH:mm` 時間格式已完成；付款確認仍重新讀取最新房態，成功 mutation 清除快取。v8/v9 單次 API latency 對照、mobile UI 測試及限制記錄於 `docs/TEST-API-DEPLOYMENT.md`。
+- Staff 編輯表單的寵物性別切換已修正：雄性隱藏／停用懷孕欄位並從 API payload 移除；雌性顯示必填選項；由雌性切回雄性會清除舊答案，再切回雌性要求重新回答。390px TEST UI regression smoke 全程未提交 edit。
+- 直接讀回 LittleLand_TEST：Bookings 12、Pets 25、Payments 3、Logs 37、IdempotencyKeys 34、Sessions 42；另有 3 筆本次之前仍未撤銷且未過期的 TEST Session 保持不變，以免中斷既有使用者登入。12 張 Booking 與 25 隻 Pet 的 ID 未變；只更新虛構聯絡／顯示姓名與寵物名稱欄位，Payments 及狀態、日期、數量、金額、房間分配、跟進狀態均未改。所有聯絡電話為 `TEST-####`，Email 使用 `example.test`。
+- 完整測試 command：`node --test tests/apps-script/*.test.js tests/*.test.js` — **120 passed / 0 failed**；Staff/helper JavaScript syntax、`manus-routes.json` 及 `git diff --check` 均通過。
+- Dashboard、月曆、預訂、待跟進、Booking Detail、付款、客戶、營收、設定／登出已完成 390×844 mobile emulation smoke；iPhone Safari 人工 UX 驗收仍待使用者確認。因尚未完成該人工驗收，目前不 commit、不 push、不 merge；保留 `feature/test-booking-api`，最後同步只會推送至 `hklittleland/littleland-booking-system` 的同名分支。
+
+
+# Staff Web V3 — Desktop、月曆、營運功能與品牌整合
+
+狀態：使用者已於 2026-11-01 核准 V3 計畫及人工退訂金方式；實作只限 `LittleLand_TEST`。各 outcome 目前待實作；部署／Sheets 驗收後逐項更新。保留 `feature/test-booking-api`，完成 iPhone/desktop 人工 UX review 前不 push、不 merge。
+
+## 1. Staff 桌面版整合、品牌 Logo 及短 Booking reference
+
+- Staff Web 版面須更容易操作、資訊整合；桌面使用清晰導覽、頁面標題／搜尋／主要動作及寬版工作區，月曆等頁面善用桌面空間；手機仍以 390px iPhone Safari 為優先，觸控目標易按，不得有橫向捲動。
+- 將使用者提供的 LittleLand logo 放在客人預約網站與 Staff 後台合適位置；保持圖片原貌及比例，不重繪、不改品牌色。只在客人預約頁加 logo 與 requested short reference，不重新設計已接受的預約流程。
+- Booking short reference 約 8 個英數字，只作顯示及搜尋便利用途，出現在客人完成頁、Staff 預訂清單／詳情及 WhatsApp 草稿；新 reference 必須唯一。完整 `TEST-LL-YYYYMMDD-XXXXXXXX` Booking ID 保持為資料庫、API、Payments、Logs、Idempotency、關聯與 mutation 的唯一內部 key，不截短、不改寫歷史 ID；Staff 搜尋可接受 full ID 或 short reference。
+- 兩個 TEST Staff 帳號登入後仍為相同完整 ADMIN 權限；不增加角色分級或逐操作密碼重驗。Staff 端敏感頁面仍需登入；Session expiry/logout、停用帳號及重要操作 Logs 繼續有效。
+
+## 2. 房間月曆、今日提醒及桌面詳情
+
+- 月曆星期日開始；完整顯示一個月所有日期，必要時可用第六行避免漏日。今日以明顯藍色外框／標籤顯示，提供一鍵返回今日；顯示香港當日入住提醒與退房提醒數量／清單。
+- 每日格內簡單顯示使用中的實體房號、房型、動物種類圖示及寵物名；兔子用 `🐰`、天竺鼠用 `🐽`、倉鼠用 `🐹`。入住時間用綠色，退房提醒用紅色，在住狀態用綠色，待處理／follow-up 用橙色，空房用灰色；顏色亦須有可讀狀態文字。格子過多時顯示數量摘要，選日後可檢視完整清單。
+- Desktop 月曆需比現有版本大並顯示更多資料。選取日期的詳情區可查看全部入住／退房／在住房客與寵物、房號／房型、時間、Booking status、當值員工及連結至共用 Booking Detail。Staff 手機版保留緊湊月曆並在選日後顯示完整活動清單，不可要求橫向捲動。
+- TEST 月曆的日期按 `Asia/Hong_Kong` 正規化。入住日含、退房日不含。只有 `CONFIRMED`／`CHECKED_IN` 可顯示為實體房入住；`PENDING_CONFIRMATION`／`PENDING_DEPOSIT` 不佔房、不分配房號，只能列於待處理／衝突提醒。待付訂金及無房衝突的預約不可自動取消。
+- 以目前 TEST 真實房間配置及既有房態 helper 為準；不可為符合文件清單而更名、新增或刪除實體房。Suite 的虛擬組合不可以當成獨立實體房。
+
+## 3. 概覽 Dashboard
+
+- 顯示今日入住及退房數量、待確認預訂數、本月營收，以及現有兩位 TEST Staff 的員工／排班入口。
+- 顯示今日入住／退房時間表、待處理預約及需跟進摘要；每個 Booking 摘要可一鍵到共用 Booking Detail。所有數字與提醒從 TEST API/Sheets 現有資料取得，不以假資料冒充 live results。
+
+## 4. 預訂搜尋、排序、七日提醒與操作
+
+- 預訂清單可搜尋客人、電話、寵物、Booking full ID／short reference；可按最新建立、入住日期、退房日期排序。
+- 顯示未來七日入住與退房清單及時間提醒；提供合法的確認資料、轉待付訂金、確認收訂金、辦理入住、延長住宿、查看詳情、生成簡訊／WhatsApp 草稿及狀態操作入口。每個狀態操作必須符合既有 transition table；不可提供任意改狀態按鈕繞過規則。
+- 所有延住修改須先顯示日期、房態及費用差異，使用 canonical `booking/pricing.js`／已接受價格快照規則，不可靜默覆寫原始報價；有房態衝突時不得擴展實體房佔用。訊息只產生草稿／開啟使用者確認的通訊 App，不自動發送。
+
+## 5. Booking Detail、編輯、附加費、退款及聯絡記錄
+
+- 共用 Booking Detail 顯示客人所填資料、Booking status、提交時間、入住／退房日期和時間、晚數、房型／合法實體房分配、家長及兩位緊急聯絡人、獸醫資料、逐隻寵物的健康及飲食資料、費用分項、付款及現金按金紀錄、Follow-up、最近聯絡人／時間與操作 Logs。敏感資料只可由有效登入 Staff 查看。
+- 寵物／聯絡資料可按 allowlist 編輯；一旦已入住、退房或完成，資料編輯鎖定。一般編輯不可改 Booking ID、原始價格 snapshot、付款狀態、allocation 或 bypass status transition。
+- 附加費須逐項記錄描述、金額、原因、操作者、時間及狀態；費用更正採用反向／更正記錄，不覆寫原始價格 snapshot。訂金維持 `baseRoomFee × 50%` 的已接受規則；現金備用金／按金按 `qty × HK$1,000` 獨立於住宿收入。
+- 使用者已允許「人工退訂金」：員工須自行輸入精確退款金額及原因，確認後才記錄；金額不得超出該付款類別的已實收扣除既有退款餘額。系統不自動計算建議退款額、不呼叫銀行或付款 gateway、不自動退款；實際退款只在員工確認已於系統外辦妥後寫入 `Payments`／調整紀錄及不可竄改的 `Logs`，並以 idempotency 防重。此人工例外不改客人網站原有訂金條款。
+- 支援取消、延住／提早退房紀錄、費用明細、更改紀錄及 WhatsApp 短訊草稿；所有改動需顯示確認及清楚成功／失敗狀態。取消釋房只按現有業務規則，無房衝突的待訂金單不得自動取消。
+
+## 6. Staff 顧客資料（電話唯一分類鍵）
+
+- Staff 顧客頁只能以電話號碼搜尋。以正規化香港電話作唯一整合鍵（忽略空格／標點，支援輸入或儲存值含 `852` 前綴），同一正規化電話的所有 TEST Bookings 歸於同一顧客；姓名或 Email 不可作合併／替代 key。沒有電話的 booking 保持獨立，不推測配對。
+- 顧客頁顯示該電話的所有預訂紀錄、寵物種類／數量、可用顧客資料及每筆 Booking 的詳情連結；點擊紀錄可跳至預訂列表或共用 Detail。
+- 客人預約頁不按電話查詢歷史資料、不辨認登入客人、不自動預填；本階段不增加 SMS OTP、客人帳戶或 Guest-side personal-data lookup。
+
+## 7. 營收分析
+
+- 年度總覽提供 12 個月趨勢、全年合計，並分開顯示訂金、尾數、附加費／退款等組成；線圖須有圖例、月份及文字／表格摘要。
+- 每月並列「預訂住宿金額」與「實際收款」：住宿金額依入住月份及有效 Booking 的原始住宿 snapshot／已核准調整；實際收款按 Payments 交易日期彙總實收訂金／尾數及扣除已實際記錄退款。可按房型、寵物種類分析。
+- 現金備用金／按金不計住宿收入；未付款預約不可算作已收款；取消與退款須分開標示。所有圖表使用 LittleLand_TEST 實際資料，清楚標明口徑，不以 mock fixture 冒充營收。
+
+## 8. Staff 新增預訂
+
+- Staff 可新增測試預訂，先選寵物種類，再只列出適用房型；輸入多隻同種類寵物資料；透過 TEST availability 檢查並提示房態衝突；成功後清楚提示 booking 建立結果。
+- Create Booking 必須重用 canonical Pricing Engine、寵物數量／年齡／健康驗證、現有聯絡／飲食／服務及 consent 規則，使用 idempotency key；後端重算價格，不信任前端金額。
+- 新單維持 `PENDING_CONFIRMATION` 且不配置實體房。Staff 可選房間偏好但必須明示未保留；實體分配只可在員工準備確認收訂金時，於鎖內重新查驗最新房態後完成。豪華套房合法組合等既有房態規則不得改動或繞過。
+
+進度（2026-11-01 13:52 HKT）：Staff 新預約前端已接入共用表單 helper、canonical Pricing Engine 及登入保護的 `staff.availability`；房態、費用摘要、健康覆核提示、倉鼠專屬欄位及提交 pending disabled 已完成 mock 驗證。`npm test` 172/172 通過；390×844 Chromium viewport 無橫向捲動。尚未呼叫真實 TEST Create Booking 或寫入 Sheets；iPhone 人工 UX 驗收及實際 TEST mutation smoke tests 仍待完成，未 commit／push／merge。
+
+## 9. Staff 排班與 TEST-only 結構更新
+
+- 排班日曆可為現有兩位 active TEST Staff 安排每日當值、記錄休息日；休息日不可同時排班；可建立、記錄及追蹤調班；顯示每位員工每月當值日數及完整月曆檢視。
+- 排班變更需鎖定並記錄操作者、原排班／新排班、時間及原因；只可排 active Staff，不新增角色分級或第三名帳號。未安排日明確顯示「未排班」。
+- 如需新資料表，只在 `LittleLand_TEST` 以向後相容、可重複執行且不清除既有資料的 initializer 新增 `StaffSchedules` 與 `BookingAdjustments`；需要新增 Payments refund 欄位時採 additive migration。先驗證 spreadsheet 名稱／ID allowlist；不可讀寫 Production。
+
+## 10. 共通商業規則、技術與交付邊界
+
+- 保留目前有效流程 `PENDING_CONFIRMATION → PENDING_DEPOSIT → CONFIRMED → CHECKED_IN → CHECKED_OUT → COMPLETED`。只有 `CONFIRMED`／`CHECKED_IN` 佔房；pending、cancelled、checked out、completed 不佔房。確認訂金／分房前必須在 lock 內重新讀最新房態；無房時保留已實收付款紀錄（如適用）、維持待付訂金／無 allocation 並提示跟進，不可自動取消或把收款視為訂房成功。
+- 使用已接受的 `booking/pricing.js`，不改房價、晚數、週末費、額外寵物費、服務費、訂金、尾數及現金按金規則。顯示時間為香港 `HH:mm`；所有 mutation 有 request/idempotency 保護，成功後清除記憶體快取，付款確認不可讀 stale cache。
+- 只連接現有 TEST API 和 `LittleLand_TEST`。使用全數虛構資料；不讀取或修改 Production、不傳送真正預約／付款、不新增支付 gateway、不寄送真實 WhatsApp/SMS、不 merge `develop`／`main`。
+- 完成後提供 Staff/booking Preview 供桌面與 iPhone Safari 實測；人工 UX acceptance 前不 push，之後只同步到 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`，不推內部 `origin` 或 main。
+
+
+## 11. WhatsApp 草稿模板（沿用 V3 文案，依正式房態規則修正承諾）
+
+- 僅產生使用者可檢查的草稿／開啟 WhatsApp；不自動送出、不建立付款 gateway。訊息須使用實際 booking 欄位、8 字元 short reference、🐰／🐽／🐹及 `HH:mm`，不得顯示其他客人資料或虛構付款成功。
+- 「確認資料／訂金安排」草稿須包含寵物名、房型、晚數、入住／退房日期及時段、預留 15–30 分鐘辦理手續、健康檢查及同意條款、入住時繳清尾數及附加費、每隻 HK$1,000 現金備用金／按金，以及可選手動 `{付款連結}` placeholder；明確說明收到訂金後仍須重新確認房態，只有成功分配合法房間並轉 `CONFIRMED` 才正式保留，不可說「付款後即保留」。
+- 「入住前提醒」草稿保留 V3 內容：距離入住 2 日、入住日期及時間、預留 15–30 分鐘、每隻 HK$1,000 現金、LittleLand 地址「觀塘｜成業街19-21號成業工業大廈13樓16室」、準備清晰正面相、入住前提供滴蝨證明／醫療紀錄、保留 2–3 日糞便、可攜帶熟悉用品。
+- 「訂金已收確認」只有在 TEST API 回傳 `CONFIRMED` 並有合法實體房分配時才可使用「房間已為您保留」。若已收款但房態衝突，必須改用「已收到訂金、房間仍待員工確認，我們會盡快聯絡」草稿，不能誤導客人。
+- 「取消確認」須列出取消結果；退款只有在員工已實際完成且系統人工退款紀錄已確認時才寫「已退款」，否則只可寫「已取消，退款將按條款及員工覆核處理」。
+- 「提早退房確認」列出原退房日、新退房日及員工已人工確認的實際退款金額；不得自動計算或宣稱已付款。
+
+
+## 12. Booking Detail 部分退款、附加費及費用更改（使用者 2026-11-01 新增）
+
+- Booking Detail 提供可見的人工部分退款表單；員工選擇一筆已實收住宿付款、輸入精確退款金額及原因、清楚確認已在系統外實際完成退款後才記錄。退款不得超過所選付款的實收額扣除已記錄退款；每次都寫入 `Payments`／`BookingAdjustments`／`Logs`，使用 idempotency。系統不可自動決定退款額、呼叫銀行或支付 gateway；現金按金沿用獨立流程。
+- 已取消預約如仍有可退款的已實收住宿款，仍可按上述人工確認流程記錄部分退款；取消狀態下不開放新增費用或入住寵物更改，且退款不可重算／重開已取消 Booking 的尾數。
+- 員工可在 Booking Detail 隨時增加或減少附加費項目及自訂金額，不限於未付款狀態或入住後操作；每項必須保存描述、正負金額、原因、員工、時間及關聯。減少／移除已記錄費用時以新負數更正紀錄處理，不刪除或覆寫舊付款／附加費紀錄。
+- 附加費可逐隻寵物計算。員工可選取一隻或多隻入住寵物、輸入服務描述及每隻金額；每隻收費須能在明細獨立辨認。不得把服務費誤加到全部寵物或現金按金。
+- **收訂金前更改：**若尚無已實收訂金 `Payments` 紀錄，寵物數量或費用調整後，重新計算 canonical 房費、額外寵物費、週末費、服務／人工附加費合計、住宿總額、應收訂金及尾數；訂金必須仍為 `baseRoomFee × 50%`，現金按金仍為入住數量 × HK$1,000 且不計入住宿總額。
+- **收訂金後更改：**一旦已有已實收訂金，保留原已收訂金金額，不因新增／減少寵物或費用變動而重算或自動退回訂金；按最新總額及已收付款淨額重新計算尾數。若已收總款高於新總額，明確顯示多收／待人工退款金額，不自動退款或改寫原付款。
+- 現金備用金／按金維持獨立現金紀錄，預計金額為目前入住寵物數量 × HK$1,000；寵物數量變更不把現金按金加入房費、訂金、尾數或住宿營收。已收現金按金不可因更改數量而自動退款。
+
+## 13. 預約寵物數量增減（全流程）
+
+- 員工可在 booking 非取消狀態下增加或減少入住寵物數量，從 PENDING_CONFIRMATION 到 COMPLETED 均可執行；新增寵物必須填妥現有規格要求的完整寵物及健康資料。
+- 所有入住寵物仍須屬同一物種；新增／移除後數量至少一隻，並符合該物種及房型已接受入住上限。超限時整筆變更失敗且不得部分寫入。
+- 移除寵物採軟刪除／歸檔並保留原資料及操作 Logs；`Bookings.quantity` 反映目前實際入住寵物數量。寵物新增／移除、數量與最新收費必須在同一鎖定、版本檢查及冪等 mutation 內一致更新。
+- 若 Booking 已正式分配並佔用房間，新增寵物前須重新確認該房型、該合法實體房間仍符合新數量及容量；不符合時整筆變更拒絕，不能更改既有 allocation、轉用非法房間組合或繞過 `S1+S3` 禁止規則。PENDING 狀態不可因此分配房間。
+
+## 14. 2026 年度及月份營收瀏覽
+
+- 營收頁預設顯示 2026 年完整年度 12 個月總覽、年度住宿預訂金額及年度實際收款；全年每月均可被選取以瀏覽該月總覽。
+- 年／月明細分開顯示住宿預訂金額（按入住月份）、實際收款（按付款日期、扣除已記錄退款）、已收訂金、已收尾數、附加費、退款及住宿晚數；現金按金不可列作住宿收入或實收住宿款。
+- 保留圖表圖例與可讀文字／表格摘要；月份切換後必須載入並展示所選月份，不得繼續顯示預設月份。頁面數字只來自 TEST API/TEST 資料，不以 mock 數字冒充真實營收。
+
+**V3.1 安全界線：**以上只開發 LittleLand_TEST 的程式與 mock 測試；不寫入 Google Sheets、不實際退款、不部署 Apps Script、不接 Production、不 merge develop/main。Schema 若需更新，採已知欄位的 additive migration，先保留全部現有 TEST rows；真正執行 migration／部署須另行確認。
+
+
+## 15. Booking Detail 更改記錄顯示 Staff 姓名（使用者 2026-11-01 新增）
+
+- Booking Detail 的操作 Logs 及 follow-up 歷史必須清楚顯示是哪一位 Staff 執行，不可只顯示時間、操作及摘要。
+- 每筆新的員工操作 Log 保存 `actorStaffId` 及操作當下的 `actorStaffNameSnapshot`；舊 Log 如沒有姓名快照，讀取時以 `actorStaffId` 對照 Staff 名冊顯示姓名；無法對照時至少顯示 Staff ID。
+- 加入姓名快照的 TEST schema 變更只可 additive migration，保留既有 Logs 列，不存密碼、Session token 或其他登入憑證；只開發及 mock 測試，不執行 Sheets migration。
+
+
+**V3.1 進度（2026-11-01 14:47 HKT）：**退款／費用更改／寵物數量更新、操作者姓名快照、2026 全年/月度營收 UI 與 TEST initializer additive migration 已有程式碼和 mock regression 覆蓋；`npm test` 為 188 PASS / 0 FAIL。尚未寫入 LittleLand_TEST Sheets、執行資料 migration、部署 GAS、做真實退款、commit/push/merge；Staff iPhone 人工 UX 驗收仍待進行。
+
+
+**測試數量更正（2026-11-01 14:57 HKT）：**追加 append-only reversal 與取消預約退款 regression 後，最新完整 `npm test` 為 **190 PASS / 0 FAIL**；此數字取代上方較早的 188 PASS 記錄。

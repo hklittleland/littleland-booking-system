@@ -1,6 +1,6 @@
 "use strict";
 const test = require("node:test");
-const { assert, createRuntime } = require("./harness");
+const { assert, createRuntime, makePayload } = require("./harness");
 const crypto = require("node:crypto");
 function staffRuntime(role = "STAFF") {
   const r = createRuntime();
@@ -621,6 +621,47 @@ test("Staff calendar includes bookings overlapping month boundaries", () => {
   assert.equal(out.success, true);
   assert.ok(out.data.bookings.some((x) => x.bookingId === b.bookingId));
 });
+test("Staff calendar normalizes Google Sheets Date cells to Hong Kong date-only values", () => {
+  const r = staffRuntime(),
+    b = addBooking(r, {
+      bookingStatus: "PENDING_CONFIRMATION",
+      checkinDate: new Date("2026-11-14T16:00:00.000Z"),
+      checkoutDate: new Date("2026-11-15T16:00:00.000Z"),
+    }),
+    token = loggedIn(r);
+  const out = r.invokeStaff({
+    action: "staff.calendar",
+    token,
+    month: "2026-11",
+  });
+  assert.equal(out.success, true);
+  const item = out.data.bookings.find((x) => x.bookingId === b.bookingId);
+  assert.ok(item);
+  assert.equal(item.checkinDate, "2026-11-15");
+  assert.equal(item.checkoutDate, "2026-11-16");
+});
+test("Staff read request opens TEST spreadsheet once and Dashboard reads revenue inputs without Logs", () => {
+  const r = staffRuntime(), token = loggedIn(r);
+  let openCount = 0;
+  const originalOpen = r.context.SpreadsheetApp.openById;
+  r.context.SpreadsheetApp.openById = (id) => {
+    openCount += 1;
+    return originalOpen(id);
+  };
+  const readTables = [], originalRead = r.context.littlelandReadTable_;
+  r.context.littlelandReadTable_ = function (name) {
+    readTables.push(name);
+    return originalRead.apply(null, arguments);
+  };
+  const before = openCount;
+  const out = r.invokeStaff({ action: "staff.dashboard", token });
+  assert.equal(out.success, true);
+  assert.equal(openCount - before, 1);
+  assert.ok(readTables.includes("Bookings"));
+  assert.equal(readTables.includes("Payments"), true);
+  assert.equal(readTables.includes("BookingAdjustments"), true);
+  assert.equal(readTables.includes("Logs"), false);
+});
 test("Staff read response shapes include dashboard, payment and revenue summaries", () => {
   const r = staffRuntime(),
     token = loggedIn(r);
@@ -649,27 +690,49 @@ test("Staff read response shapes include dashboard, payment and revenue summarie
   assert.equal(typeof rev.data.monthAccommodationRevenue, "number");
   assert.ok(Array.isArray(rev.data.byRoomType));
 });
-test("Customers group duplicate email or phone into one customer", () => {
+test("Customers merge only normalized phone numbers and search only by phone", () => {
   const r = staffRuntime(),
     token = loggedIn(r);
   addBooking(r, {
     bookingId: "A",
+    phone: "+852 6123 4567",
     email: "same@example.com",
     parentName: "One",
   });
   addBooking(r, {
     bookingId: "B",
+    phone: "6123-4567",
+    email: "different@example.com",
+    parentName: "Two",
+  });
+  addBooking(r, {
+    bookingId: "C",
+    phone: "",
     email: "same@example.com",
-    parentName: "One",
+    parentName: "Three",
   });
   const out = r.invokeStaff({ action: "staff.customers", token });
-  assert.equal(out.data.customers.length, 1);
-  assert.equal(out.data.customers[0].bookings.length, 2);
+  assert.equal(out.data.customers.length, 2);
+  const merged = out.data.customers.find((customer) => customer.phoneNormalized === "61234567");
+  assert.ok(merged);
+  assert.equal(merged.bookings.length, 2);
+  assert.equal(merged.bookingCount, 2);
+  assert.equal(r.invokeStaff({ action: "staff.customers", token, search: "One" }).data.customers.length, 0);
+  assert.equal(r.invokeStaff({ action: "staff.customers", token, search: "same@example.com" }).data.customers.length, 0);
+  assert.equal(r.invokeStaff({ action: "staff.customers", token, search: "852 6123 4567" }).data.customers.length, 1);
 });
-test("Revenue excludes all cash deposit payment types", () => {
+test("Revenue separates accommodation booked revenue and excludes all cash deposit payment types", () => {
   const r = staffRuntime(),
     token = loggedIn(r);
-  addBooking(r);
+  addBooking(r, {
+    estimatedTotal: 500,
+    baseRoomFee: 500,
+    depositAmount: 250,
+    remainingBalance: 250,
+    bookingStatus: "CONFIRMED",
+    checkinDate: "2099-05-15",
+    checkoutDate: "2099-05-16",
+  });
   for (const [id, type] of [
     ["d", "DEPOSIT"],
     ["b", "BALANCE"],
@@ -690,7 +753,9 @@ test("Revenue excludes all cash deposit payment types", () => {
     token,
     month: "2099-05",
   });
-  assert.equal(out.data.monthAccommodationRevenue, 20);
+  assert.equal(out.data.monthAccommodationRevenue, 500);
+  assert.equal(out.data.monthBookedRevenue, 500);
+  assert.equal(out.data.monthCollectedRevenue, 20);
   assert.equal(out.data.monthDepositsReceived, 10);
   assert.equal(out.data.monthBalancesReceived, 10);
 });
@@ -875,4 +940,461 @@ test("Duplicate idempotency rows fail closed before a Staff mutation", () => {
   assert.equal(out.code, "IDEMPOTENCY_RECONCILIATION_REQUIRED");
   assert.equal(r.records("Bookings").find((x) => x.bookingId === b.bookingId).bookingStatus, "PENDING_CONFIRMATION");
   assert.equal(r.records("IdempotencyKeys").length, 2);
+});
+
+
+test("staff.availability is authenticated and returns a minimal non-identifying snapshot", () => {
+  const r=staffRuntime(), token=loggedIn(r);
+  const unauth=r.invokeStaff({action:"staff.availability",checkin:"2099-05-01",checkout:"2099-05-02",species:"rabbit",roomTypeId:"DELUXE_ROOM",quantity:1});
+  assert.equal(unauth.code,"STAFF_AUTH_REQUIRED");
+  const out=r.invokeStaff({action:"staff.availability",token,checkin:"2099-05-01",checkout:"2099-05-02",species:"rabbit",roomTypeId:"DELUXE_ROOM",quantity:1});
+  assert.equal(out.success,true);
+  assert.deepEqual(Object.keys(out.data).sort(),["available","checkedAt","roomTypeId","status"]);
+  assert.equal(JSON.stringify(out.data).includes("S1"),false);
+});
+
+test("staff.createBooking validates and reprices, remains pending with empty allocation and logs STAFF", () => {
+  const r=staffRuntime(), token=loggedIn(r), payload=makePayload(r,{}, {idempotencyKey:"staff-create-001"});
+  const out=r.invokeStaff({action:"staff.createBooking",token,request:payload});
+  assert.equal(out.success,true,JSON.stringify(out));
+  const b=r.records("Bookings")[0];
+  assert.equal(b.bookingStatus,"PENDING_CONFIRMATION");assert.equal(b.allocatedRoomIdsJson,"[]");
+  assert.equal(r.records("Pets").length,1);assert.equal(r.records("Logs")[0].actorType,"STAFF");
+  assert.equal(r.records("IdempotencyKeys")[0].state,"COMPLETED");
+});
+
+test("schedule save serializes work/rest per staff/date and logs each mutation", () => {
+  const r=staffRuntime(),token=loggedIn(r),staff=r.records("Staff")[0];
+  const base={action:"staff.scheduleSave",token,idempotencyKey:"schedule-save-01",data:{workDate:"2099-05-01",staffId:staff.staffId,status:"REST"}};
+  const saved=r.invokeStaff(base);assert.equal(saved.success,true,JSON.stringify(saved));
+  const changed=r.invokeStaff(Object.assign({},base,{idempotencyKey:"schedule-save-02",data:{workDate:"2099-05-01",staffId:staff.staffId,status:"WORK",startTime:"09:00",endTime:"17:00"}}));
+  assert.equal(changed.success,true,JSON.stringify(changed));
+  assert.equal(r.records("StaffSchedules").length,1);assert.equal(r.records("StaffSchedules")[0].status,"WORK");
+  assert.equal(r.records("Logs").length,2);
+});
+
+test("surcharges are separate and paid deposits can only be manually refunded within net paid amount", () => {
+  const r=staffRuntime(),token=loggedIn(r),b=addBooking(r,{bookingStatus:"CHECKED_IN",depositAmount:175,recordVersion:1});
+  const charge=r.invokeStaff({action:"staff.surchargeAdd",token,bookingId:b.bookingId,expectedRecordVersion:1,expectedStatus:"CHECKED_IN",idempotencyKey:"surcharge-add-01",data:{amount:50,description:"Extra care",reason:"Manual fee"}});
+  assert.equal(charge.success,true,JSON.stringify(charge));assert.equal(r.records("BookingAdjustments")[0].type,"SURCHARGE");
+  const current=r.records("Bookings")[0];
+  r.addRecord("Payments",{paymentId:"deposit-source",bookingId:b.bookingId,paymentType:"DEPOSIT",amount:175,paymentStatus:"PAID",refundAmount:0});
+  const body={action:"staff.depositRefund",token,bookingId:b.bookingId,expectedRecordVersion:Number(current.recordVersion),expectedStatus:"CHECKED_IN",idempotencyKey:"deposit-refund-01",data:{sourcePaymentId:"deposit-source",amount:60,confirmRefund:true,reason:"Manual approved refund"}};
+  const refund=r.invokeStaff(body);assert.equal(refund.success,true,JSON.stringify(refund));
+  assert.equal(r.records("Payments").filter(x=>x.paymentType==="REFUND").length,1);
+  assert.equal(Number(r.records("Payments").find(x=>x.paymentId==="deposit-source").refundAmount),60);
+  assert.equal(r.records("BookingAdjustments").some(x=>x.type==="REFUND"),true);
+  const changed=r.records("Bookings")[0];
+  const excess=r.invokeStaff(Object.assign({},body,{expectedRecordVersion:Number(changed.recordVersion),idempotencyKey:"deposit-refund-02",data:{sourcePaymentId:"deposit-source",amount:116,confirmRefund:true,reason:"Too high"}}));
+  assert.equal(excess.success,false);assert.equal(r.records("Payments").filter(x=>x.paymentType==="REFUND").length,1);
+});
+
+test("early checkout requires checked-in state, records effective date and does not reprice", () => {
+  const r=staffRuntime(),token=loggedIn(r),b=addBooking(r,{bookingStatus:"CHECKED_IN",checkinDate:"2099-05-01",checkoutDate:"2099-05-03",estimatedTotal:999});
+  const out=r.invokeStaff({action:"staff.earlyCheckout",token,bookingId:b.bookingId,expectedRecordVersion:1,expectedStatus:"CHECKED_IN",idempotencyKey:"early-checkout-01",data:{actualCheckoutDate:"2099-05-02",reason:"Family request"}});
+  assert.equal(out.success,true,JSON.stringify(out));assert.equal(r.records("Bookings")[0].bookingStatus,"CHECKED_OUT");assert.equal(r.records("Bookings")[0].estimatedTotal,999);
+  const adj=r.records("BookingAdjustments")[0];assert.equal(adj.type,"EARLY_CHECKOUT");assert.equal(adj.effectiveDate,"2099-05-02");assert.equal(adj.reason,"Family request");
+});
+
+
+function addPaidPayment(r, bookingId, paymentId, paymentType, amount) {
+  r.addRecord("Payments", {
+    paymentId,
+    bookingId,
+    paymentType,
+    amount,
+    currency: "HKD",
+    paymentStatus: "PAID",
+    paymentMethod: "MANUAL",
+    transactionReference: "TEST-" + paymentId,
+    paidAt: "2099-05-01T10:00:00.000Z",
+    recordedByStaffId: "staff-test-1",
+    refundAmount: 0,
+    createdAt: "2099-05-01T10:00:00.000Z",
+    sourcePaymentId: "",
+  });
+}
+
+function validNewRabbit(name) {
+  return {
+    name,
+    breed: "Lionhead",
+    ageValue: 6,
+    ageUnit: "month",
+    sex: "male",
+    sterilized: "no",
+    pregnant: "",
+    recentSurgery: "no",
+    vetVisit: "no",
+    vetDetails: "",
+    infectiousDisease: "no",
+    infectiousDetails: "",
+    chronicDisease: "no",
+    chronicDetails: "",
+    medication: "no",
+    medicationDetails: "",
+    specialCare: "",
+    fleaTreatment: "no",
+  };
+}
+
+test("signed manual fees create separate per-pet rows and remain editable after completion", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r, {
+    bookingStatus: "COMPLETED",
+    species: "rabbit",
+    roomTypeId: "DELUXE_SUITE",
+    quantity: 2,
+    estimatedTotal: 700,
+    depositAmount: 350,
+    depositStatus: "PAID",
+  });
+  const p1 = addStaffPet(r, b.bookingId);
+  const p2 = addStaffPet(r, b.bookingId, { petId: b.bookingId + "-PET-02", petNumber: 2, name: "Pudding" });
+  addPaidPayment(r, b.bookingId, "PAY-FEE-DEPOSIT", "DEPOSIT", 350);
+  const addRequest = {
+    action: "staff.surchargeAdd",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-per-pet-fee-01",
+    data: { amount: 50, description: "梳毛", reason: "每隻各一次", petIds: [p1.petId, p2.petId] },
+  };
+  const added = r.invokeStaff(addRequest);
+  assert.equal(added.success, true, JSON.stringify(added));
+  let feeRows = r.records("BookingAdjustments").filter((entry) => entry.type === "SURCHARGE");
+  assert.equal(feeRows.length, 2);
+  assert.deepEqual(feeRows.map((entry) => entry.amount), [50, 50]);
+  assert.deepEqual(feeRows.map((entry) => entry.petId).sort(), [p1.petId, p2.petId].sort());
+  assert.equal(feeRows[0].groupId, feeRows[1].groupId);
+  assert.ok(feeRows[0].groupId);
+  assert.equal(r.records("Logs").at(-1).actorStaffNameSnapshot, "Test Staff");
+
+  const replay = r.invokeStaff(addRequest);
+  assert.equal(replay.success, true);
+  assert.equal(r.records("BookingAdjustments").length, 2, "idempotent replay must not add rows");
+  const changed = r.records("Bookings")[0];
+  const reduced = r.invokeStaff({
+    action: "staff.surchargeAdd",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: Number(changed.recordVersion),
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-per-pet-fee-02",
+    data: { amount: -20, description: "梳毛減項", reason: "其中一隻不需梳毛", petIds: [p1.petId] },
+  });
+  assert.equal(reduced.success, true, JSON.stringify(reduced));
+  feeRows = r.records("BookingAdjustments").filter((entry) => entry.type === "SURCHARGE");
+  assert.deepEqual(feeRows.map((entry) => entry.amount), [50, 50, -20]);
+  assert.equal(Number(r.records("Bookings")[0].remainingBalance), 430);
+});
+
+test("fee reversals append signed offsets, preserve source rows, and cannot double reverse", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r, {
+    bookingStatus: "COMPLETED",
+    checkinDate: "2099-05-03",
+    checkoutDate: "2099-05-04",
+    baseRoomFee: 100,
+    estimatedTotal: 100,
+    depositAmount: 50,
+    remainingBalance: 50,
+  });
+  const pet = addStaffPet(r, b.bookingId);
+  const add = r.invokeStaff({
+    action: "staff.surchargeAdd",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-append-fee-add",
+    data: { amount: 50, description: "單次梳毛", reason: "測試附加費", petIds: [pet.petId] },
+  });
+  assert.equal(add.success, true, JSON.stringify(add));
+  const sourceBefore = JSON.parse(JSON.stringify(r.records("BookingAdjustments")[0]));
+  const afterAdd = r.records("Bookings")[0];
+  const reverse = r.invokeStaff({
+    action: "staff.surchargeReverse",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: Number(afterAdd.recordVersion),
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-append-fee-reverse",
+    data: { adjustmentId: sourceBefore.adjustmentId, reason: "服務取消" },
+  });
+  assert.equal(reverse.success, true, JSON.stringify(reverse));
+  const rows = r.records("BookingAdjustments");
+  assert.deepEqual(JSON.parse(JSON.stringify(rows.find((entry) => entry.adjustmentId === sourceBefore.adjustmentId))), sourceBefore);
+  const reversal = rows.find((entry) => entry.type === "REVERSAL");
+  assert.equal(Number(reversal.amount), -50);
+  assert.equal(reversal.status, "RECORDED");
+  assert.equal(reversal.reversesAdjustmentId, sourceBefore.adjustmentId);
+  assert.equal(Number(r.records("Bookings")[0].remainingBalance), 50);
+
+  const afterReverse = r.records("Bookings")[0];
+  const duplicate = r.invokeStaff({
+    action: "staff.surchargeReverse",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: Number(afterReverse.recordVersion),
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-append-fee-reverse-again",
+    data: { adjustmentId: sourceBefore.adjustmentId, reason: "重複撤銷" },
+  });
+  assert.equal(duplicate.success, false);
+  assert.equal(r.records("BookingAdjustments").length, 2);
+  const revenue = r.invokeStaff({ action: "staff.revenue", token, year: "2099", month: "2099-05" });
+  assert.equal(revenue.success, true, JSON.stringify(revenue));
+  assert.equal(Number(revenue.data.monthly.find((row) => row.month === "2099-05").bookedRevenue), 100);
+});
+
+test("pet addition before deposit recalculates all canonical totals and required deposit", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r, {
+    bookingStatus: "PENDING_CONFIRMATION",
+    species: "rabbit",
+    roomTypeId: "DELUXE_SUITE",
+    checkinDate: "2099-05-03",
+    checkoutDate: "2099-05-05",
+    quantity: 1,
+    baseRoomFee: 700,
+    extraPetFee: 0,
+    weekendFee: 0,
+    serviceFees: 0,
+    totalSurcharges: 0,
+    estimatedTotal: 700,
+    depositAmount: 350,
+    remainingBalance: 350,
+    cashDepositAmount: 1000,
+  });
+  addStaffPet(r, b.bookingId);
+  const request = {
+    action: "staff.petCountUpdate",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "PENDING_CONFIRMATION",
+    idempotencyKey: "v31-pet-add-before-deposit",
+    data: { removePetIds: [], newPets: [validNewRabbit("Hazel")], reason: "客人增加一隻兔兔" },
+  };
+  const result = r.invokeStaff(request);
+  assert.equal(result.success, true, JSON.stringify(result));
+  const updated = r.records("Bookings")[0];
+  assert.equal(Number(updated.quantity), 2);
+  assert.equal(Number(updated.baseRoomFee), 700);
+  assert.equal(Number(updated.extraPetFee), 100);
+  assert.equal(Number(updated.estimatedTotal), 800);
+  assert.equal(Number(updated.depositAmount), 350, "deposit remains 50% of base room fee");
+  assert.equal(Number(updated.remainingBalance), 450);
+  assert.equal(Number(updated.cashDepositAmount), 2000);
+  assert.equal(updated.allocatedRoomIdsJson, "[]", "pending booking must not receive physical allocation");
+  assert.equal(r.records("Pets").filter((pet) => pet.petStatus !== "REMOVED").length, 2);
+  assert.equal(r.records("Pets").find((pet) => pet.name === "Hazel").healthReviewStatus, "");
+  assert.equal(r.records("Logs").at(-1).actorStaffNameSnapshot, "Test Staff");
+  assert.equal(result.data.remainingBalance, 450);
+  assert.equal(result.data.creditDue, 0);
+  const replay = r.invokeStaff(request);
+  assert.equal(replay.success, true);
+  assert.equal(r.records("Pets").length, 2, "replayed request must not duplicate a new pet");
+});
+
+test("pet addition after deposit preserves paid deposit and recalculates only the due balance", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r, {
+    bookingStatus: "CONFIRMED",
+    species: "rabbit",
+    roomTypeId: "DELUXE_SUITE",
+    checkinDate: "2099-05-03",
+    checkoutDate: "2099-05-05",
+    quantity: 1,
+    allocatedRoomIdsJson: '["S1","S2"]',
+    baseRoomFee: 700,
+    estimatedTotal: 700,
+    depositAmount: 350,
+    depositStatus: "PAID",
+    remainingBalance: 350,
+  });
+  addStaffPet(r, b.bookingId);
+  addPaidPayment(r, b.bookingId, "PAY-CONFIRMED-DEPOSIT", "DEPOSIT", 350);
+  const result = r.invokeStaff({
+    action: "staff.petCountUpdate",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "CONFIRMED",
+    idempotencyKey: "v31-pet-add-after-deposit",
+    data: { removePetIds: [], newPets: [validNewRabbit("Hazel")], reason: "客人加寵物" },
+  });
+  assert.equal(result.success, true, JSON.stringify(result));
+  const updated = r.records("Bookings")[0];
+  assert.equal(Number(updated.depositAmount), 350, "a paid deposit must not be recalculated");
+  assert.equal(Number(updated.estimatedTotal), 800);
+  assert.equal(Number(updated.remainingBalance), 450);
+  assert.equal(Number(updated.cashDepositAmount), 2000);
+  assert.equal(updated.allocatedRoomIdsJson, '["S1","S2"]', "pet update must not reassign rooms");
+  assert.equal(result.data.creditDue, 0);
+});
+
+test("completed booking pet removal recalculates totals but preserves received deposit and cash", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r, {
+    bookingStatus: "COMPLETED",
+    species: "rabbit",
+    roomTypeId: "DELUXE_SUITE",
+    quantity: 2,
+    estimatedTotal: 800,
+    depositAmount: 350,
+    depositStatus: "PAID",
+    balanceStatus: "PAID",
+    remainingBalance: 0,
+    cashDepositAmount: 2000,
+    cashDepositStatus: "COLLECTED",
+    cashDepositCollected: true,
+    cashDepositCollectedAmount: 2000,
+  });
+  const firstPet = addStaffPet(r, b.bookingId);
+  const secondPet = addStaffPet(r, b.bookingId, { petId: b.bookingId + "-PET-02", petNumber: 2, name: "Pudding" });
+  addPaidPayment(r, b.bookingId, "PAY-REMOVAL-DEPOSIT", "DEPOSIT", 350);
+  addPaidPayment(r, b.bookingId, "PAY-REMOVAL-BALANCE", "BALANCE", 450);
+  const fee = r.invokeStaff({
+    action: "staff.surchargeAdd",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-pet-removal-fee",
+    data: { amount: 25, description: "梳毛", reason: "Pudding 需要梳毛", petIds: [secondPet.petId] },
+  });
+  assert.equal(fee.success, true, JSON.stringify(fee));
+  const sourceFee = JSON.parse(JSON.stringify(r.records("BookingAdjustments")[0]));
+  const afterFee = r.records("Bookings")[0];
+  const result = r.invokeStaff({
+    action: "staff.petCountUpdate",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: Number(afterFee.recordVersion),
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-pet-remove-after-paid",
+    data: { removePetIds: [secondPet.petId], newPets: [], reason: "客人減少一隻" },
+  });
+  assert.equal(result.success, true, JSON.stringify(result));
+  const updated = r.records("Bookings")[0];
+  assert.equal(Number(updated.quantity), 1);
+  assert.equal(Number(updated.estimatedTotal), 700);
+  assert.equal(Number(updated.depositAmount), 350);
+  assert.equal(Number(updated.remainingBalance), 0);
+  assert.equal(Number(updated.cashDepositAmount), 1000);
+  assert.equal(Number(updated.cashDepositCollectedAmount), 2000, "received cash is not silently refunded");
+  assert.equal(r.records("Pets").find((pet) => pet.petId === secondPet.petId).petStatus, "REMOVED");
+  assert.equal(r.records("Pets").find((pet) => pet.petId === secondPet.petId).removeReason, "客人減少一隻");
+  assert.equal(r.records("Pets").find((pet) => pet.petId === firstPet.petId).petStatus || "", "");
+  assert.equal(result.data.creditDue, 100);
+  const adjustmentRows = r.records("BookingAdjustments");
+  assert.deepEqual(JSON.parse(JSON.stringify(adjustmentRows.find((entry) => entry.adjustmentId === sourceFee.adjustmentId))), sourceFee);
+  const removedPetReversal = adjustmentRows.find((entry) => entry.type === "REVERSAL");
+  assert.equal(Number(removedPetReversal.amount), -25);
+  assert.equal(removedPetReversal.reversesAdjustmentId, sourceFee.adjustmentId);
+  const details = r.invokeStaff({ action: "staff.bookingDetail", token, bookingId: b.bookingId });
+  assert.equal(details.data.booking.cashDepositRefundDue, 2000);
+  assert.equal(details.data.logs.at(-1).actorStaffNameSnapshot, "Test Staff");
+});
+
+test("partial refunds can target paid balance payments and enforce cumulative net limits", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r, {
+    bookingStatus: "COMPLETED",
+    estimatedTotal: 450,
+    depositAmount: 350,
+    depositStatus: "PAID",
+    remainingBalance: 0,
+  });
+  addPaidPayment(r, b.bookingId, "PAY-REFUND-DEPOSIT", "DEPOSIT", 350);
+  addPaidPayment(r, b.bookingId, "PAY-REFUND-BALANCE", "BALANCE", 100);
+  const request = {
+    action: "staff.depositRefund",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "COMPLETED",
+    idempotencyKey: "v31-balance-refund-01",
+    data: { sourcePaymentId: "PAY-REFUND-BALANCE", amount: 30, reason: "TEST 手動退款", confirmRefund: true },
+  };
+  const first = r.invokeStaff(request);
+  assert.equal(first.success, true, JSON.stringify(first));
+  assert.equal(Number(r.records("Payments").find((payment) => payment.paymentId === "PAY-REFUND-BALANCE").refundAmount), 30);
+  const afterFirst = r.records("Bookings")[0];
+  const excess = r.invokeStaff(Object.assign({}, request, {
+    expectedRecordVersion: Number(afterFirst.recordVersion),
+    idempotencyKey: "v31-balance-refund-excess",
+    data: { sourcePaymentId: "PAY-REFUND-BALANCE", amount: 71, reason: "超出餘額", confirmRefund: true },
+  }));
+  assert.equal(excess.success, false);
+  assert.equal(r.records("Payments").filter((payment) => payment.paymentType === "REFUND").length, 1);
+  const last = r.invokeStaff(Object.assign({}, request, {
+    expectedRecordVersion: Number(r.records("Bookings")[0].recordVersion),
+    idempotencyKey: "v31-balance-refund-02",
+    data: { sourcePaymentId: "PAY-REFUND-BALANCE", amount: 70, reason: "退回餘額", confirmRefund: true },
+  }));
+  assert.equal(last.success, true, JSON.stringify(last));
+  assert.equal(Number(r.records("Payments").find((payment) => payment.paymentId === "PAY-REFUND-BALANCE").refundAmount), 100);
+  assert.equal(r.records("Payments").filter((payment) => payment.paymentType === "REFUND").length, 2);
+  assert.equal(Number(r.records("Bookings")[0].remainingBalance), 100);
+  assert.ok(r.records("Logs").every((log) => log.actorStaffNameSnapshot === "Test Staff"));
+});
+
+test("cancelled bookings can record a bounded manual refund without reopening settlement", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r, {
+    bookingStatus: "CANCELLED",
+    estimatedTotal: 200,
+    depositAmount: 100,
+    remainingBalance: 0,
+    balanceStatus: "PAID",
+  });
+  addPaidPayment(r, b.bookingId, "PAY-CANCELLED-DEPOSIT", "DEPOSIT", 100);
+  const result = r.invokeStaff({
+    action: "staff.depositRefund",
+    token,
+    bookingId: b.bookingId,
+    expectedRecordVersion: 1,
+    expectedStatus: "CANCELLED",
+    idempotencyKey: "v31-cancelled-partial-refund",
+    data: { sourcePaymentId: "PAY-CANCELLED-DEPOSIT", amount: 40, reason: "取消後酌情部分退款", confirmRefund: true },
+  });
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.equal(Number(r.records("Payments").find((payment) => payment.paymentId === "PAY-CANCELLED-DEPOSIT").refundAmount), 40);
+  assert.equal(r.records("Payments").filter((payment) => payment.paymentType === "REFUND").length, 1);
+  assert.equal(Number(r.records("Bookings")[0].remainingBalance), 0, "cancelled booking balance must not be recalculated");
+  assert.equal(r.records("Bookings")[0].bookingStatus, "CANCELLED");
+  assert.equal(r.records("Logs").at(-1).actorStaffNameSnapshot, "Test Staff");
+});
+
+test("legacy booking Logs resolve Staff name by actorStaffId", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const b = addBooking(r);
+  r.addRecord("Logs", {
+    logId: "LEGACY-LOG-1",
+    createdAt: "2099-05-01T10:00:00.000Z",
+    actorType: "STAFF",
+    actorStaffId: "staff-test-1",
+    actorStaffNameSnapshot: "",
+    action: "staff.edit",
+    entityType: "BOOKING",
+    entityId: b.bookingId,
+    requestId: "LEGACY-REQUEST-1",
+    summary: "舊紀錄",
+    changedFieldsJson: "{}",
+  });
+  const detail = r.invokeStaff({ action: "staff.bookingDetail", token, bookingId: b.bookingId });
+  assert.equal(detail.success, true);
+  assert.equal(detail.data.logs[0].actorStaffNameSnapshot, "Test Staff");
 });

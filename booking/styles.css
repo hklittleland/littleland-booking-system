@@ -73,6 +73,7 @@ a { color: inherit; }
   box-shadow: 0 7px 16px rgba(152, 104, 205, .24);
   font-size: 25px; font-weight: 900; line-height: 1;
 }
+.brand img.brand-mark { display: block; width: 44px; height: 44px; flex: 0 0 44px; object-fit: contain; border-radius: 0; background: transparent; box-shadow: none; }
 .brand-mark i { position: absolute; right: 5px; top: 4px; color: #fff4be; font-size: 10px; font-style: normal; }
 .brand-copy { display: grid; line-height: 1.15; }
 .brand-copy strong { font-size: 18px; font-weight: 900; letter-spacing: -.04em; background: linear-gradient(90deg, #8a63d0, #e27fb2); -webkit-background-clip: text; background-clip: text; color: transparent; }
