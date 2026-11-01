@@ -1355,3 +1355,53 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-
   .schedule-summary { padding: 9px; }
   .schedule-summary ul { grid-template-columns: 1fr; }
 }
+
+
+/* EXT is an internal, unlimited virtual lodging assignment, separate from physical rooms. */
+.ext-month-overview { min-width: 0; margin: 20px 0 10px; padding: 15px; border: 1px solid #dccff1; border-radius: 13px; background: linear-gradient(135deg, #faf7ff, #fff8fb); }
+.ext-month-overview h3 { margin: 0 0 5px; color: #6748a4; }
+.ext-month-overview > .room-month-note { margin-bottom: 12px; }
+.ext-month-group { margin-top: 12px; }
+.ext-month-group h4 { margin: 0 0 7px; color: #594276; font-size: 13px; }
+.ext-month-group ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.ext-month-booking { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; min-width: 0; min-height: 44px; padding: 9px 11px; border: 1px solid #dccff1; border-radius: 10px; background: #fff; color: #4f4262; font: inherit; font-size: 12px; font-weight: 700; text-align: left; cursor: pointer; }
+.ext-month-booking span:first-child { color: #583e8d; font-weight: 900; }
+.ext-month-booking:hover { border-color: #9878cf; background: #fcfaff; }
+.ext-month-booking:focus-visible { outline: 2px solid #7650c8; outline-offset: 2px; }
+.ext-month-empty { margin: 8px 0 0; padding: 10px 12px; border-radius: 9px; background: #fff; color: #6b6078; font-size: 13px; }
+.calendar-booking.extension-ext { border-left: 3px solid #9871ca; background: #f6f0ff; }
+.calendar-booking.extension-ext .booking-label { color: #644199; }
+.ext-selected-list { display: grid; gap: 7px; margin: 12px 0; padding: 12px; border: 1px solid #dccff1; border-radius: 12px; background: #faf7ff; }
+.ext-selected-list h3, .ext-selected-list p { margin: 0; }
+.ext-selected-list h3 { color: #6748a4; font-size: 15px; }
+.ext-selected-list p { color: var(--muted); font-size: 12px; }
+@media (max-width: 480px) {
+  .ext-month-overview { padding: 11px; }
+  .ext-month-booking { align-items: flex-start; flex-direction: column; gap: 3px; font-size: 12px; }
+}
+
+
+/* Staff stay-extension detail and fee preview. */
+.extension-card { border-color: #ddd1f1; background: linear-gradient(145deg, #fff, #fcfaff); }
+.extension-current { margin: 0 0 10px; color: #584173; }
+.extension-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0 16px; }
+.extension-summary > div { min-width: 0; padding: 9px 10px; border: 1px solid #ece5f5; border-radius: 10px; background: #fff; }
+.extension-summary dt { margin-bottom: 4px; color: var(--muted); font-size: 12px; }
+.extension-summary dd { margin: 0; color: #41364f; font-size: 14px; font-weight: 800; overflow-wrap: anywhere; }
+.extension-ext-badge, .extension-room-badge { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; }
+.extension-ext-badge { background: #f0e8ff; color: #6542a2; }
+.extension-room-badge { background: #e8f5ed; color: #246b46; }
+.extension-form { display: grid; gap: 8px; margin-top: 14px; padding-top: 13px; border-top: 1px solid #ece5f5; }
+.extension-form h3 { margin: 0; color: #584173; }
+.extension-form label { margin-top: 2px; font-size: 13px; font-weight: 800; }
+.extension-form input, .extension-form select, .extension-form textarea { width: 100%; min-width: 0; min-height: 44px; padding: 9px 11px; border: 1px solid #d8cfe4; border-radius: 9px; background: #fff; color: var(--ink); font: inherit; }
+.extension-form textarea { min-height: 72px; resize: vertical; }
+.extension-form button { justify-self: start; }
+.extension-preview { display: grid; gap: 5px; min-width: 0; padding: 11px 12px; border: 1px solid #ded2f1; border-radius: 10px; background: #f7f1ff; color: #4f4262; font-size: 13px; overflow-wrap: anywhere; }
+.extension-preview strong { color: #624293; }
+.extension-preview .muted { margin: 2px 0 0; }
+.extension-form .form-error { margin: 0; padding: 9px 11px; border-radius: 9px; background: #fff0f0; color: #aa3333; font-size: 13px; }
+@media (max-width: 560px) {
+  .extension-summary { grid-template-columns: 1fr; }
+  .extension-form button { width: 100%; }
+}

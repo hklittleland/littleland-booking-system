@@ -81,9 +81,11 @@
     var preset = presets[String(key || "")];
     if (!preset) return null;
     var total = Math.round(preset.unit * preset.multiplier * 100) / 100;
+    var billingBasis = key === "groom_once" ? "ONCE" : "PER_NIGHT";
     return {
       description: preset.description,
-      amount: total,
+      amount: preset.unit,
+      billingBasis: billingBasis,
       formula: "HK$" + preset.unit + " × " + preset.multiplier + " " + preset.unitLabel + " = " + money(total),
     };
   }
@@ -119,14 +121,15 @@
       '<p class="muted">這張表只會套用到 ' + escapeHtml(petName) + '；其他毛孩的費用不會改變。不同毛孩需不同服務或金額時，請在各自資料卡分開記錄。</p>' +
       '<form class="field pet-fee-form" data-pet-adjustment-form data-pet-id="' + escapeHtml(petId) + '" data-pet-name="' +
       escapeHtml(petName) + '" data-nights="' + escapeHtml(booking.nights || 1) + '" autocomplete="off">' +
-      '<label>常用項目（會按住宿晚數預填）</label><select data-pet-fee-preset name="preset"' + disabled + '>' +
+      '<label>常用項目（預填單次金額或每晚單價）</label><select data-pet-fee-preset name="preset"' + disabled + '>' +
       '<option value="">自訂項目</option><option value="groom_once">單次梳毛 · HK$70 一次</option>' +
       '<option value="groom_daily">每日梳毛 · HK$50 × 晚數</option><option value="medicine_once">每日餵藥 1 次 · HK$80 × 晚數</option>' +
       '<option value="medicine_twice">每日餵藥 2 次 · HK$150 × 晚數</option></select>' +
-      '<p class="field-help" data-pet-fee-preset-help>可選常用項目或輸入自訂服務；預填金額仍可修改。</p>' +
+      '<p class="field-help" data-pet-fee-preset-help>每日服務按每晚單價及住宿晚數計算；單次服務不會因延長住宿而自動重收。</p>' +
       '<label>項目名稱</label><input name="description" data-pet-fee-description maxlength="160" required' + disabled + '>' +
       '<label>操作</label><select name="direction" data-pet-fee-direction' + disabled + '><option value="add">新增收費</option><option value="reduce">減少／抵扣</option></select>' +
-      '<label>金額（HK$）</label><input name="amount" data-pet-fee-amount type="number" min="0.01" step="0.01" inputmode="decimal" required' + disabled + '>' +
+      '<label>計費方式</label><select name="billingBasis" data-pet-fee-basis' + disabled + '><option value="ONCE">一次性</option><option value="PER_NIGHT">每晚計算</option></select>' +
+      '<label data-pet-fee-amount-label>一次性金額（HK$）</label><input name="amount" data-pet-fee-amount type="number" min="0.01" step="0.01" inputmode="decimal" required' + disabled + '>' +
       '<label>原因</label><textarea name="reason" rows="2" maxlength="500" required' + disabled + '></textarea>' +
       '<button class="btn" type="submit"' + disabled + '>儲存「' + escapeHtml(petName) + '」費用</button></form>' +
       '<div class="pet-fee-ledger"><h4>此毛孩附加費紀錄</h4>' + rows + '</div></details>';
@@ -230,20 +233,42 @@
       var presetSelect = form.querySelector("[data-pet-fee-preset]");
       var descriptionInput = form.querySelector("[data-pet-fee-description]");
       var amountInput = form.querySelector("[data-pet-fee-amount]");
+      var basisSelect = form.querySelector("[data-pet-fee-basis]");
+      var amountLabel = form.querySelector("[data-pet-fee-amount-label]");
       var helper = form.querySelector("[data-pet-fee-preset-help]");
       if (!presetSelect) return;
+      function refreshBasis() {
+        var basis = basisSelect ? basisSelect.value : "ONCE";
+        if (amountLabel) amountLabel.textContent = basis === "PER_NIGHT" ? "每晚單價（HK$）" : "一次性金額（HK$）";
+        var selectedPreset = feePreset(presetSelect.value, form.dataset.nights);
+        if (selectedPreset && helper) {
+          var nights = Math.max(1, Math.floor(Number(form.dataset.nights) || 1));
+          var unit = Number(amountInput && amountInput.value || selectedPreset.amount);
+          var total = basis === "PER_NIGHT" ? unit * nights : unit;
+          helper.textContent = "HK$" + unit + (basis === "PER_NIGHT" ? " × " + nights + " 晚" : " 一次") + " = " + money(total) + "；仍可修改單價。";
+        } else if (helper) {
+          helper.textContent = basis === "PER_NIGHT"
+            ? "輸入每晚單價；延長住宿時系統會按新增住宿晚數重新計算。"
+            : "輸入一次性總額；延長住宿時不會自動重複收費。";
+        }
+      }
       presetSelect.addEventListener("change", function () {
         var preset = feePreset(presetSelect.value, form.dataset.nights);
         if (!preset) {
           if (descriptionInput) descriptionInput.value = "";
           if (amountInput) amountInput.value = "";
-          if (helper) helper.textContent = "輸入自訂項目及金額；如不同毛孩費用不同，請逐隻記錄。";
+          if (basisSelect) basisSelect.value = "ONCE";
+          refreshBasis();
           return;
         }
         if (descriptionInput) descriptionInput.value = preset.description;
         if (amountInput) amountInput.value = preset.amount.toFixed(2);
-        if (helper) helper.textContent = preset.formula + "；你仍可修改金額。";
+        if (basisSelect) basisSelect.value = preset.billingBasis;
+        refreshBasis();
       });
+      if (basisSelect) basisSelect.addEventListener("change", refreshBasis);
+      if (amountInput) amountInput.addEventListener("input", refreshBasis);
+      refreshBasis();
     });
     var petForm = app.querySelector("#bookingPetCountForm");
     if (petForm) {
