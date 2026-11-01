@@ -225,7 +225,7 @@
       );
   }
   const head = (t, s = "") =>
-    `<div class="page-head"><div><h1>${esc(t)}</h1>${s ? `<p>${esc(s)}</p>` : ""}</div></div>`;
+    `<div class="page-head"><div><h1>${esc(t)}</h1>${s ? `<p>${esc(s)}</p>` : ""}</div>${t === "Booking Detail" ? '<button type="button" class="btn secondary" data-print-booking>列印／另存 PDF</button>' : ""}</div>`;
   const stat = (t, v) =>
     `<div class="stat"><strong>${esc(v == null ? "—" : v)}</strong><span>${esc(t)}</span></div>`;
   function conflictNotice(b) {
@@ -270,7 +270,7 @@
     try {
       let p = {};
       if (page === "detail") p = { bookingId: StaffRouter.current().id };
-      if (page === "schedule") { const d=store.state.calendarDate||new Date(); p.month=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
+      if (page === "schedule") { const d=store.state.scheduleDate||new Date(); p.month=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
       if (page === "revenue") {
         p.year = store.state.revenueYear || "2026";
         p.month = store.state.revenueMonth || `${p.year}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
@@ -404,9 +404,10 @@
     return `${head("營收分析", `${year} 全年 12 個月 TEST 營收總覽；住宿預訂按入住月份、實際收款按付款日統計；現金按金不計住宿收入。`)}<form id="revenueYearForm" class="revenue-year-form"><label for="revenueYear">檢視年度</label><input id="revenueYear" name="year" type="number" min="2020" max="2100" value="${escValue(year)}"><button class="btn secondary">載入年度</button></form><section class="card">${chart}</section><div class="grid two"><section class="card"><h2>按房型</h2>${groups(d.byRoomType, roomNames)}</section><section class="card"><h2>按寵物種類</h2>${groups(d.bySpecies, speciesNames)}</section></div>`;
   }
   function schedule() {
-    const d = store.state.schedules || {}, date = store.state.calendarDate || new Date();
-    const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date())}) : '<p class="empty">排班月曆元件未載入。</p>';
-    return `${head("員工排班", "TEST 員工排班、休息日及月度當值日數。未排班日期明確標示。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-schedule-month="-1">‹ 上月</button><button class="btn secondary" data-schedule-month="1">下月 ›</button></div>${html}</section><section class="card"><h2>新增／更新班表</h2><form id="scheduleForm" class="field"><label>日期</label><input name="date" type="date" required><label>員工</label><select name="staffId" required>${arr(d.staff).map(x=>`<option value="${esc(x.staffId)}">${esc(x.displayName||x.staffId)}</option>`).join("")}</select><label>安排</label><select name="status"><option value="WORK">當值</option><option value="REST">休息</option></select><label>開始時間（可留空）</label><input name="startTime" type="time"><label>結束時間（可留空）</label><input name="endTime" type="time"><label>備註</label><input name="note"><button class="btn">儲存班表</button></form><form id="swapForm" class="field"><h3>交換班次（稽核記錄）</h3><label>日期</label><input name="date" type="date" required><label>員工 A</label><select name="staffId" required>${arr(d.staff).map(x=>`<option value="${esc(x.staffId)}">${esc(x.displayName||x.staffId)}</option>`).join("")}</select><label>員工 B</label><select name="targetStaffId" required>${arr(d.staff).map(x=>`<option value="${esc(x.staffId)}">${esc(x.displayName||x.staffId)}</option>`).join("")}</select><button class="btn secondary">交換班次</button></form></section>`;
+    const d = store.state.schedules || {}, date = store.state.scheduleDate || new Date();
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()),draftAssignments:(store.state.scheduleDrafts||{})[monthKey]||{},pending:!!store.state.scheduleSaving}) : '<p class="empty">排班月曆元件未載入。</p>';
+    return `${head("員工排班", "每月日曆直接選擇已設定的排班員工，再按一次儲存整月。未安排表示當日無人值班。更新只影響本月。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-schedule-month="-1">‹ 上月</button><button class="btn secondary" data-schedule-month="1">下月 ›</button></div>${html}</section>`;
   }
   function newBooking() {
     const view = window.LittleLandStaffNewBookingView;
@@ -430,6 +431,32 @@
       }
     }
     return [];
+  }
+  function printBooking() {
+    const data = store.state.detail;
+    if (!data || !window.LittleLandBookingPrint) {
+      toast("列印頁未能載入，請重新整理後再試。");
+      return;
+    }
+    const booking = data.detail || data.booking || {};
+    const baseUrl = window.location.href.split("#")[0];
+    const assetBase = new URL("assets/booking-print/", baseUrl).toString();
+    const logoUrl = new URL("../assets/brand/littleland-logo.png", baseUrl).toString();
+    const popup = window.open("", "_blank");
+    if (!popup) {
+      toast("瀏覽器封鎖了列印視窗，請允許此網站開啟新視窗後再試。");
+      return;
+    }
+    const html = window.LittleLandBookingPrint.render({
+      booking,
+      pets: arr(data.pets).filter((pet) => !["REMOVED", "ARCHIVED"].includes(String(pet.petStatus || "").toUpperCase())),
+      payments: arr(data.payments),
+      adjustments: arr(data.adjustments),
+      services: serviceItems(booking),
+    }, { shortReference: shortRef(booking), assetBase, logoUrl });
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
   }
   function detail() {
     const d = store.state.detail;
@@ -491,6 +518,9 @@
     });
     const bookingChangeControls = window.LittleLandBookingChangesView
       ? window.LittleLandBookingChangesView.render({ booking: b, pets: pets, payments: payments, adjustments: adjustments, pending: pendingAction })
+      : "";
+    const whatsappPanel = window.LittleLandWhatsAppMessages
+      ? window.LittleLandWhatsAppMessages.render({ booking: feeDisplay, pets, payments, roomNames, allocatedRooms: parseRooms(b), roomConflict: conflict })
       : "";
     return `${head("Booking Detail", idOf(b))}${conflict ? `<div class="danger-box" role="alert"><strong>房間衝突：</strong>${b.depositStatus === "PAID" || store.state.depositConflictBookingId === String(idOf(b)) ? "訂金已收" : "訂金尚未確認已收"}；目前沒有可用房間。未有房間分配，預約未確認。請員工手動聯絡客人跟進；請勿承諾房間。</div>` : ""}<section class="card"><h2>預約 ${esc(idOf(b))} ${status(s)} ${depositBadge(b)} ${followupBadge(b)}</h2>${kv(
       b,
@@ -585,7 +615,7 @@
         ["已使用按金", "cashDepositUsedAmount"],
         ["應退按金", refund],
       ],
-    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(friendly(get(p, "paidAt")))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section>${bookingChangeControls}<section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(friendly(get(x, "createdAt", "time")))} · ${esc(get(x, "staffName", "actorStaffNameSnapshot", "actorStaffId"))} · ${esc(get(x, "note", "summary"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${escValue(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(friendly(get(x, "createdAt")))} · <strong>${esc(get(x, "actorStaffNameSnapshot", "staffName") || get(x, "actorStaffId") || (x.actorType === "SYSTEM" ? "系統" : "未知操作者"))}</strong> · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => a === "earlyCheckout" ? `<button class="btn secondary" data-adjust="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>` : `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
+    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(friendly(get(p, "paidAt")))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section>${bookingChangeControls}${whatsappPanel}<section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(friendly(get(x, "createdAt", "time")))} · ${esc(get(x, "staffName", "actorStaffNameSnapshot", "actorStaffId"))} · ${esc(get(x, "note", "summary"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${escValue(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(friendly(get(x, "createdAt")))} · <strong>${esc(get(x, "actorStaffNameSnapshot", "staffName") || get(x, "actorStaffId") || (x.actorType === "SYSTEM" ? "系統" : "未知操作者"))}</strong> · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => a === "earlyCheckout" ? `<button class="btn secondary" data-adjust="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>` : `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
       const draft = store.state.editDraft || {}, fieldValue = (key, fallback) => draft[key] !== undefined ? draft[key] : (fallback == null ? "" : fallback);
       const textField = (label, key, fallback, type = "text") => `<label>${esc(label)}</label><input name="${esc(key)}" type="${type}" value="${escValue(fieldValue(key, fallback))}">`;
       const selectField = (label, key, value, options) => `<label>${esc(label)}</label><select name="${esc(key)}">${options.map(([v, title]) => `<option value="${escValue(v)}" ${String(fieldValue(key, value)) === String(v) ? "selected" : ""}>${esc(title)}</option>`).join("")}</select>`;
@@ -612,7 +642,12 @@
   }
   function settings() {
     const s = store.state.settings || {};
-    return `${head("設定／登出", "TEST 環境帳戶")}<section class="card"><h2>登入資料</h2><p>${esc(get(s, "staff.displayName"))} · 完整管理權限（TEST）</p><p class="meta">Session token 只保存在 sessionStorage。</p><button class="btn danger" data-logout>登出並撤銷 Session</button></section>`;
+    const employees = arr(s.scheduleEmployees);
+    const employeeValue = (index) => {
+      const employee = employees.find((item) => Number(item.sortOrder) === index + 1) || employees[index] || {};
+      return String(employee.displayName || "");
+    };
+    return `${head("設定／登出", "TEST 環境帳戶")}<section class="card"><h2>排班員工名稱</h2><p class="meta">設定 2–3 位用於排班下拉選單的員工名稱。這份名冊與登入帳號及權限分開；不會新增登入帳號。</p><form id="scheduleEmployeesForm" class="field schedule-employee-settings-form"><label for="scheduleEmployeeA">員工 A 名稱</label><input id="scheduleEmployeeA" name="employeeA" type="text" maxlength="40" required value="${escValue(employeeValue(0))}" autocomplete="off"><label for="scheduleEmployeeB">員工 B 名稱</label><input id="scheduleEmployeeB" name="employeeB" type="text" maxlength="40" required value="${escValue(employeeValue(1))}" autocomplete="off"><label for="scheduleEmployeeC">員工 C 名稱（選填）</label><input id="scheduleEmployeeC" name="employeeC" type="text" maxlength="40" value="${escValue(employeeValue(2))}" autocomplete="off"><p class="field-help">員工 A、B 必須填寫；C 可留空。每個名稱最多 40 字，且不可重複。</p><button class="btn" type="submit" ${pendingAction ? "disabled" : ""}>儲存排班員工名稱</button></form></section><section class="card"><h2>登入資料</h2><p>${esc(get(s, "staff.displayName"))} · 完整管理權限（TEST）</p><p class="meta">Session token 只保存在 sessionStorage。</p><button class="btn danger" data-logout>登出並撤銷 Session</button></section>`;
   }
   function paint() {
     if (!store.token) {
@@ -639,6 +674,8 @@
   function bind(page) {
     const retry = app.querySelector("[data-retry]");
     if (retry) retry.onclick = () => loadPageData(page, { force: true }).then(paint);
+    const printButton = app.querySelector("[data-print-booking]");
+    if (printButton) printButton.onclick = printBooking;
     const todayButton = app.querySelector("[data-today]"); if (todayButton) todayButton.onclick = async () => { const t = new Date(new Date().toLocaleString("en-US", {timeZone:"Asia/Hong_Kong"})); store.state.calendarDate=t; store.state.selectedCalendarDate=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()); await loadPageData("calendar",{force:true}); paint(); };
     app.querySelectorAll("[data-month]").forEach(
       (x) =>
@@ -654,6 +691,14 @@
           paint();
         }),
     );
+    app.querySelectorAll("[data-schedule-month]").forEach((button) => {
+      button.onclick = async () => {
+        const current = store.state.scheduleDate || new Date();
+        store.state.scheduleDate = new Date(current.getFullYear(), current.getMonth() + Number(button.dataset.scheduleMonth), 1);
+        await loadPageData("schedule", { force: true });
+        paint();
+      };
+    });
     app.querySelectorAll("[data-date]").forEach(
       (x) =>
         (x.onclick = () => {
@@ -766,27 +811,32 @@
         mutate("edit", StaffRouter.current().id, { data }, ef);
       };
     }
-    const submitApi = async (action, payload, form) => {
+    const submitApi = async (action, payload, form, onSuccess) => {
       if (pendingAction) return;
       const requestBody = Object.assign({}, payload);
+      const suppliedIdempotencyKey = String(requestBody.idempotencyKey || "");
+      delete requestBody.idempotencyKey;
       const fingerprint = JSON.stringify(requestBody);
+      const formControls = form ? Array.from(form.querySelectorAll("button,input,select,textarea"), (control) => ({ control, disabled: control.disabled })) : [];
       if (form) {
         if (form.dataset.idempotencyFingerprint !== fingerprint || !form.dataset.idempotencyKey) {
           form.dataset.idempotencyFingerprint = fingerprint;
-          form.dataset.idempotencyKey = uuid();
+          form.dataset.idempotencyKey = suppliedIdempotencyKey || uuid();
+        } else if (suppliedIdempotencyKey) {
+          form.dataset.idempotencyKey = suppliedIdempotencyKey;
         }
         requestBody.idempotencyKey = form.dataset.idempotencyKey;
       } else {
-        requestBody.idempotencyKey = uuid();
+        requestBody.idempotencyKey = suppliedIdempotencyKey || uuid();
       }
       pendingAction = true;
-      if (form) form.querySelectorAll("button").forEach((button) => { button.disabled = true; });
-      let repaint = false;
+      formControls.forEach(({ control }) => { control.disabled = true; });
+      let repaint = false, mutationSucceeded = false;
       try {
-        let mutationSucceeded = false;
         try {
           await StaffAPI.request(action, requestBody, store.token);
           mutationSucceeded = true;
+          if (typeof onSuccess === "function") onSuccess();
           if (form) { delete form.dataset.idempotencyFingerprint; delete form.dataset.idempotencyKey; }
           readCache.clear();
           toast("TEST API 已確認操作。");
@@ -797,7 +847,6 @@
             let error = form.querySelector(".form-error");
             if (!error) { error = document.createElement("p"); error.className = "form-error"; error.setAttribute("role", "alert"); form.prepend(error); }
             error.textContent = e.message;
-            form.querySelectorAll("button").forEach((button) => { button.disabled = false; });
           } else {
             errorText = e.message;
             repaint = true;
@@ -811,9 +860,55 @@
       } finally {
         pendingAction = false;
         if (repaint) paint();
-        else if (form && form.isConnected) form.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+        else if (form && form.isConnected) formControls.forEach(({ control, disabled }) => { control.disabled = disabled; });
       }
+      return mutationSucceeded;
     };
+    const scheduleEmployeesForm = app.querySelector("#scheduleEmployeesForm");
+    if (scheduleEmployeesForm) {
+      scheduleEmployeesForm.onsubmit = (event) => {
+        event.preventDefault();
+        const names = [scheduleEmployeesForm.elements.employeeA.value, scheduleEmployeesForm.elements.employeeB.value, scheduleEmployeesForm.elements.employeeC.value].map((value) => value.trim());
+        const nonEmpty = names.filter(Boolean);
+        const unique = new Set(nonEmpty.map((name) => name.toLocaleLowerCase())).size === nonEmpty.length;
+        if (!names[0] || !names[1] || names.some((name) => name.length > 40) || !unique) {
+          let error = scheduleEmployeesForm.querySelector(".form-error");
+          if (!error) { error = document.createElement("p"); error.className = "form-error"; error.setAttribute("role", "alert"); scheduleEmployeesForm.prepend(error); }
+          error.textContent = "請填寫至少兩位不同的員工名稱；第三位可留空，每個名稱最多 40 字。";
+          return;
+        }
+        submitApi("scheduleEmployeesSave", { data: { employees: names.map((displayName) => ({ displayName })) } }, scheduleEmployeesForm);
+      };
+    }
+    const scheduleMonthForm = app.querySelector("#scheduleMonthForm");
+    if (scheduleMonthForm) {
+      const year = Number(scheduleMonthForm.dataset.scheduleYear);
+      const month = Number(scheduleMonthForm.dataset.scheduleMonth);
+      const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+      scheduleMonthForm.addEventListener("change", (event) => {
+        const control = event.target.closest("[data-schedule-day]");
+        if (!control) return;
+        store.state.scheduleDrafts = store.state.scheduleDrafts || {};
+        const draft = store.state.scheduleDrafts[monthKey] || (store.state.scheduleDrafts[monthKey] = {});
+        draft[control.dataset.date] = control.value;
+      });
+      scheduleMonthForm.onsubmit = async (event) => {
+        event.preventDefault();
+        const assignments = Array.from(scheduleMonthForm.querySelectorAll("[data-schedule-day]"), (control) => ({ workDate: control.dataset.date, staffId: control.value || "" }));
+        const data = { year, month, assignments };
+        const fingerprint = JSON.stringify(data);
+        store.state.scheduleMonthIdempotency = store.state.scheduleMonthIdempotency || {};
+        let retry = store.state.scheduleMonthIdempotency[monthKey];
+        if (!retry || retry.fingerprint !== fingerprint) {
+          retry = { fingerprint, key: uuid() };
+          store.state.scheduleMonthIdempotency[monthKey] = retry;
+        }
+        await submitApi("scheduleMonthSave", { data, idempotencyKey: retry.key }, scheduleMonthForm, () => {
+          if (store.state.scheduleDrafts) delete store.state.scheduleDrafts[monthKey];
+          if (store.state.scheduleMonthIdempotency) delete store.state.scheduleMonthIdempotency[monthKey];
+        });
+      };
+    }
     const changesView = window.LittleLandBookingChangesView;
     if (changesView) changesView.bind(app);
     const detailState = store.state.detail || {};
@@ -901,6 +996,20 @@
       readCache.clear();
       await loadPageData("revenue", { force: true });
       paint();
+    });
+    app.querySelectorAll("[data-copy-whatsapp]").forEach((button) => button.onclick = async () => {
+      let text;
+      try { text = decodeURIComponent(button.dataset.copyWhatsapp || ""); }
+      catch (_) { toast("草稿內容無法讀取，請重新整理頁面。"); return; }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+        else {
+          const input = document.createElement("textarea"); input.value = text; input.setAttribute("readonly", ""); input.style.position = "fixed"; input.style.opacity = "0";
+          document.body.appendChild(input); input.select(); const copied = document.execCommand("copy"); input.remove();
+          if (!copied) throw new Error("clipboard unavailable");
+        }
+        toast("WhatsApp 草稿已複製；傳送前請核對內容。");
+      } catch (_) { toast("無法自動複製，請展開訊息預覽後手動複製。"); }
     });
     app.querySelectorAll("[data-adjust='earlyCheckout']").forEach((button) => button.onclick = () => {
       const actualCheckoutDate = prompt("輸入實際退房日期 YYYY-MM-DD");

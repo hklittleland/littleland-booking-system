@@ -357,3 +357,12 @@ This amendment is based on the user's latest explicit requests and supersedes on
 ## Audit attribution addendum — Staff identity in change history
 
 Booking Detail's change Logs and follow-up history must visibly identify the responsible Staff member, not only timestamp/action. New staff-generated Logs will retain `actorStaffId` and an immutable `actorStaffNameSnapshot` captured at operation time; Staff API reads will resolve legacy rows with blank snapshot from the Staff directory by ID and fall back to the ID if no match exists. Render the resolved name in both the operation log and follow-up history. Add the snapshot field through a recognized additive TEST schema migration; preserve existing Logs rows and never store credentials or session tokens.
+
+
+## V3.1 TEST 增補：排班名冊與列印核對單
+
+- 排班採用 Staff login 之外的獨立 `ScheduleEmployees` 名冊；Settings 設定 2–3 個顯示名稱，第三欄預填「Yip」、可更改或留空。每日月曆仍只指派一位當值者，整月批次儲存及既有日期/員工驗證保持不變。名冊寫入必須登入、記錄 actor、idempotency，且 schema migration 僅新增 TEST tab，不碰 Production 或 Staff 密碼/Session。
+- Booking Detail 的列印/PDF 預覽只取當前已載入的單筆 TEST booking。列印頁顯示八字短編號、客人/緊急聯絡、入住資料、每隻寵物、健康/飲食、收費和付款狀態；禁止顯示完整內部 ID、內部分配房號、其他訂單或 Staff 憑證。保留瀏覽器列印/另存 PDF，不建立付款動作。
+- 費用列有正數才顯示；列出房費、有效附加費、額外服務與人工更正，梳毛/餵藥按 `petId`/snapshot 對應寵物，找不到連結即標示未指定。現金備用金/按金獨立呈現、不計入住宿總額。Staff 手動費用更改可按每隻寵物選取；每隻金額不同時逐隻保存。
+- 照顧／用藥表使用原表淡彩可愛視覺作參考，逐寵物與每 10 個住宿日分頁，自動帶入家長、電話、兩位緊急聯絡人、寵物/健康/飲食/用藥及實際住宿日期。倉鼠顯示長擺糧，不顯示餵食次數/假期提醒。保留用戶原始來源檔案不修改；只將《入住須知及寄養條款.pdf》原頁逐頁原樣附入，藥物表不再把舊空白原頁當輸出。
+- 本輪限於 LittleLand_TEST 程式與虛構 mock 測試，不連 Production；未做實際 TEST Sheet/API 寫入或 Web App 新版部署。

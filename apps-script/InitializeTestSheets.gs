@@ -96,6 +96,13 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
     ]
   },
   {
+    name: 'ScheduleEmployees',
+    headers: [
+      'scheduleEmployeeId', 'displayName', 'isActive', 'sortOrder',
+      'createdAt', 'updatedAt', 'createdByStaffId', 'updatedByStaffId'
+    ]
+  },
+  {
     name: 'BookingAdjustments',
     headers: [
       'adjustmentId', 'bookingId', 'type', 'description', 'amount', 'currency',

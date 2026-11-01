@@ -146,7 +146,7 @@
       '<form id="bookingAdjustmentForm" class="field change-form"><label>項目說明</label><input name="description" maxlength="160" required>' +
       '<label>操作</label><select name="direction"><option value="add">新增收費</option><option value="reduce">減少／抵扣</option></select>' +
       '<label>每項／每隻金額（HK$）</label><input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required>' +
-      '<fieldset><legend>寵物範圍</legend><p class="muted">不選寵物代表整張預約的項目；選多隻時按每隻金額各建立一行。</p>' + petOptions + '</fieldset>' +
+      '<fieldset><legend>寵物範圍</legend><p class="muted">不選寵物代表整張預約的項目；選多隻時按每隻金額各建立一行。不同毛孩有不同服務或金額時，請每次只選一隻分開新增／減少。</p>' + petOptions + '</fieldset>' +
       '<label>原因</label><textarea name="reason" rows="2" maxlength="500" required></textarea>' +
       '<button class="btn"' + disabled + '>儲存費用更改</button></form></details>' +
       refundPanel +

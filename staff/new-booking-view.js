@@ -44,6 +44,28 @@
     return `<option value="">${draft.species ? "請選擇房型" : "先選擇寵物種類"}</option>${choices.map(([id, label]) => `<option value="${esc(id)}" ${String(draft.roomId || "") === id ? "selected" : ""}>${esc(label)}</option>`).join("")}`;
   }
 
+  function dietFieldsMarkup(draft) {
+    if (!draft.species) return '<p class="meta">請先選擇寵物種類，系統會顯示相應主糧及牧草品牌。</p>';
+    const food = Form.FOOD[draft.species] || { main: [], hay: [] };
+    const mainChoices = (food.main || []).filter(Boolean).map((item) => [item, item]);
+    const hayChoices = (food.hay || []).filter(Boolean).map((item) => [item, item]);
+    const hamster = draft.species === "hamster";
+    return `${selectField("主糧（可留空）", "foodMain", draft.foodMain, mainChoices)}${!hamster ? selectField("牧草（可留空）", "hay", draft.hay, hayChoices) : ""}${!hamster ? selectField("每日餵食次數", "feeding", draft.feeding, [["每日一次", "每日一次"], ["每日兩次／早晚各一次", "每日兩次／早晚各一次"]]) : ""}${!hamster ? selectField("是否提供新鮮蔬菜", "vegetables", draft.vegetables, [["是", "是"], ["否", "否"]]) : ""}`;
+  }
+
+  function dietNoteMarkup(draft) {
+    if (draft.species === "hamster") return '<p class="notice info">倉鼠採長擺糧，不需選擇牧草、餵食次數或假期餵食提醒。</p>';
+    if (draft.species) return '<p class="meta">星期日／公眾假期只餵一次，按雙倍份量準備。</p>';
+    return "";
+  }
+
+  function updateDietFields(form, draft) {
+    const fields = form && form.querySelector("#newBookingDietFields");
+    const note = form && form.querySelector("#newBookingDietNote");
+    if (fields) fields.innerHTML = dietFieldsMarkup(draft);
+    if (note) note.innerHTML = dietNoteMarkup(draft);
+  }
+
   function quoteMarkup(draft) {
     const validation = Form.validateAvailabilityInput(draft);
     if (validation) return `<div class="empty">選擇有效入住日期、退房日期、寵物種類、房型及數量後，即時顯示費用摘要。</div>`;
@@ -75,15 +97,11 @@
     const quantity = Number(draft.quantity);
     const petCount = draft.species && Number.isInteger(quantity) && quantity > 0 ? Math.min(quantity, 5) : 0;
     const pets = Array.from({ length: petCount }, (_, index) => petMarkup((draft.pets || [])[index] || {}, index, draft.species));
-    const food = Form.FOOD[draft.species] || { main: [], hay: [] };
-    const mainChoices = (food.main || []).filter(Boolean).map((item) => [item, item]);
-    const hayChoices = (food.hay || []).filter(Boolean).map((item) => [item, item]);
-    const hamster = draft.species === "hamster";
     const terms = Form.TERMS.map((term, index) => `<label class="consent-row"><input type="checkbox" data-term-index="${index}" ${draft.terms && draft.terms[index] ? "checked" : ""}><span>${esc(term)}</span></label>`).join("");
     const speciesOptions = Form.SPECIES.map((item) => [item.id, `${item.icon} ${item.label}`]);
     const times = Form.TIME_SLOTS.map((item) => [item, item]);
     const healthReview = (draft.pets || []).some((pet) => ["vetVisit", "infectiousDisease", "chronicDisease", "medication"].some((key) => pet[key] === "yes"));
-    return `<div class="page-head"><div><h1>新增預約</h1><p>員工代客建立 TEST 預約；所有個資只在本頁暫存，沒有電話自動查找或預填。</p></div></div><div class="notice warning"><strong>重要：</strong>新預約會以「待確認」建立，不會分配或保留實體房間。收到訂金並準備確認時，系統須重新檢查最新房態。</div><form id="newBookingForm" class="new-booking-form" novalidate><section class="card"><h2>1. 入住日期、時間與房型</h2><div class="grid two">${field("入住日期", "checkin", draft.checkin, "date", `required min="${Form.hongKongToday()}"`)}${field("退房日期", "checkout", draft.checkout, "date", `required min="${Form.hongKongToday()}"`)}${selectField("入住時間", "checkinTime", draft.checkinTime, times, true)}${selectField("退房時間", "checkoutTime", draft.checkoutTime, times, true)}${selectField("寵物種類", "species", draft.species, speciesOptions, true)}<div class="field"><label for="roomId">房型</label><select id="roomId" name="roomId" required>${roomSelectMarkup(draft)}</select></div><div class="field"><label for="quantity">寵物數量</label><input id="quantity" name="quantity" type="number" min="1" max="5" step="1" value="${value(draft.quantity)}" required><span class="meta" id="quantityLimit">請先選擇物種及房型，系統會顯示該房型入住上限。</span></div></div><div class="row availability-row"><button class="btn secondary" type="button" id="checkStaffAvailability" ${pending ? "disabled" : ""}>查詢 TEST 房態</button>${availabilityLabel(availability)}</div><p class="meta">房態只顯示可預訂／不可預訂，不顯示實體房號或其他客人資料。若不可預訂，仍可建立待確認申請，但須員工確認並跟進，不會保留房間。</p></section><section class="card"><h2>2. 寵物資料與健康申報</h2><p class="meta">年齡最少：兔子 3 個月、天竺鼠 3 個月、倉鼠 2 個月。懷孕或最近 30 日接受過手術的寵物不可按一般住宿流程建立。</p><div id="newBookingPets">${pets.join("") || `<div class="empty">先選擇寵物種類及數量，逐隻填寫寵物資料。</div>`}</div>${healthReview ? `<div class="notice warning">健康資料包含需人工覆核項目；建立後仍須由員工跟進。</div>` : ""}</section><section class="card"><h2>3. 家長聯絡資料</h2><div class="grid two">${field("家長姓名", "parentName", draft.parentName, "text", "required maxlength=100 autocomplete=name")}${field("香港電話（8 位）", "phone", draft.phone, "tel", "required inputmode=tel autocomplete=tel placeholder=例如12345678")}${field("Email", "email", draft.email, "email", "required autocomplete=email")}${field("第 1 位緊急聯絡人姓名及電話", "emergency1", draft.emergency1, "text", "required placeholder=請輸入姓名及電話")}${field("第 2 位緊急聯絡人姓名及電話", "emergency2", draft.emergency2, "text", "required placeholder=請輸入姓名及電話")}${field("指定獸醫／診所（選填）", "vet", draft.vet, "text", "maxlength=200")}</div><p class="meta">此為員工代客輸入，不會按電話號碼自動帶入舊預約或其他客人資料。</p></section><section class="card"><h2>4. 飲食與額外服務</h2><div class="grid two">${selectField("主糧（可留空）", "foodMain", draft.foodMain, mainChoices)}${!hamster ? selectField("牧草（可留空）", "hay", draft.hay, hayChoices) : ""}${!hamster ? selectField("每日餵食次數（倉鼠不適用）", "feeding", draft.feeding, [["每日一次", "每日一次"], ["每日兩次／早晚各一次", "每日兩次／早晚各一次"]]) : ""}${!hamster ? selectField("是否提供新鮮蔬菜", "vegetables", draft.vegetables, [["是", "是"], ["否", "否"]]) : ""}</div>${!hamster ? `<p class="meta">星期日／公眾假期只餵一次，按雙倍份量準備。</p>` : `<p class="notice info">倉鼠採長擺糧，不需選擇餵食次數或假期餵食提醒。</p>`}<fieldset class="service-options"><legend>額外服務（會即時更新費用）</legend><label class="choice-row"><input type="checkbox" name="groomingOnce" ${draft.groomingOnce ? "checked" : ""}>單次梳毛（HK$70 一次）</label><label class="choice-row"><input type="checkbox" name="groomingDaily" ${draft.groomingDaily ? "checked" : ""}>每日梳毛（HK$50 × 晚數）</label><div class="field"><label>每日餵藥（兩種不可同時選擇）</label><div class="choice-row"><label><input type="radio" name="medicine" value="none" ${draft.medicine === "none" ? "checked" : ""}>不需要</label><label><input type="radio" name="medicine" value="once" ${draft.medicine === "once" ? "checked" : ""}>每日 1 次（HK$80 × 晚數）</label><label><input type="radio" name="medicine" value="twice" ${draft.medicine === "twice" ? "checked" : ""}>每日 2 次（HK$150 × 晚數）</label></div></div><label class="choice-row"><input type="checkbox" name="earlyCheckin" ${draft.earlyCheckin ? "checked" : ""}>提早入住一次（HK$200）</label><label class="choice-row"><input type="checkbox" name="lateCheckout" ${draft.lateCheckout ? "checked" : ""}>延遲退房一次（17:00 後，HK$200）</label></fieldset></section><section class="card pricing-summary"><h2>5. 費用摘要</h2><div id="newBookingQuote" aria-live="polite">${quoteMarkup(draft)}</div></section><section class="card"><h2>6. 條款與確認</h2><p class="meta">請先確認客人已逐項閱讀及同意，員工代為勾選；未完成六項確認不能提交。</p><div class="consent-list">${terms}</div>${healthReview ? `<div class="notice warning">健康資料須由員工人工覆核；本表單不會自動批准健康風險。</div>` : ""}<button class="btn create-booking-btn" type="submit" ${pending ? "disabled" : ""}>${pending ? "正在提交 TEST 預約…" : "建立待確認預約"}</button><p class="meta">建立成功後才會顯示 Booking ID；本操作不會發送 WhatsApp 或付款請求。</p></section></form>`;
+    return `<div class="page-head"><div><h1>新增預約</h1><p>員工代客建立 TEST 預約；所有個資只在本頁暫存，沒有電話自動查找或預填。</p></div></div><div class="notice warning"><strong>重要：</strong>新預約會以「待確認」建立，不會分配或保留實體房間。收到訂金並準備確認時，系統須重新檢查最新房態。</div><form id="newBookingForm" class="new-booking-form" novalidate><section class="card"><h2>1. 入住日期、時間與房型</h2><div class="grid two">${field("入住日期", "checkin", draft.checkin, "date", `required min="${Form.hongKongToday()}"`)}${field("退房日期", "checkout", draft.checkout, "date", `required min="${Form.hongKongToday()}"`)}${selectField("入住時間", "checkinTime", draft.checkinTime, times, true)}${selectField("退房時間", "checkoutTime", draft.checkoutTime, times, true)}${selectField("寵物種類", "species", draft.species, speciesOptions, true)}<div class="field"><label for="roomId">房型</label><select id="roomId" name="roomId" required>${roomSelectMarkup(draft)}</select></div><div class="field"><label for="quantity">寵物數量</label><input id="quantity" name="quantity" type="number" min="1" max="5" step="1" value="${value(draft.quantity)}" required><span class="meta" id="quantityLimit">請先選擇物種及房型，系統會顯示該房型入住上限。</span></div></div><div class="row availability-row"><button class="btn secondary" type="button" id="checkStaffAvailability" ${pending ? "disabled" : ""}>查詢 TEST 房態</button>${availabilityLabel(availability)}</div><p class="meta">房態只顯示可預訂／不可預訂，不顯示實體房號或其他客人資料。若不可預訂，仍可建立待確認申請，但須員工確認並跟進，不會保留房間。</p></section><section class="card"><h2>2. 寵物資料與健康申報</h2><p class="meta">年齡最少：兔子 3 個月、天竺鼠 3 個月、倉鼠 2 個月。懷孕或最近 30 日接受過手術的寵物不可按一般住宿流程建立。</p><div id="newBookingPets">${pets.join("") || `<div class="empty">先選擇寵物種類及數量，逐隻填寫寵物資料。</div>`}</div>${healthReview ? `<div class="notice warning">健康資料包含需人工覆核項目；建立後仍須由員工跟進。</div>` : ""}</section><section class="card"><h2>3. 家長聯絡資料</h2><div class="grid two">${field("家長姓名", "parentName", draft.parentName, "text", "required maxlength=100 autocomplete=name")}${field("香港電話（8 位）", "phone", draft.phone, "tel", "required inputmode=tel autocomplete=tel placeholder=例如12345678")}${field("Email", "email", draft.email, "email", "required autocomplete=email")}${field("第 1 位緊急聯絡人姓名及電話", "emergency1", draft.emergency1, "text", "required placeholder=請輸入姓名及電話")}${field("第 2 位緊急聯絡人姓名及電話", "emergency2", draft.emergency2, "text", "required placeholder=請輸入姓名及電話")}${field("指定獸醫／診所（選填）", "vet", draft.vet, "text", "maxlength=200")}</div><p class="meta">此為員工代客輸入，不會按電話號碼自動帶入舊預約或其他客人資料。</p></section><section class="card"><h2>4. 飲食與額外服務</h2><div id="newBookingDietFields" class="grid two">${dietFieldsMarkup(draft)}</div><div id="newBookingDietNote">${dietNoteMarkup(draft)}</div><fieldset class="service-options"><legend>額外服務（會即時更新費用）</legend><label class="choice-row"><input type="checkbox" name="groomingOnce" ${draft.groomingOnce ? "checked" : ""}>單次梳毛（HK$70 一次）</label><label class="choice-row"><input type="checkbox" name="groomingDaily" ${draft.groomingDaily ? "checked" : ""}>每日梳毛（HK$50 × 晚數）</label><div class="field"><label>每日餵藥（兩種不可同時選擇）</label><div class="choice-row"><label><input type="radio" name="medicine" value="none" ${draft.medicine === "none" ? "checked" : ""}>不需要</label><label><input type="radio" name="medicine" value="once" ${draft.medicine === "once" ? "checked" : ""}>每日 1 次（HK$80 × 晚數）</label><label><input type="radio" name="medicine" value="twice" ${draft.medicine === "twice" ? "checked" : ""}>每日 2 次（HK$150 × 晚數）</label></div></div><label class="choice-row"><input type="checkbox" name="earlyCheckin" ${draft.earlyCheckin ? "checked" : ""}>提早入住一次（HK$200）</label><label class="choice-row"><input type="checkbox" name="lateCheckout" ${draft.lateCheckout ? "checked" : ""}>延遲退房一次（17:00 後，HK$200）</label></fieldset></section><section class="card pricing-summary"><h2>5. 費用摘要</h2><div id="newBookingQuote" aria-live="polite">${quoteMarkup(draft)}</div></section><section class="card"><h2>6. 條款與確認</h2><p class="meta">請先確認客人已逐項閱讀及同意，員工代為勾選；未完成六項確認不能提交。</p><div class="consent-list">${terms}</div>${healthReview ? `<div class="notice warning">健康資料須由員工人工覆核；本表單不會自動批准健康風險。</div>` : ""}<button class="btn create-booking-btn" type="submit" ${pending ? "disabled" : ""}>${pending ? "正在提交 TEST 預約…" : "建立待確認預約"}</button><p class="meta">建立成功後才會顯示 Booking ID；本操作不會發送 WhatsApp 或付款請求。</p></section></form>`;
   }
 
   function readDraft(form, existing) {
@@ -206,8 +224,13 @@
       let draft = save();
       if (reason === "species") {
         if (!Form.roomOptions(draft.species).some((room) => room.id === draft.roomId)) draft.roomId = "";
+        draft.foodMain = "";
+        draft.hay = "";
+        draft.feeding = "";
+        draft.vegetables = "";
         const room = form.elements.namedItem("roomId");
         if (room) room.innerHTML = roomSelectMarkup(draft);
+        updateDietFields(form, draft);
       }
       if (reason === "quantity") {
         const quantity = Number(draft.quantity);
@@ -305,5 +328,5 @@
     };
   }
 
-  root.LittleLandStaffNewBookingView = Object.freeze({ blankDraft, render, bind, readDraft, quoteMarkup });
+  root.LittleLandStaffNewBookingView = Object.freeze({ blankDraft, render, bind, readDraft, quoteMarkup, dietFieldsMarkup, updateDietFields });
 })(window);

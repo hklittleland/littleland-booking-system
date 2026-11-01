@@ -70,6 +70,30 @@ test("hamster form omits sterilization, pregnancy, flea, and feeding-frequency c
   assert.match(html, /倉鼠採長擺糧/);
 });
 
+test("diet dropdowns render the matching food and hay brands for each species", () => {
+  const view = loadView();
+  const renderDiet = (species) => view.render({
+    draft: { ...view.blankDraft(), species },
+    availability: null,
+    pending: false,
+  });
+  const rabbit = renderDiet("rabbit");
+  assert.match(rabbit, /Oxbow 成兔糧/);
+  assert.match(rabbit, /Momi T（成兔）/);
+  assert.match(rabbit, /Momi A（幼兔）/);
+  assert.match(rabbit, /Joy &amp; Fibre 1st cut/);
+  assert.match(rabbit, /Momi 1st cut/);
+  assert.match(rabbit, /Chewbo 1st cut/);
+  const guineaPig = renderDiet("guineaPig");
+  assert.match(guineaPig, /Oxbow 天竺鼠糧/);
+  assert.match(guineaPig, /Momi 天竺鼠糧/);
+  assert.match(guineaPig, /Chewbo 1st cut/);
+  assert.doesNotMatch(guineaPig, /Momi A（幼兔）/);
+  const hamster = renderDiet("hamster");
+  assert.match(hamster, /BUNNY 倉鼠糧/);
+  assert.doesNotMatch(hamster, /牧草（可留空）|每日餵食次數|Joy &amp; Fibre/);
+});
+
 test("rabbit form provides age in months/years and female pregnancy control", () => {
   const view = loadView();
   const draft = {

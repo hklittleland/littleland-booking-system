@@ -17,6 +17,27 @@ function staffRuntime(role = "STAFF") {
   });
   return r;
 }
+function addSecondStaff(r) {
+  const salt = Buffer.from("test-salt-2").toString("base64");
+  r.addRecord("Staff", {
+    staffId: "staff-test-2",
+    username: "teststaff2",
+    displayName: "Test Staff B",
+    role: "STAFF",
+    passwordSalt: salt,
+    passwordHash: r.context.littlelandStaffPasswordHash_("pass-test-2", salt),
+    isActive: true,
+  });
+}
+function setScheduleRoster(r, names) {
+  const ids = ["staff-test-1", "staff-test-2", "SCHEDULE-EMPLOYEE-3"];
+  names.forEach((displayName, index) => r.addRecord("ScheduleEmployees", {
+    scheduleEmployeeId: ids[index],
+    displayName,
+    isActive: Boolean(displayName),
+    sortOrder: index + 1,
+  }));
+}
 test("Staff login accepts correct credentials and persists only tokenHash", () => {
   const r = staffRuntime();
   const out = r.invokeStaff({
@@ -128,6 +149,9 @@ test("Unauthenticated staff read cannot expose guest, pet or payment data", () =
     "staff.payments",
     "staff.customers",
     "staff.revenue",
+    "staff.settings",
+    "staff.schedules",
+    "staff.scheduleEmployeesSave",
   ]) {
     const out = r.invokeStaff({ action, bookingId: "x" });
     assert.equal(out.success, false);
@@ -184,6 +208,64 @@ test("two active Staff accounts both receive complete ADMIN access regardless of
     const session = r.invokeStaff({ action: "staff.session", token: login.data.token });
     assert.equal(session.success, true);
     assert.equal(session.data.staff.role, "ADMIN");
+  }
+});
+
+test("staff.settings returns a separate two-to-three person roster with Yip prefilled and no login secrets", () => {
+  const r = staffRuntime();
+  addSecondStaff(r);
+  const token = loggedIn(r);
+  const out = r.invokeStaff({ action: "staff.settings", token });
+  assert.equal(out.success, true, JSON.stringify(out));
+  assert.deepEqual(out.data.scheduleEmployees.map((employee) => employee.displayName), ["Test Staff", "Test Staff B", "Yip"]);
+  assert.equal(out.data.scheduleEmployees[2].isActive, true);
+  assert.equal(JSON.stringify(out.data).includes("passwordHash"), false);
+  assert.equal(JSON.stringify(out.data).includes("passwordSalt"), false);
+});
+
+test("staff.scheduleEmployeesSave stores 2-3 names separately, writes an actor log, and is idempotent", () => {
+  const r = staffRuntime();
+  addSecondStaff(r);
+  const token = loggedIn(r);
+  const beforeStaff = JSON.parse(JSON.stringify(r.records("Staff")));
+  const request = {
+    action: "staff.scheduleEmployeesSave",
+    token,
+    idempotencyKey: "schedule-roster-save-001",
+    data: { employees: [{ displayName: "Yip" }, { displayName: "Ming" }, { displayName: "" }] },
+  };
+  const out = r.invokeStaff(request);
+  assert.equal(out.success, true, JSON.stringify(out));
+  assert.deepEqual(r.records("ScheduleEmployees").map((employee) => [employee.displayName, employee.isActive]), [["Yip", true], ["Ming", true], ["", false]]);
+  assert.deepEqual(r.records("Staff"), beforeStaff, "roster save must not create or modify login accounts");
+  assert.equal(r.records("Logs").length, 1);
+  assert.equal(r.records("Logs")[0].entityType, "SCHEDULE_EMPLOYEES");
+  assert.equal(r.records("Logs")[0].actorStaffNameSnapshot, "Test Staff");
+  const replay = r.invokeStaff(request);
+  assert.equal(replay.success, true);
+  assert.equal(r.records("ScheduleEmployees").length, 3);
+  assert.equal(r.records("Logs").length, 1);
+  assert.equal(r.records("IdempotencyKeys").length, 1);
+});
+
+test("staff.scheduleEmployeesSave rejects fewer than two names and case-insensitive duplicates before writes", () => {
+  for (const employees of [
+    [{ displayName: "Yip" }, { displayName: "" }, { displayName: "" }],
+    [{ displayName: "Yip" }, { displayName: "yIp" }, { displayName: "" }],
+  ]) {
+    const r = staffRuntime();
+    addSecondStaff(r);
+    const out = r.invokeStaff({
+      action: "staff.scheduleEmployeesSave",
+      token: loggedIn(r),
+      idempotencyKey: "schedule-roster-invalid-001",
+      data: { employees },
+    });
+    assert.equal(out.success, false);
+    assert.equal(out.code, "VALIDATION_FAILED");
+    assert.equal(r.records("ScheduleEmployees").length, 0);
+    assert.equal(r.records("Logs").length, 0);
+    assert.equal(r.records("IdempotencyKeys").length, 0);
   }
 });
 
@@ -971,6 +1053,90 @@ test("schedule save serializes work/rest per staff/date and logs each mutation",
   assert.equal(changed.success,true,JSON.stringify(changed));
   assert.equal(r.records("StaffSchedules").length,1);assert.equal(r.records("StaffSchedules")[0].status,"WORK");
   assert.equal(r.records("Logs").length,2);
+});
+
+test("scheduleMonthSave validates the whole month, assigns two staff in one mutation, and is idempotent", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  addSecondStaff(r);
+  setScheduleRoster(r, ["Test Staff", "Test Staff B", ""]);
+  const assignments = Array.from({ length: 31 }, (_, index) => ({
+    workDate: `2099-05-${String(index + 1).padStart(2, "0")}`,
+    staffId: index === 0 ? "staff-test-1" : index === 1 ? "staff-test-2" : "",
+  }));
+  const request = { action: "staff.scheduleMonthSave", token, idempotencyKey: "schedule-month-2099-05", data: { year: 2099, month: 5, assignments } };
+  const saved = r.invokeStaff(request);
+  assert.equal(saved.success, true, JSON.stringify(saved));
+  assert.equal(saved.data.daysSaved, 31);
+  assert.equal(r.records("StaffSchedules").length, 62);
+  const mayFirst = r.records("StaffSchedules").filter((row) => row.workDate === "2099-05-01");
+  assert.equal(mayFirst.find((row) => row.staffId === "staff-test-1").status, "WORK");
+  assert.equal(mayFirst.find((row) => row.staffId === "staff-test-2").status, "REST");
+  const maySecond = r.records("StaffSchedules").filter((row) => row.workDate === "2099-05-02");
+  assert.equal(maySecond.find((row) => row.staffId === "staff-test-1").status, "REST");
+  assert.equal(maySecond.find((row) => row.staffId === "staff-test-2").status, "WORK");
+  assert.ok(r.records("StaffSchedules").filter((row) => row.workDate === "2099-05-03").every((row) => row.status === "REST"));
+  assert.equal(r.records("Logs").filter((row) => row.action === "staff.scheduleMonthSave")[0].actorStaffNameSnapshot, "Test Staff");
+  const replay = r.invokeStaff(request);
+  assert.equal(replay.success, true);
+  assert.equal(r.records("StaffSchedules").length, 62, "replay must not duplicate schedule rows");
+  assert.equal(r.records("Logs").filter((row) => row.action === "staff.scheduleMonthSave").length, 1);
+  assert.equal(r.records("IdempotencyKeys").filter((row) => row.idempotencyKey === request.idempotencyKey).length, 1);
+});
+
+test("scheduleMonthSave rejects incomplete months and duplicate staff IDs before any write", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  addSecondStaff(r);
+  setScheduleRoster(r, ["Test Staff", "Test Staff B", ""]);
+  const incomplete = Array.from({ length: 30 }, (_, index) => ({ workDate: `2099-05-${String(index + 1).padStart(2, "0")}`, staffId: "" }));
+  const invalidMonth = r.invokeStaff({ action: "staff.scheduleMonthSave", token, idempotencyKey: "schedule-month-invalid", data: { year: 2099, month: 5, assignments: incomplete } });
+  assert.equal(invalidMonth.success, false);
+  assert.equal(invalidMonth.code, "VALIDATION_FAILED");
+  assert.equal(r.records("StaffSchedules").length, 0);
+  assert.equal(r.records("Logs").length, 0);
+  assert.equal(r.records("IdempotencyKeys").length, 0);
+
+  const duplicateIds = staffRuntime();
+  const duplicateToken = loggedIn(duplicateIds);
+  duplicateIds.addRecord("Staff", { staffId: "staff-test-1", displayName: "Duplicate ID", role: "STAFF", isActive: true });
+  const duplicate = duplicateIds.invokeStaff({
+    action: "staff.scheduleMonthSave",
+    token: duplicateToken,
+    idempotencyKey: "schedule-month-duplicate-id",
+    data: { year: 2099, month: 5, assignments: Array.from({ length: 31 }, (_, index) => ({ workDate: `2099-05-${String(index + 1).padStart(2, "0")}`, staffId: "" })) },
+  });
+  assert.equal(duplicate.success, false);
+  assert.equal(duplicate.code, "STAFF_AUTH_INVALID");
+  assert.equal(duplicateIds.records("StaffSchedules").length, 0);
+  assert.equal(duplicateIds.records("Logs").length, 0);
+});
+
+test("scheduleMonthSave supports Yip as a third schedule-only employee without a third login", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  addSecondStaff(r);
+  setScheduleRoster(r, ["Test Staff", "Test Staff B", "Yip"]);
+  const assignments = Array.from({ length: 31 }, (_, index) => ({
+    workDate: `2099-05-${String(index + 1).padStart(2, "0")}`,
+    staffId: index === 0 ? "SCHEDULE-EMPLOYEE-3" : "",
+  }));
+  const out = r.invokeStaff({
+    action: "staff.scheduleMonthSave",
+    token,
+    idempotencyKey: "schedule-month-three-2099-05",
+    data: { year: 2099, month: 5, assignments },
+  });
+  assert.equal(out.success, true, JSON.stringify(out));
+  assert.equal(r.records("Staff").length, 2);
+  assert.equal(r.records("StaffSchedules").length, 93);
+  const yipRows = r.records("StaffSchedules").filter((row) => row.staffId === "SCHEDULE-EMPLOYEE-3");
+  assert.equal(yipRows.length, 31);
+  assert.equal(yipRows.find((row) => row.workDate === "2099-05-01").staffNameSnapshot, "Yip");
+  assert.equal(yipRows.find((row) => row.workDate === "2099-05-01").status, "WORK");
+  const read = r.invokeStaff({ action: "staff.schedules", token, month: "2099-05" });
+  assert.equal(read.success, true);
+  assert.deepEqual(read.data.staff.map((person) => person.displayName), ["Test Staff", "Test Staff B", "Yip"]);
 });
 
 test("surcharges are separate and paid deposits can only be manually refunded within net paid amount", () => {

@@ -203,6 +203,10 @@ a {
   min-height: 84px;
   resize: vertical;
 }
+.schedule-employee-settings-form {
+  width: min(100%, 560px);
+  gap: 8px;
+}
 .filters {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1131,4 +1135,38 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-
   .change-line {
     align-items: center;
   }
+}
+
+/* V3.1: quick monthly assignment and guest message drafts. */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.schedule-staff-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 12px; padding: 0; list-style: none; }
+.schedule-staff-legend li { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--ink); font-size: 13px; }
+.schedule-staff-short { color: #6b44b7; font-weight: 900; }
+.schedule-day { display: flex; flex-direction: column; gap: 3px; }
+.schedule-current-name { min-height: 1.2em; margin: 2px 0 0; color: #385944; font-size: 11px; font-weight: 700; overflow-wrap: anywhere; }
+.schedule-current-name--none { color: var(--muted); font-weight: 500; }
+.schedule-day-select { display: block; width: 100%; min-width: 0; min-height: 42px; margin-top: auto; padding: 5px 3px; border: 1px solid #d8d1e7; border-radius: 8px; background: #fff; color: var(--ink); font: inherit; font-size: 11px; }
+.schedule-day--conflict { border-color: #e7a145; background: #fff8e9; }
+.schedule-conflict-note { margin: 0; color: #a34d00; font-size: 10px; font-weight: 800; }
+.schedule-disabled-cell { display: grid; min-height: 42px; place-items: center; color: var(--muted); }
+.schedule-month-actions { display: grid; justify-items: start; gap: 7px; margin-top: 14px; }
+.schedule-month-actions .meta { margin: 0; }
+.whatsapp-template-list { display: grid; gap: 12px; min-width: 0; }
+.whatsapp-template-card { min-width: 0; padding: 14px; border: 1px solid #e4dced; border-radius: 14px; background: linear-gradient(145deg, #fff, #fbf7ff); }
+.whatsapp-template-card h3 { margin: 0 0 6px; }
+.whatsapp-template-card > p { overflow-wrap: anywhere; }
+.whatsapp-draft-text { max-width: 100%; padding: 12px; border-radius: 10px; background: #f7f5fa; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; }
+.whatsapp-template-card .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 8px; }
+.whatsapp-template-card .action-grid > * { min-width: 0; }
+.whatsapp-template-card a.btn { text-align: center; text-decoration: none; }
+@media (max-width: 480px) {
+  .schedule-month-grid { gap: 3px; }
+  .schedule-day { min-height: 116px; padding: 4px 3px; }
+  .schedule-day-select { min-height: 44px; padding-inline: 0; font-size: 9px; }
+  .schedule-current-name { font-size: 9px; }
+  .schedule-staff-legend { gap: 6px 12px; }
+  .schedule-staff-legend li { font-size: 12px; }
+  .whatsapp-template-card { padding: 11px; }
+  .whatsapp-template-card .action-grid { grid-template-columns: 1fr; }
+  .whatsapp-template-card .action-grid .btn { width: 100%; }
 }

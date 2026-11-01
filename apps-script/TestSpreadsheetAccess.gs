@@ -19,6 +19,7 @@ var LITTLELAND_API_WRITE_SHEETS = Object.freeze({
   Staff: true,
   Sessions: true,
   StaffSchedules: true,
+  ScheduleEmployees: true,
   BookingAdjustments: true
 });
 
@@ -38,7 +39,7 @@ function littlelandTestSpreadsheet_() {
   littlelandRequire_(
       typeof LITTLELAND_TEST_SHEET_DEFINITIONS !== 'undefined' &&
       Array.isArray(LITTLELAND_TEST_SHEET_DEFINITIONS) &&
-      LITTLELAND_TEST_SHEET_DEFINITIONS.length === 10,
+      LITTLELAND_TEST_SHEET_DEFINITIONS.length === 11,
     'SYSTEM_UNAVAILABLE',
     'TEST schema 未載入。',
     false

@@ -1,8 +1,8 @@
 # LittleLand V3.0 — TEST Google Sheets 資料結構
 
-**Schema 版本：** 1.0（2026-10-30）
+**Schema 版本：** 1.1（2026-11-01）
 **環境：** 僅限 `LittleLand_TEST`；不連接或複製正式 LittleLand 資料。
-**工作表：** `Bookings`、`Pets`、`Payments`、`Rooms`、`Logs`、`IdempotencyKeys`、`Staff`、`Sessions`。
+**工作表：** `Bookings`、`Pets`、`Payments`、`Rooms`、`Logs`、`IdempotencyKeys`、`Staff`、`Sessions`、`StaffSchedules`、`ScheduleEmployees`、`BookingAdjustments`。
 
 ## 安全及共通規則
 
@@ -126,11 +126,31 @@ sessionId, staffId, tokenHash, roleSnapshot, createdAt, expiresAt, revokedAt, la
 
 只保存 hash 後的 token，不保存原始 token。`roleSnapshot` 依既有欄位保留，Staff Web V1 寫 `ADMIN` 作顯示／相容值，不作權限判斷。Session 有效期 8 小時；登出寫入 `revokedAt`，員工帳號停用後既有 Session 亦立即失效。
 
+## `ScheduleEmployees` — 排班專用員工名冊
+
+**主鍵：** `scheduleEmployeeId`。此表只保存排班顯示名稱，不是登入帳號表；不保存 username、密碼或權限。
+
+```text
+scheduleEmployeeId, displayName, isActive, sortOrder, createdAt, updatedAt, createdByStaffId, updatedByStaffId
+```
+
+Settings 頁可維護 2–3 位排班員工名稱；前兩位必填、第三位可留空，第三位依使用者指定預填「Yip」，可更改或留空。排班名冊資料與 `Staff` 登入資料分開維護；停用／改名不刪除 `StaffSchedules` 歷史列。`StaffSchedules.staffId` 欄位存穩定的排班員工 ID，`staffNameSnapshot` 保存寫入時名稱；實際操作者仍以 `createdByStaffId`／`updatedByStaffId` 記錄登入 Staff ID。
+
+## `StaffSchedules` — 員工每日排班
+
+**主鍵：** `scheduleId`。排班員工 ID 使用 `ScheduleEmployees.scheduleEmployeeId`；操作者 ID 使用 `Staff.staffId`。
+
+```text
+scheduleId, workDate, staffId, staffNameSnapshot, status, startTime, endTime, swapGroupId, swappedFromStaffId, notes, createdAt, updatedAt, createdByStaffId, updatedByStaffId, idempotencyKey
+```
+
+月曆依 2–3 位有效名冊員工選擇每日當值；更新只更改所選月份，不刪除其他月份資料。員工名冊修改不建立或停用登入帳號。
+
 ## 手動初始化方式
 
 1. 複製 `LittleLand_TEST` 試算表 ID（不是網址中的其他參數），在將來的 Apps Script 專案 Script Properties 設定 `LITTLELAND_TEST_SPREADSHEET_ID`。
 2. 將 `apps-script/InitializeTestSheets.gs` 加入該 TEST 專案，確認 Script Property 仍指向 `LittleLand_TEST`。
 3. 手動執行 `initializeLittleLandTestSheets()`。初始化器會同時檢查 Script Property ID、目標 ID 及試算表名稱；任何一項缺失／不符即停止。
-4. 初始化器只建立缺少的八個工作表、補上空白表頭及按 `roomId` 冪等補入 12 筆固定 Rooms 主檔。遇到額外分頁、不符表頭、重複／未知房間 ID 或內容不一致便停止，不清空、不覆寫、不刪除既有資料。
+4. 初始化器只建立缺少的 11 個工作表、補上空白表頭及按 `roomId` 冪等補入 12 筆固定 Rooms 主檔。遇到額外分頁、不符表頭、重複／未知房間 ID 或內容不一致便停止，不清空、不覆寫、不刪除既有資料；新增的 `ScheduleEmployees` 只建表頭、不預設登入帳號。API 初次讀取若名冊空白，會以目前兩位有效 TEST 登入員工名稱及可編輯的第三位「Yip」作為表單預設；正式名冊只於員工明確按下保存後寫入該表。
 
 本次的實際 TEST Spreadsheet 以 Google Workspace Sheets API 建立及初始化；Apps Script source 僅為後續手動重複初始化方法，不部署 API、不建立 Staff Login、不連接正式資料。
