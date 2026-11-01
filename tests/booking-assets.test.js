@@ -13,10 +13,17 @@ function assetPath(relativePath) {
 }
 
 test('booking brand mark points to the supplied LittleLand logo asset', () => {
-  assert.match(html, /src="assets\/littleland-logo\.jpg\?v=20261101-brand2"/);
+  assert.match(html, /src="assets\/littleland-logo\.jpg\?v=20261101-hero3"/);
   assert.match(html, /alt="LittleLand 小寵物酒店標誌"/);
   const logo = fs.readFileSync(assetPath('littleland-logo.jpg'));
   assert.deepEqual([...logo.subarray(0, 2)], [0xff, 0xd8]);
+});
+
+test('booking homepage uses the customer-selected original hero illustration', () => {
+  assert.match(html, /src="assets\/hero-illustration\.webp\?v=20261101-hero3"/);
+  const hero = fs.readFileSync(assetPath('hero-illustration.webp'));
+  assert.equal(hero.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(hero.toString('ascii', 8, 12), 'WEBP');
 });
 
 test('every room photo referenced by booking choices exists', () => {
