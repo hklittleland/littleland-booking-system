@@ -714,3 +714,49 @@ input:focus, select:focus, textarea:focus { border-color: #a684c4; box-shadow: 0
     flex-basis: 44px;
   }
 }
+
+
+/* Keep every original logo detail visible inside a smaller rounded-square frame. */
+.brand .brand-mark-frame {
+  display: grid;
+  place-items: center;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1.5px solid rgba(255, 255, 255, .96);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(91, 67, 112, .18), 0 0 0 3px rgba(234, 221, 241, .4);
+}
+.brand-mark-frame img.brand-mark {
+  display: block;
+  width: 82%;
+  height: 82%;
+  flex: none;
+  object-fit: contain;
+  object-position: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+@media (max-width: 720px) {
+  .brand .brand-mark-frame {
+    flex-basis: 50px;
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+  }
+}
+@media (max-width: 390px) {
+  .brand .brand-mark-frame {
+    flex-basis: 48px;
+    width: 48px;
+    height: 48px;
+    border-radius: 11px;
+  }
+}
