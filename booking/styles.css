@@ -73,6 +73,7 @@ a { color: inherit; }
   box-shadow: 0 7px 16px rgba(152, 104, 205, .24);
   font-size: 25px; font-weight: 900; line-height: 1;
 }
+.brand img.brand-mark { display: block; width: 68px; height: 68px; flex: 0 0 68px; object-fit: contain; border-radius: 0; background: transparent; box-shadow: none; }
 .brand-mark i { position: absolute; right: 5px; top: 4px; color: #fff4be; font-size: 10px; font-style: normal; }
 .brand-copy { display: grid; line-height: 1.15; }
 .brand-copy strong { font-size: 18px; font-weight: 900; letter-spacing: -.04em; background: linear-gradient(90deg, #8a63d0, #e27fb2); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -597,4 +598,28 @@ input:focus, select:focus, textarea:focus { border-color: #a684c4; box-shadow: 0
 .term-service-link:hover { background: var(--lavender); }
 @media (max-width: 390px) {
   .term-service-link { margin-left: 40px; font-size: 11px; }
+}
+
+@media (max-width: 720px) {
+  .site-header { min-height: 78px; }
+  .brand img.brand-mark { width: 68px; height: 68px; flex-basis: 68px; }
+}
+
+
+/* Full-width presentation for the customer-selected original 16:9 hero illustration. */
+.intro { min-height: 380px; padding: 34px 10px 28px; }
+.intro-copy { width: min(48%, 560px); }
+.intro h1 { max-width: 100%; }
+.intro-text { max-width: 100%; }
+.hero-art { top: 0; right: 0; width: 62%; height: 100%; }
+.hero-art::before { display: none; }
+.hero-pets { width: 100%; height: 100%; object-fit: contain; object-position: right center; filter: none; }
+.hero-caption { right: 14px; bottom: 6px; padding: 3px 9px; border-radius: 999px; color: #75654f; background: rgba(255, 252, 240, .8); }
+@media (max-width: 720px) {
+  .intro { display: flex; min-height: 0; flex-direction: column; align-items: stretch; padding: 24px 0 12px; }
+  .intro-copy { width: 100%; max-width: none; }
+  .intro h1, .intro-text { max-width: 100%; }
+  .hero-art { position: relative; top: auto; right: auto; align-self: stretch; width: 100%; height: auto; aspect-ratio: 16 / 9; margin: 3px 0 0; }
+  .hero-pets { width: 100%; height: 100%; object-position: center; }
+  .hero-caption { right: 8px; bottom: 5px; font-size: 9px; }
 }
