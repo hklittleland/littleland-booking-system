@@ -11,9 +11,9 @@
   });
   const PRICE_VERSION = '6f002fd9ea921c313ecf90502091f1de051f332c';
   const SPECIES = {
-    rabbit: { label: '兔子', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-1.webp', fallback: '🐇', minimumAge: 3 },
-    guineaPig: { label: '天竺鼠', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-2.webp', fallback: '🐾', minimumAge: 3 },
-    hamster: { label: '倉鼠', image: '/manus-storage/async-images/HTx1dw7j7ReEg7PZJ4Uzms/image-3.webp', fallback: '🐹', minimumAge: 2 }
+    rabbit: { label: '兔子', image: 'assets/species-rabbit.webp', fallback: '🐇', minimumAge: 3 },
+    guineaPig: { label: '天竺鼠', image: 'assets/species-guinea-pig.webp', fallback: '🐾', minimumAge: 3 },
+    hamster: { label: '倉鼠', image: 'assets/species-hamster.webp', fallback: '🐹', minimumAge: 2 }
   };
   const ROOMS = {
     rabbit: [
@@ -31,7 +31,7 @@
     ],
     hamster: [
       { id: 'STANDARD_ROOM', name: '標準房', price: 98, max: 1, icon: '🧺', image: 'room-098.jpg', note: '可愛小房間' },
-      { id: 'HAMSTER_BOX', name: '整理箱', price: 65, max: 1, icon: '📦', image: 'room-065.png', note: '整潔小天地' },
+      { id: 'HAMSTER_BOX', name: '整理箱', price: 65, max: 1, icon: '📦', image: 'room-065.webp', note: '整潔小天地' },
       { id: 'OWN_CAGE', name: '自備籠', price: 50, max: 1, icon: '🏕️', note: '入住自備籠' }
     ]
   };
@@ -370,7 +370,7 @@
       <div class="room-grid" role="radiogroup" aria-label="選擇房型">
         ${rooms.map((room) => {
           const status = state.availabilityByRoomId[room.id] || (state.availabilityLoading ? 'checking' : 'unknown');
-          return `<label class="room-card ${state.form.roomId === room.id ? 'is-selected' : ''}"><input type="radio" name="roomId" data-field="roomId" value="${room.id}" ${state.form.roomId === room.id ? 'checked' : ''} ${status !== 'available' ? 'disabled' : ''}><div class="room-photo-wrap">${room.image ? `<img class="room-photo" src="assets/${room.image}" alt="${room.name}房間實景" loading="lazy">` : `<span class="room-photo-fallback" aria-hidden="true">${room.icon}</span>`}<span class="room-check" aria-hidden="true">✓</span></div><strong>${room.name}</strong><span class="room-price">${money(room.price)} <small>/ 晚</small></span><span class="room-meta">最多 ${room.max} 隻 · ${room.note}</span><span class="room-status" data-room-id="${room.id}" data-status="${status}">${AVAILABILITY[status]}</span></label>`;
+          return `<label class="room-card ${state.form.roomId === room.id ? 'is-selected' : ''}${room.id === 'HAMSTER_BOX' ? ' room-card--contained-photo' : ''}"><input type="radio" name="roomId" data-field="roomId" value="${room.id}" ${state.form.roomId === room.id ? 'checked' : ''} ${status !== 'available' ? 'disabled' : ''}><div class="room-photo-wrap">${room.image ? `<img class="room-photo" src="assets/${room.image}?v=20261101-flowfix1" alt="${room.name}房間實景" loading="lazy">` : `<span class="room-photo-fallback" aria-hidden="true">${room.icon}</span>`}<span class="room-check" aria-hidden="true">✓</span></div><strong>${room.name}</strong><span class="room-price">${money(room.price)} <small>/ 晚</small></span><span class="room-meta">最多 ${room.max} 隻 · ${room.note}</span><span class="room-status" data-room-id="${room.id}" data-status="${status}">${AVAILABILITY[status]}</span></label>`;
         }).join('')}
       </div>
       <div id="availabilityRecovery" ${state.availabilityError ? '' : 'hidden'}><p class="field-help" role="status">目前未能確認部分房型狀態；你填寫的資料已保留，請重新查詢。</p><button type="button" class="button button-quiet" data-retry-availability ${state.availabilityLoading ? 'disabled' : ''}>重新查詢房態</button></div>

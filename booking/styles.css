@@ -441,7 +441,7 @@ body { background: #fdfafd; color: var(--ink); }
 }
 .site-header { min-height: 84px; border-color: rgba(221, 211, 229, .62); }
 .brand { gap: 12px; }
-.brand-mark { width: 44px; height: 44px; border-radius: 15px 15px 15px 5px; background: linear-gradient(140deg, #8060b8 0%, #bd83c9 54%, #e39db9 100%); box-shadow: 0 8px 18px rgba(113, 78, 147, .2); }
+.brand-mark { width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(140deg, #8060b8 0%, #bd83c9 54%, #e39db9 100%); box-shadow: 0 8px 18px rgba(113, 78, 147, .2); -webkit-mask-image: radial-gradient(circle at center, #000 76%, rgba(0,0,0,.9) 88%, transparent 100%); mask-image: radial-gradient(circle at center, #000 76%, rgba(0,0,0,.9) 88%, transparent 100%); }
 .brand-mark > span { font-size: 14px; font-weight: 900; letter-spacing: -.1em; transform: translateX(-1px); }
 .brand-copy strong { background-image: linear-gradient(90deg, #6f549c, #bb79a6); font-size: 19px; }
 .brand-copy small { color: #857c8b; letter-spacing: .12em; }
@@ -453,7 +453,7 @@ body { background: #fdfafd; color: var(--ink); }
 .intro-text { margin-top: 13px; color: #786f80; font-size: 14px; }
 .hero-art { position: absolute; top: 13px; right: 18px; width: 345px; height: 216px; margin: 0; display: grid; place-items: center; isolation: isolate; }
 .hero-art::before { position: absolute; inset: 13px 10px 21px; z-index: -1; border: 1px solid rgba(230, 216, 239, .58); border-radius: 49% 51% 48% 52%; background: radial-gradient(ellipse at 36% 32%, rgba(255,255,255,.92), rgba(249,239,251,.72) 48%, rgba(237,244,251,.4)); box-shadow: inset 0 0 38px rgba(255,255,255,.7); content: ""; transform: rotate(-5deg); }
-.hero-pets { display: block; width: 96%; height: 92%; object-fit: contain; filter: drop-shadow(0 13px 16px rgba(85, 64, 99, .12)); animation: hero-drift 6s ease-in-out infinite; }
+.hero-pets { display: block; width: 96%; height: 92%; object-fit: contain; filter: drop-shadow(0 13px 16px rgba(85, 64, 99, .12)); -webkit-mask-image: radial-gradient(ellipse 78% 84% at 50% 52%, #000 70%, rgba(0,0,0,.88) 86%, transparent 100%); mask-image: radial-gradient(ellipse 78% 84% at 50% 52%, #000 70%, rgba(0,0,0,.88) 86%, transparent 100%); animation: hero-drift 6s ease-in-out infinite; }
 .hero-caption { position: absolute; right: 18px; bottom: 7px; color: #947da1; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
 @keyframes hero-drift { 50% { transform: translateY(-4px); } }
 .stepper-wrap { margin: 1px 0 21px; }
@@ -579,6 +579,10 @@ input:focus, select:focus, textarea:focus { border-color: #a684c4; box-shadow: 0
 .room-card { min-height: 208px; padding: 10px 11px 12px; }
 .room-photo-wrap { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; background: linear-gradient(140deg, #f2edf5, #f7f3ef); }
 .room-photo { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 55%; }
+.room-card--contained-photo .room-photo-wrap { isolation: isolate; background: #f8f3e9; }
+.room-card--contained-photo .room-photo-wrap::before { position: absolute; inset: -8px; z-index: -1; background: url("assets/room-065.webp") center / cover no-repeat; content: ""; filter: blur(12px); opacity: .32; transform: scale(1.06); }
+.room-card--contained-photo .room-photo { position: relative; z-index: 1; padding: 2px; object-fit: contain; }
+.room-card--contained-photo .room-photo-wrap .room-check { z-index: 2; }
 .room-photo-wrap .room-check { position: absolute; top: 8px; right: 8px; border-color: rgba(255,255,255,.8); box-shadow: 0 2px 7px rgba(50,35,65,.12); }
 .room-card.is-selected .room-photo-wrap .room-check { color: #fff; background: #8760ae; }
 .room-photo-fallback { display: grid; width: 100%; height: 100%; place-items: center; color: #927e9c; background: radial-gradient(ellipse at 50% 40%, #fff 0, #f1ebf4 76%); font-size: 35px; }
