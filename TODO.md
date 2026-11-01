@@ -597,3 +597,6 @@
 
 
 **V3.1.3 Per-pet fees + WhatsApp（2026-11-01 18:41 HKT）：**每隻毛孩卡片有明確的專屬費用表單，會帶單一 Pet ID；通用費用表保留為進階／批次用途。五款 WhatsApp 模板卡固定完整顯示並按狀態／資料停用或啟用；原文逐字測試、付款連結與早退退款缺值、電話無效及狀態不符測試均通過。定向測試 16/16、完整 `npm test` 220/220；`node --check` 與 `git diff --check` 通過。Staff Preview 的 `/staff/`、`app.js`、fee module、WhatsApp module 及 route manifest 全部 HTTP 200；未發送 WhatsApp、未新增 TEST 預約／付款、未改 Apps Script／Sheets、未連 Production。本輪 official feature branch push 待執行。
+
+
+**V3.1.3 Official sync（2026-11-01 18:43 HKT）：**上一則 18:41 記錄為推送前狀態，現已完成同步：`bb384b1dedc59c10152237d1c926b23a538e7eda` 已推送至 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`。沒有推送 Manus 內部 `origin`，沒有 merge `main`，沒有連 Production。
