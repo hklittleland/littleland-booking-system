@@ -366,3 +366,7 @@ Booking Detail's change Logs and follow-up history must visibly identify the res
 - 費用列有正數才顯示；列出房費、有效附加費、額外服務與人工更正，梳毛/餵藥按 `petId`/snapshot 對應寵物，找不到連結即標示未指定。現金備用金/按金獨立呈現、不計入住宿總額。Staff 手動費用更改可按每隻寵物選取；每隻金額不同時逐隻保存。
 - 照顧／用藥表使用原表淡彩可愛視覺作參考，逐寵物與每 10 個住宿日分頁，自動帶入家長、電話、兩位緊急聯絡人、寵物/健康/飲食/用藥及實際住宿日期。倉鼠顯示長擺糧，不顯示餵食次數/假期提醒。保留用戶原始來源檔案不修改；只將《入住須知及寄養條款.pdf》原頁逐頁原樣附入，藥物表不再把舊空白原頁當輸出。
 - 本輪限於 LittleLand_TEST 程式與虛構 mock 測試，不連 Production；未做實際 TEST Sheet/API 寫入或 Web App 新版部署。
+
+
+## V3.1 TEST 實際執行記錄（2026-11-01 18:12 HKT）
+使用者後續明確選擇繼續 TEST-only，並要求原始入住條款頁維持原樣。依此授權，LittleLand_TEST 以 add-only 方式新增 `ScheduleEmployees` tab，沒有清除或改寫既有預約資料；既有 TEST Apps Script Web App 更新至 V11，deployment ID／`/exec` URL 和權限保持不變。V11 只做一筆無客人資料的 availability GET smoke test（HTTP 200、available），沒有建立預約或付款。Production 未連接或修改。程式碼與文件留在 `feature/test-booking-api`，沒有合併 main。
