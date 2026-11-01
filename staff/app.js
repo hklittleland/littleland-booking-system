@@ -20,7 +20,7 @@
     pendingAction = false,
     loadSequence = 0;
   const readCache = new Map(),
-    readCacheTtlMs = 5000;
+    readCacheTtlMs = 15000;
   const esc = (v) =>
     String(v == null || v === "" ? "—" : v).replace(
       /[&<>"']/g,
@@ -206,7 +206,7 @@
           `<button class="${p === page ? "active" : ""}" data-go="${p}"><span>${esc(i)}</span> ${esc(t)}</button>`,
       )
       .join("");
-    app.innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand">LittleLand<small>員工營運台 · TEST</small></div><nav class="side-nav">${buttons}</nav><div class="side-foot meta">資料只來自 TEST API<br><button class="btn ghost" data-logout>登出</button></div></aside><main><header class="topbar"><div class="brand">LittleLand<small>${esc(page)} · TEST</small></div><button class="btn ghost" data-logout>登出</button></header><nav class="bottom-nav">${navs
+    app.innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand">LittleLand<small>員工營運台 · TEST</small></div><nav class="side-nav">${buttons}</nav><div class="side-foot meta">資料只來自 TEST API<br><button class="btn ghost" data-logout>登出</button></div></aside><main><header class="topbar"><div class="brand">LittleLand<small>${esc(page)} · TEST</small></div><div class="topbar-actions"><button class="btn secondary" type="button" data-refresh-page ${store.state.loading ? "disabled" : ""}>更新</button><button class="btn ghost" data-logout>登出</button></div></header><nav class="bottom-nav">${navs
       .map(
         ([p, t, i]) =>
           `<button class="${p === page ? "active" : ""}" data-go="${p}"><span class="ico">${esc(i)}</span>${esc(t)}</button>`,
@@ -712,6 +712,12 @@
   function bind(page) {
     const retry = app.querySelector("[data-retry]");
     if (retry) retry.onclick = () => loadPageData(page, { force: true }).then(paint);
+    const refreshPageButton = app.querySelector("[data-refresh-page]");
+    if (refreshPageButton) refreshPageButton.onclick = async () => {
+      if (store.state.loading) return;
+      await loadPageData(page, { force: true });
+      paint();
+    };
     const printButton = app.querySelector("[data-print-booking]");
     if (printButton) printButton.onclick = printBooking;
     const todayButton = app.querySelector("[data-today]"); if (todayButton) todayButton.onclick = async () => { const t = new Date(new Date().toLocaleString("en-US", {timeZone:"Asia/Hong_Kong"})); store.state.calendarDate=t; store.state.selectedCalendarDate=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()); await loadPageData("calendar",{force:true}); paint(); };
@@ -929,6 +935,44 @@
         store.state.scheduleDrafts = store.state.scheduleDrafts || {};
         const draft = store.state.scheduleDrafts[monthKey] || (store.state.scheduleDrafts[monthKey] = {});
         draft[control.dataset.scheduleDayDate] = control.value;
+        const scheduleView = window.LittleLandScheduleView;
+        const controls = Array.from(scheduleMonthForm.querySelectorAll("[data-schedule-day]"));
+        const assignments = Object.create(null);
+        controls.forEach((select) => { assignments[select.dataset.scheduleDayDate] = select.value || ""; });
+        controls.forEach((select) => {
+          const cell = select.closest("[data-schedule-date]");
+          if (!cell) return;
+          const option = select.options[select.selectedIndex];
+          const colorIndex = Number(option?.dataset.scheduleColorIndex || 0);
+          const name = cell.querySelector("[data-schedule-current-name]");
+          if (name) {
+            name.textContent = select.value ? (option?.dataset.scheduleName || option?.textContent || "") : "休息／未安排";
+            name.className = select.value && colorIndex >= 1 && colorIndex <= 3
+              ? `schedule-current-name schedule-person--${colorIndex}`
+              : "schedule-current-name schedule-current-name--none";
+          }
+          select.classList.remove("schedule-day-select--1", "schedule-day-select--2", "schedule-day-select--3");
+          if (select.value && colorIndex >= 1 && colorIndex <= 3) select.classList.add(`schedule-day-select--${colorIndex}`);
+          const hasConflict = cell.dataset.scheduleConflict === "true";
+          let conflictNote = cell.querySelector("[data-schedule-conflict-note]");
+          if (select.value || !hasConflict) {
+            cell.classList.remove("schedule-day--conflict");
+            if (conflictNote) conflictNote.remove();
+          } else {
+            cell.classList.add("schedule-day--conflict");
+            if (!conflictNote) {
+              conflictNote = document.createElement("p");
+              conflictNote.className = "schedule-conflict-note";
+              conflictNote.dataset.scheduleConflictNote = "";
+              conflictNote.textContent = "需選一位";
+              cell.insertBefore(conflictNote, name || select);
+            }
+          }
+        });
+        const summary = scheduleMonthForm.querySelector(".schedule-summary");
+        if (summary && scheduleView && typeof scheduleView.renderScheduleSummary === "function") {
+          summary.innerHTML = scheduleView.renderScheduleSummary(arr((store.state.schedules || {}).staff), assignments);
+        }
       });
       scheduleMonthForm.onsubmit = async (event) => {
         event.preventDefault();
@@ -1246,20 +1290,6 @@
     paint();
   }
   window.addEventListener("hashchange", route);
-  if (store.token)
-    StaffAPI.request("session", {}, store.token)
-      .then((d) => {
-        store.state.staff = d.staff || {};
-        route();
-      })
-      .catch((e) => {
-        handleAuth(e);
-        if (store.token) clearPrivate();
-        paint();
-      });
+  if (store.token) route();
   else paint();
-  ["booking-reference.js", "calendar-view.js", "revenue-chart.js", "schedule-view.js"].forEach((src) => {
-    if (src === "booking-reference.js" && window.LittleLandBookingReference) return;
-    const script = document.createElement("script"); script.src = src; script.onload = () => { if (store.token) route(); else paint(); }; document.head.appendChild(script);
-  });
 })();

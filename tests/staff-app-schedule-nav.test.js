@@ -30,7 +30,6 @@ test("the monthly save form retains its own visible month identity without a nav
   assert.match(form, /id="scheduleMonthForm"/);
 });
 
-
 test("schedule dropdown dates cannot trigger the calendar day-click handler", () => {
   const html = renderScheduleView({
     year: 2026,
@@ -44,4 +43,27 @@ test("schedule dropdown dates cannot trigger the calendar day-click handler", ()
   assert.match(appSource, /draft\[control\.dataset\.scheduleDayDate\] = control\.value/);
   assert.match(appSource, /workDate: control\.dataset\.scheduleDayDate/);
   assert.doesNotMatch(scheduleSource, /data-schedule-day[^>]*data-date=/);
+});
+
+test("changing a day updates the visible employee name, color class, counts and date summary without repainting the month", () => {
+  assert.match(appSource, /scheduleMonthForm\.addEventListener\("change"/);
+  assert.match(appSource, /name\.textContent = select\.value/);
+  assert.match(appSource, /schedule-day-select--1[\s\S]*schedule-day-select--2[\s\S]*schedule-day-select--3/);
+  assert.match(appSource, /scheduleView\.renderScheduleSummary\(arr\(\(store\.state\.schedules \|\| \{\}\)\.staff\), assignments\)/);
+  assert.match(scheduleSource, /data-schedule-current-name/);
+  assert.match(scheduleSource, /data-schedule-summary-days/);
+});
+
+test("static UI components are not fetched again by app.js and session is validated by the first page read", () => {
+  assert.doesNotMatch(appSource, /document\.createElement\("script"\)/);
+  assert.doesNotMatch(appSource, /StaffAPI\.request\("session"/);
+  assert.match(appSource, /if \(store\.token\) route\(\);/);
+});
+
+test("read caching is short-lived, manually refreshable and invalidated after a successful mutation", () => {
+  assert.match(appSource, /readCacheTtlMs = 15000/);
+  assert.match(appSource, /data-refresh-page/);
+  assert.match(appSource, /loadPageData\(page, \{ force: true \}\)/);
+  assert.match(appSource, /readCache\.clear\(\);\s*toast\("TEST API 已確認操作。"\)/);
+  assert.match(appSource, /loadPageData\(StaffRouter\.current\(\)\.page, \{ force: true \}\)/);
 });

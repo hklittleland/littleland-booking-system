@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { renderScheduleView } = require("../staff/schedule-view.js");
+const { renderScheduleView, summarizeScheduleAssignments, renderScheduleSummary } = require("../staff/schedule-view.js");
 
 const staff = [{ staffId: "s1", displayName: "Alice" }, { staffId: "s2", displayName: "Bob" }];
 const render = (overrides = {}) => renderScheduleView({ year: 2026, monthIndex: 10, month: 11, staff, schedules: [], todayISO: "2026-11-01", ...overrides });
@@ -11,10 +11,9 @@ test("renders a month calendar with a dropdown for each date and one save button
   assert.match(html, /scheduleMonthForm/);
   assert.equal((html.match(/data-schedule-day(?=\s|>)/g) || []).length, 30);
   assert.equal((html.match(/儲存本月排班/g) || []).length, 1);
-  assert.match(html, /員工 A/);
-  assert.match(html, /員工 B/);
   assert.match(html, /Alice/);
   assert.match(html, /Bob/);
+  assert.doesNotMatch(html, /員工 A|員工 B/);
   assert.match(html, /未安排表示當日所有有效員工均休息/);
 });
 
@@ -27,15 +26,35 @@ test("month layout is Sunday-first, keeps the selected month and marks the HKT t
   assert.match(html, /data-schedule-year="2026" data-schedule-month="11"/);
 });
 
-test("monthly work-day counts count unique selected dates", () => {
+test("monthly work-day counts count unique selected dates and show the date list", () => {
   const html = render({ schedules: [
     { workDate: "2026-11-02", staffId: "s1", status: "WORK" },
     { workDate: "2026-11-02", staffId: "s1", status: "WORK" },
     { workDate: "2026-11-03", staffId: "s1", status: "WORK" },
     { workDate: "2026-11-04", staffId: "s2", status: "REST" },
   ] });
-  assert.match(html, /Alice<\/span><strong>2 日/);
-  assert.match(html, /Bob<\/span><strong>0 日/);
+  assert.match(html, /data-schedule-summary-staff="s1"[\s\S]*?Alice[\s\S]*?<strong data-schedule-summary-count>2 日/);
+  assert.match(html, /data-schedule-summary-staff="s2"[\s\S]*?Bob[\s\S]*?<strong data-schedule-summary-count>0 日/);
+  assert.match(html, /當值日期：2日、3日/);
+});
+
+test("draft changes recalculate each employee's work-day count and date list", () => {
+  const assignments = {
+    "2026-11-01": "s1",
+    "2026-11-03": "s2",
+    "2026-11-08": "s1",
+    "2026-11-09": "",
+  };
+  const result = summarizeScheduleAssignments(staff, assignments);
+  assert.deepEqual(result.staff.map(({ id, count, days }) => ({ id, count, days })), [
+    { id: "s1", count: 2, days: [1, 8] },
+    { id: "s2", count: 1, days: [3] },
+  ]);
+  assert.equal(result.unassignedCount, 1);
+  const summary = renderScheduleSummary(staff, assignments);
+  assert.match(summary, /當值日期：1日、8日/);
+  assert.match(summary, /當值日期：3日/);
+  assert.match(summary, /未安排日期：9日/);
 });
 
 test("REST wins over a stale WORK row for the same person and day", () => {
@@ -45,8 +64,8 @@ test("REST wins over a stale WORK row for the same person and day", () => {
   ] });
   const cell = html.split('data-schedule-date="2026-11-05"')[1].split("</article>")[0];
   assert.match(cell, /休息／未安排/);
-  assert.doesNotMatch(cell, /schedule-current-name">Alice/);
-  assert.match(html, /Alice<\/span><strong>0 日/);
+  assert.doesNotMatch(cell, /schedule-current-name schedule-person--1/);
+  assert.match(html, /data-schedule-summary-staff="s1"[\s\S]*?<strong data-schedule-summary-count>0 日/);
 });
 
 test("multiple WORK rows default to unassigned and show a visible conflict warning", () => {
@@ -78,16 +97,20 @@ test("shift times are not exposed in the simplified calendar", () => {
   assert.doesNotMatch(html, /09:00|18:00/);
 });
 
-test("three schedule-only employees are shown by name in each daily dropdown", () => {
+test("three schedule-only employees are shown by name and distinct roster colors", () => {
   const html = render({ staff: [
     { staffId: "s1", displayName: "Alice" },
     { staffId: "s2", displayName: "Bob" },
     { staffId: "s3", displayName: "Carol" },
   ] });
   assert.equal((html.match(/data-schedule-day(?=\s|>)/g) || []).length, 30);
-  assert.match(html, /員工 A · Alice/);
-  assert.match(html, /員工 B · Bob/);
-  assert.match(html, /員工 C · Carol/);
+  assert.match(html, /<option value="s1" data-schedule-name="Alice" data-schedule-color-index="1">Alice<\/option>/);
+  assert.match(html, /<option value="s2" data-schedule-name="Bob" data-schedule-color-index="2">Bob<\/option>/);
+  assert.match(html, /<option value="s3" data-schedule-name="Carol" data-schedule-color-index="3">Carol<\/option>/);
+  assert.match(html, /schedule-name-chip schedule-person--1/);
+  assert.match(html, /schedule-name-chip schedule-person--2/);
+  assert.match(html, /schedule-name-chip schedule-person--3/);
+  assert.doesNotMatch(html, /員工 A|員工 B|員工 C/);
   assert.doesNotMatch(html, /設定 2–3 位排班員工名稱/);
   assert.doesNotMatch(html, /<button class="btn" type="submit" disabled/);
 });
