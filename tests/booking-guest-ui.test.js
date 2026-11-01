@@ -13,7 +13,7 @@ const js = fs.readFileSync(path.join(root, "booking/booking.js"), "utf8");
 
 test("guest page loads reference helper before booking code and uses the supplied logo", () => {
   assert.match(html, /\.\.\/staff\/booking-reference\.js[\s\S]*?booking\.js/);
-  assert.match(html, /src="\.\.\/assets\/brand\/littleland-logo\.png"/);
+  assert.match(html, /src="assets\/littleland-logo\.jpg\?v=20261101-brand2"/);
   assert.match(css, /object-fit:\s*contain/);
 });
 

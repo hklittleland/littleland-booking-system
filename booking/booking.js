@@ -31,7 +31,7 @@
     ],
     hamster: [
       { id: 'STANDARD_ROOM', name: '標準房', price: 98, max: 1, icon: '🧺', image: 'room-098.jpg', note: '可愛小房間' },
-      { id: 'HAMSTER_BOX', name: '整理箱', price: 65, max: 1, icon: '📦', note: '整潔小天地' },
+      { id: 'HAMSTER_BOX', name: '整理箱', price: 65, max: 1, icon: '📦', image: 'room-065.png', note: '整潔小天地' },
       { id: 'OWN_CAGE', name: '自備籠', price: 50, max: 1, icon: '🏕️', note: '入住自備籠' }
     ]
   };
