@@ -12,9 +12,10 @@ const css = fs.readFileSync(path.join(root, "booking/styles.css"), "utf8");
 const js = fs.readFileSync(path.join(root, "booking/booking.js"), "utf8");
 
 test("guest page loads reference helper before booking code and uses the supplied logo", () => {
+  assert.match(html, /api-client\.js\?v=20261101-flowfix1[\s\S]*?booking\.js\?v=20261101-flowfix1/);
   assert.match(html, /\.\.\/staff\/booking-reference\.js[\s\S]*?booking\.js/);
-  assert.match(html, /src="assets\/littleland-logo\.jpg\?v=20261101-hero3"/);
-  assert.match(html, /src="assets\/hero-illustration\.webp\?v=20261101-hero3"/);
+  assert.match(html, /src="assets\/littleland-logo\.jpg\?v=20261101-flowfix1"/);
+  assert.match(html, /src="assets\/hero-illustration\.webp\?v=20261101-flowfix1"/);
   assert.match(html, /兔子、天竺鼠和倉鼠在 LittleLand 小寵物酒店門前/);
   assert.match(css, /object-fit:\s*contain/);
 });
