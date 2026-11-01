@@ -475,7 +475,7 @@
     if (s === "PENDING_CONFIRMATION")
       actions.push(["confirmData", "確認資料"]);
     if (s === "PENDING_DEPOSIT")
-      actions.push(["confirmDeposit", "確認已收訂金"]);
+      actions.push(["confirmDeposit", b.depositStatus === "PAID" ? "重新檢查房態並自動分配房間" : "確認已收訂金並自動分配房間"]);
     if (["CHECKED_IN", "CHECKED_OUT", "COMPLETED"].includes(s) && b.depositStatus === "PAID" && Number(b.remainingBalance || 0) > 0)
       actions.push(["recordBalance", "記錄尾數"]);
     if (s === "CHECKED_IN" && b.cashDepositStatus === "NOT_COLLECTED")
@@ -521,6 +521,28 @@
       displaySurcharges: Number(b.totalSurcharges || 0) + manualAdjustmentTotal,
       currentTotal: Number(b.estimatedTotal || 0) + manualAdjustmentTotal,
     });
+    const assignedRoomIds = parseRooms(b).map(String).filter((roomId) => rooms.includes(roomId));
+    const roomAllocationSummary = assignedRoomIds.length
+      ? assignedRoomIds.join("＋")
+      : conflict
+        ? "尚未分配（房態衝突，待員工跟進）"
+        : ["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].includes(s)
+          ? "待系統自動分配"
+          : ["CANCELLED", "CHECKED_OUT", "COMPLETED"].includes(s)
+            ? "無有效房間分配"
+            : "未分配（需核對房態）";
+    const roomAllocationNote = assignedRoomIds.length
+      ? "員工確認已收訂金時，系統會重新核對最新房態並自動分配；同一預約內的寵物共用此房型。"
+      : conflict
+        ? "系統未找到有效房間，預約未確認亦不佔房；請員工聯絡客人跟進，不可承諾房間。"
+      : s === "PENDING_DEPOSIT"
+          ? b.depositStatus === "PAID"
+            ? "訂金已記錄為已收，但仍需再次核對房態並自動分配；分配完成前此預約不佔房。"
+            : "待付訂金不佔房；員工確認已收訂金時，系統會重新查詢房態並自動分配合法實體房。"
+          : s === "PENDING_CONFIRMATION"
+            ? "待員工確認預約資料；此狀態不佔房，尚未分配實體房。"
+            : "此預約目前沒有有效實體房號，請按預約狀態核對。";
+    Object.assign(b, { roomAllocationSummary, roomAllocationNote });
     const bookingChangeControls = window.LittleLandBookingChangesView
       ? window.LittleLandBookingChangesView.render({ booking: b, pets: pets, payments: payments, adjustments: adjustments, pending: pendingAction })
       : "";
@@ -537,7 +559,8 @@
         ["退房時間", "checkoutTime"],
         ["晚數", "nights"],
         ["房型", roomNames[b.roomTypeId] || b.roomTypeId],
-        ["內部分配房號", parseRooms(b).join(", ") || "未分配"],
+        ["實體房間（系統自動分配）", "roomAllocationSummary"],
+        ["分配方式", "roomAllocationNote"],
         ["訂金狀態", "depositStatus"],
         ["尾數狀態", "balanceStatus"],
         ["按金狀態", "cashDepositStatus"],
@@ -562,7 +585,7 @@
       pets
         .map(
           (p) =>
-            `<article class="pet"><h3>🐾 ${esc(get(p, "name", "petName"))}</h3><p><b>種類</b> ${esc(speciesNames[b.species] || b.species || "—")}</p>${kv(
+            `<article class="pet"><h3>🐾 ${esc(get(p, "name", "petName"))}</h3><p><b>種類</b> ${esc(speciesNames[b.species] || b.species || "—")}</p><p class="pet-room-assignment"><b>實體房間（本預約寵物共用）</b><br>${esc(roomAllocationSummary)}</p>${kv(
               p,
               [
                 ["品種", "breed"],
@@ -714,7 +737,7 @@
         paint();
       };
     });
-    app.querySelectorAll("[data-date]").forEach(
+    app.querySelectorAll(".day-cell[data-date]").forEach(
       (x) =>
         (x.onclick = () => {
           store.state.selectedCalendarDate = x.dataset.date;
@@ -905,11 +928,11 @@
         if (!control) return;
         store.state.scheduleDrafts = store.state.scheduleDrafts || {};
         const draft = store.state.scheduleDrafts[monthKey] || (store.state.scheduleDrafts[monthKey] = {});
-        draft[control.dataset.date] = control.value;
+        draft[control.dataset.scheduleDayDate] = control.value;
       });
       scheduleMonthForm.onsubmit = async (event) => {
         event.preventDefault();
-        const assignments = Array.from(scheduleMonthForm.querySelectorAll("[data-schedule-day]"), (control) => ({ workDate: control.dataset.date, staffId: control.value || "" }));
+        const assignments = Array.from(scheduleMonthForm.querySelectorAll("[data-schedule-day]"), (control) => ({ workDate: control.dataset.scheduleDayDate, staffId: control.value || "" }));
         const data = { year, month, assignments };
         const fingerprint = JSON.stringify(data);
         store.state.scheduleMonthIdempotency = store.state.scheduleMonthIdempotency || {};

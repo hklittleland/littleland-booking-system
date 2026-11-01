@@ -6,6 +6,7 @@ const path = require("node:path");
 const { renderScheduleView } = require("../staff/schedule-view.js");
 
 const appSource = fs.readFileSync(path.join(__dirname, "../staff/app.js"), "utf8");
+const scheduleSource = fs.readFileSync(path.join(__dirname, "../staff/schedule-view.js"), "utf8");
 
 test("schedule month navigation is bound only to explicit navigation buttons", () => {
   assert.match(appSource, /data-schedule-month-nav="-1"/);
@@ -27,4 +28,20 @@ test("the monthly save form retains its own visible month identity without a nav
   assert.match(form, /data-schedule-month="11"/);
   assert.doesNotMatch(form, /data-schedule-month-nav/);
   assert.match(form, /id="scheduleMonthForm"/);
+});
+
+
+test("schedule dropdown dates cannot trigger the calendar day-click handler", () => {
+  const html = renderScheduleView({
+    year: 2026,
+    monthIndex: 10,
+    staff: [{ staffId: "s1", displayName: "A" }, { staffId: "s2", displayName: "B" }],
+    schedules: [],
+  });
+  assert.match(html, /data-schedule-day data-schedule-day-date="2026-11-01"/);
+  assert.doesNotMatch(html, /<select[^>]*data-date=/);
+  assert.match(appSource, /querySelectorAll\("\.day-cell\[data-date\]"\)/);
+  assert.match(appSource, /draft\[control\.dataset\.scheduleDayDate\] = control\.value/);
+  assert.match(appSource, /workDate: control\.dataset\.scheduleDayDate/);
+  assert.doesNotMatch(scheduleSource, /data-schedule-day[^>]*data-date=/);
 });

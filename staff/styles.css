@@ -1268,3 +1268,59 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-
   .whatsapp-template-actions { grid-template-columns: 1fr; }
   .whatsapp-template-card textarea[data-wa-draft] { min-height: 210px; font-size: 12.5px; }
 }
+
+
+/* iPhone Safari: keep native staff selects directly touchable and comfortably sized. */
+.schedule-day-select {
+  -webkit-appearance: menulist;
+  appearance: auto;
+  pointer-events: auto;
+  position: relative;
+  z-index: 2;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+@media (max-width: 480px) {
+  .schedule-day-select { min-height: 48px; font-size: 11px; }
+}
+
+/* Monthly room matrix: every physical room and date, with horizontal scrolling on phones. */
+.room-month-overview { min-width: 0; margin: 20px 0 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+.room-month-overview h3 { margin: 0 0 6px; color: #4e3a70; }
+.room-month-note { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.room-month-legend { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.room-month-legend span { padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.room-month-legend .legend-free { background: #eff1f3; color: #59616b; }
+.room-month-legend .legend-booked { background: #e6f5eb; color: #247a51; }
+.room-month-legend .legend-in-house { background: #e8f0ff; color: #315caa; }
+.room-month-legend .legend-conflict { background: #fdeaea; color: #9b3535; }
+.room-month-legend .legend-unknown { background: #fff1dc; color: #8b5716; }
+.room-month-warning { margin: 0 0 10px; padding: 10px 12px; border: 1px solid #efc27e; border-radius: 10px; background: #fff6e5; color: #704b14; font-size: 12px; }
+.room-month-warning > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.room-warning-link { min-height: 36px; padding: 6px 10px; border: 1px solid #e3c58f; border-radius: 8px; background: #fff; color: #674816; font: inherit; font-size: 12px; cursor: pointer; }
+.room-month-scroll { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; border: 1px solid #e5e0eb; border-radius: 11px; background: #fff; }
+.room-month-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+.room-month-table th, .room-month-table td { min-width: 36px; height: 34px; padding: 2px; border-right: 1px solid #eeeaf2; border-bottom: 1px solid #eeeaf2; text-align: center; white-space: nowrap; }
+.room-month-table thead th { position: sticky; top: 0; z-index: 1; background: #f8f6fb; color: #62566f; font-weight: 800; }
+.room-month-table .room-month-room { position: sticky; left: 0; z-index: 2; min-width: 62px; padding-inline: 8px; background: #fff; color: #4f4262; text-align: left; font-weight: 900; }
+.room-month-table thead .room-month-room--head { z-index: 3; background: #f4f0f8; }
+.room-month-table .room-month-date.is-today { color: #fff; background: #7650c8; }
+.room-month-table .room-state { font-weight: 900; }
+.room-month-table .room-state--free { background: #f1f3f5; color: #616a73; }
+.room-month-table .room-state--booked { background: #e6f5eb; color: #247a51; }
+.room-month-table .room-state--in-house { background: #e8f0ff; color: #315caa; }
+.room-month-table .room-state--conflict { background: #fdeaea; color: #9b3535; }
+.room-month-table .room-state--unknown { background: #fff1dc; color: #8b5716; }
+.room-month-table .room-state.is-today { box-shadow: inset 0 0 0 2px #8c65d9; }
+.room-state-link { width: 100%; min-height: 30px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 900; cursor: pointer; }
+.room-state-link:focus-visible { outline: 2px solid #7650c8; outline-offset: -2px; }
+.pet-room-assignment { margin: 8px 0 10px; padding: 8px 10px; border-radius: 9px; background: #f4f0fa; color: #584173; font-size: 13px; }
+.pet-room-assignment b { display: inline-block; margin-bottom: 2px; }
+.whatsapp-payment-link { display: grid; gap: 5px; min-width: 0; }
+.whatsapp-payment-link span { color: #4f4262; font-size: 13px; font-weight: 700; }
+.whatsapp-payment-link input { width: 100%; min-height: 44px; padding: 9px 11px; border: 1px solid #ded6e8; border-radius: 10px; background: #fff; color: var(--ink); font: inherit; font-size: 14px; }
+.whatsapp-template-actions a[aria-disabled="true"] { opacity: .52; pointer-events: none; cursor: not-allowed; }
+@media (max-width: 480px) {
+  .room-month-table th, .room-month-table td { min-width: 33px; height: 34px; font-size: 10px; }
+  .room-month-table .room-month-room { min-width: 56px; }
+}

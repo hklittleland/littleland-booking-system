@@ -68,6 +68,15 @@
     const match = id.match(/^TEST-LL-\d{8}-([A-Z0-9]{8})$/i);
     return match ? match[1].toUpperCase() : id.slice(-8);
   }
+  function allocatedPhysicalRooms(booking) {
+    const allowed = new Set(["S1", "S2", "S3", "A1", "A2", "A3", "B1", "B2", "C1", "F1"]);
+    let raw = booking && (booking.allocatedRoomIds || booking.allocatedRoomIdsJson);
+    if (typeof raw === "string") {
+      try { raw = JSON.parse(raw); } catch (_) { raw = []; }
+    }
+    if (!Array.isArray(raw)) return [];
+    return Array.from(new Set(raw.map((id) => String(id || "")).filter((id) => allowed.has(id))));
+  }
   function parseServices(booking, supplied) {
     if (Array.isArray(supplied) && supplied.length) return supplied;
     const raw = booking && (booking.serviceItemsJson || booking.servicesJson);
@@ -153,6 +162,12 @@
     const reference = shortReference(booking, opts.shortReference);
     const quantity = Number(booking.quantity || pets.length || 0);
     const nights = stayNights(booking);
+    const physicalRooms = allocatedPhysicalRooms(booking);
+    const physicalRoomLabel = physicalRooms.length
+      ? physicalRooms.join("＋")
+      : ["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].includes(String(booking.bookingStatus || "").toUpperCase())
+        ? "待系統自動分配"
+        : "未分配（請核對房態）";
     const manualAdjustmentTotal = currentAdjustments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
     const currentTotal = Number(booking.estimatedTotal || 0) + manualAdjustmentTotal;
     const cashDepositAmount = Number(booking.cashDepositAmount || booking.cashDeposit || quantity * 1000);
@@ -206,6 +221,7 @@
         ["退房日期／時間", `${formatDate(booking.checkoutDate)} ${display(booking.checkoutTime)}`],
         ["寵物種類／數量", `${speciesNames[booking.species] || display(booking.species)} · ${quantity || "—"} 隻`],
         ["房型", roomNames[booking.roomTypeId] || display(booking.roomTypeId)],
+        ["實體房間（系統自動分配）", physicalRoomLabel],
       ])}</div></section>
       <section class="block"><h2>住宿及收費明細</h2><table class="fees"><thead><tr><th>項目</th><th>說明</th><th class="numeric">金額</th></tr></thead><tbody>${feeMarkup}</tbody></table>
         <div class="totals">${surchargeTotalsMarkup}<div class="grand"><span>目前住宿總額（不含現金按金）</span><b>${esc(money(currentTotal))}</b></div>
@@ -299,7 +315,7 @@
         carePages.push(`<section class="sheet care-sheet">
           <header class="brand-row"><div class="brand-lockup">${logo}<div class="brand">LittleLand <small>小寵物酒店服務</small></div></div><div class="test-tag">TEST 測試列印</div></header>
           <div class="care-title-row"><h1>每日照顧及餵藥紀錄</h1><span class="cute-tag">${hamster ? "🐹" : booking.species === "GUINEA_PIG" ? "🐽" : "🐰"} 毛孩專屬照顧表</span></div>
-          <div class="care-identity"><div><b>家長</b>${esc(value(booking, "parentName", "customerName"))}</div><div><b>電話</b>${esc(booking.phone)}</div><div><b>緊急聯絡人 1</b>${esc(booking.emergency1)}</div><div><b>緊急聯絡人 2</b>${esc(booking.emergency2)}</div><div><b>毛孩</b>${esc(name)} · ${esc(species)}</div><div><b>年齡／品種</b>${esc(`${display(pet.ageValue)} ${display(pet.ageUnit)} · ${value(pet, "breed") || "—"}`)}</div><div><b>訂單編號</b>${esc(reference)}</div><div><b>房型</b>${esc(roomNames[booking.roomTypeId] || display(booking.roomTypeId))}</div></div>
+          <div class="care-identity"><div><b>家長</b>${esc(value(booking, "parentName", "customerName"))}</div><div><b>電話</b>${esc(booking.phone)}</div><div><b>緊急聯絡人 1</b>${esc(booking.emergency1)}</div><div><b>緊急聯絡人 2</b>${esc(booking.emergency2)}</div><div><b>毛孩</b>${esc(name)} · ${esc(species)}</div><div><b>年齡／品種</b>${esc(`${display(pet.ageValue)} ${display(pet.ageUnit)} · ${value(pet, "breed") || "—"}`)}</div><div><b>訂單編號</b>${esc(reference)}</div><div><b>房型</b>${esc(roomNames[booking.roomTypeId] || display(booking.roomTypeId))}</div><div><b>實體房間（本預約寵物共用）</b>${esc(physicalRoomLabel)}</div></div>
           <section class="care-card diet-card"><h2>🍽 飲食及照顧指示</h2><p>${esc(foodNote)}</p>${!hamster && yesNo(booking.vegetables) === "是" ? `<p>新鮮蔬菜：已選提供</p>` : ""}<p>飲食／日常注意：${esc(value(pet, "specialCare") || "按家長指示")}</p></section>
           <section class="care-card health-card"><h2>🩺 健康與用藥資料（已由預約資料帶入）</h2><div class="health-grid">${infoRows(healthRows)}<div class="info-row"><b>藥物資料</b><span>${esc(yesNo(pet.medication) === "是" ? value(pet, "medicationDetails") || "有申報用藥，請員工入住時覆核" : "未申報需餵藥")}</span></div></div></section>
           <section class="care-card checklist-card"><div class="checklist-heading"><h2>📅 每日照顧打勾表</h2><span>第 ${segment + 1}/${segments} 張 · 每格為一個住宿日</span></div><div class="table-wrap"><table class="care-grid"><thead><tr><th class="task-col">照顧項目</th>${dateCells}<th class="note-col">內容／提示</th></tr></thead><tbody>${dailyRows}</tbody></table></div></section>

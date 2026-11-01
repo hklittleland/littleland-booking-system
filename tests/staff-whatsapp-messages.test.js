@@ -17,6 +17,17 @@ const baseBooking = (overrides = {}) => ({
   nights: 2,
   quantity: 2,
   paymentLink: "https://pay.example.test/deposit/123",
+  baseRoomFee: 356,
+  extraPetFee: 100,
+  weekendFee: 0,
+  serviceFees: 0,
+  totalSurcharges: 100,
+  displaySurcharges: 100,
+  estimatedTotal: 456,
+  currentTotal: 456,
+  depositAmount: 178,
+  remainingBalance: 278,
+  cashDepositAmount: 2000,
   ...overrides,
 });
 const pets = [{ name: "兔兔", species: "rabbit" }, { name: "豆豆", species: "rabbit" }];
@@ -43,6 +54,14 @@ const exactPaymentTemplate = [
   "3️⃣請保留小動物2-3天的💩💩，於入住時提供職員參考以辨健康狀況。",
   "-------------------------------------------------------------------------------------------------------------🖊️",
   "📋現附上【入住須知及寄養條款】以供參考 。",
+  "💰費用詳情：",
+  "基本房費：HK$356",
+  "附加費合計：HK$100",
+  "預計住宿總額：HK$456",
+  "現需支付訂金（基本房費 50%）：HK$178",
+  "入住時需繳付尾數：HK$278（入住時需付清尾數及所有額外收費）",
+  "現金備用金／按金：HK$2,000（入住當日另備，不計入住宿總額）",
+  "⚠️訂金不設退回／退款。",
   "💳 _*請透過此連結繳付50%住宿費訂金，作保留房間之用。*_",
   "https://pay.example.test/deposit/123",
   "請完成付款後於網站/WHATSAPP回傳付款憑證，Thanks ~",
@@ -168,6 +187,12 @@ test("missing payment link or early-refund amount remains editable but blocks co
   assert.match(payment.text, /\{付款連結\}/);
   assert.equal(payment.copyable, false);
   assert.equal(payment.openable, false);
+  const html = Messages.render({ booking: baseBooking({ paymentLink: "" }), pets, roomNames });
+  assert.match(html, /data-wa-payment-link/);
+  assert.match(html, /付款連結未填妥前不能複製或開啟 WhatsApp/);
+  assert.match(html, /data-wa-open role="button" aria-disabled="true"/);
+  const insecure = get(Messages.buildMessages({ booking: baseBooking({ paymentLink: "http://pay.example.test/deposit" }), pets }), "deposit-arrangement");
+  assert.equal(insecure.copyable, false);
 
   const early = Messages.buildMessages({
     booking: baseBooking({ bookingStatus: "CHECKED_OUT", actualCheckoutDate: "2026-11-07" }),
@@ -203,4 +228,68 @@ test("pet names are HTML-escaped in editable drafts while status templates remai
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(html, /<img src=x/);
   assert.equal((html.match(/data-wa-card/g) || []).length, 5);
+});
+
+
+test("renders a directly clickable wa.me anchor only when the payment draft is complete", () => {
+  const html = Messages.render({ booking: baseBooking(), pets, roomNames });
+  assert.match(html, /<a class="btn" data-wa-open href="https:\/\/wa\.me\/85291234567\?text=/);
+  assert.match(html, /target="_blank" rel="noopener noreferrer" aria-disabled="false">開啟 WhatsApp<\/a>/);
+  assert.match(html, /data-wa-payment-link/);
+});
+
+test("payment-link input updates the draft and unlocks copy/open controls after valid HTTPS is entered", () => {
+  const handlers = {};
+  const draft = {
+    value: "Pay here: {付款連結}",
+    addEventListener(type, fn) { handlers.draft = fn; },
+    focus() {}, select() {}, setSelectionRange() {},
+  };
+  const paymentInput = {
+    value: "",
+    addEventListener(type, fn) { handlers.payment = fn; },
+  };
+  const copyButton = { disabled: true, addEventListener() {} };
+  const openButton = {
+    attrs: {},
+    addEventListener() {},
+    setAttribute(name, value) { this.attrs[name] = value; },
+    removeAttribute(name) { delete this.attrs[name]; },
+    getAttribute(name) { return this.attrs[name] || null; },
+  };
+  const help = { textContent: "" };
+  const nodes = { "[data-wa-draft]": draft, "[data-wa-copy]": copyButton, "[data-wa-open]": openButton, "[data-wa-payment-link]": paymentInput, "[data-wa-help]": help };
+  const card = {
+    dataset: { waEligible: "true", waPhone: "85291234567", waReason: "", waRequiresPaymentLink: "true" },
+    querySelector(selector) { return nodes[selector] || null; },
+  };
+  Messages.bind({ querySelectorAll() { return [card]; } });
+  assert.equal(copyButton.disabled, true);
+  assert.equal(openButton.getAttribute("aria-disabled"), "true");
+  paymentInput.value = "https://pay.example.test/checkout";
+  handlers.payment();
+  assert.match(draft.value, /https:\/\/pay\.example\.test\/checkout/);
+  assert.doesNotMatch(draft.value, /\{付款連結\}/);
+  assert.equal(copyButton.disabled, false);
+  assert.equal(openButton.getAttribute("aria-disabled"), "false");
+  assert.match(openButton.getAttribute("href"), /https:\/\/wa\.me\/85291234567\?text=/);
+});
+
+test("iPhone Safari copy fallback selects the draft when clipboard permissions are unavailable", async () => {
+  let legacyCalls = 0;
+  let focusCalls = 0;
+  const fakeRoot = {
+    navigator: { clipboard: { writeText: () => Promise.reject(new Error("denied")) } },
+    document: { execCommand: () => { legacyCalls += 1; return false; } },
+  };
+  const fakeDraft = {
+    value: "LittleLand WhatsApp draft",
+    focus() { focusCalls += 1; },
+    select() {},
+    setSelectionRange() {},
+  };
+  const result = await Messages.copyDraft(fakeRoot, fakeDraft);
+  assert.deepEqual(result, { copied: false, selected: true });
+  assert.equal(legacyCalls, 1);
+  assert.ok(focusCalls >= 2);
 });

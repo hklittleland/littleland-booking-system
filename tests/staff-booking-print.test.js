@@ -7,6 +7,7 @@ function sample(overrides = {}) {
   const booking = {
     bookingId: "TEST-LL-20261101-ABCD1234",
     bookingStatus: "CHECKED_IN",
+    allocatedRoomIdsJson: JSON.stringify(["S1", "S2"]),
     parentName: "<script>alert('x')</script>",
     phone: "55500000",
     email: "guest@test.example",
@@ -60,11 +61,13 @@ function sample(overrides = {}) {
 
 const options = { shortReference: "ABCD1234", assetBase: "/staff/assets/booking-print/", autoPrint: false };
 
-test("booking print uses eight-character guest reference and excludes full internal ID/room allocation", () => {
+test("booking print uses an eight-character guest reference and prints assigned physical rooms, not virtual suite IDs", () => {
   const html = render(sample(), options);
   assert.match(html, /ABCD1234/);
   assert.doesNotMatch(html, /TEST-LL-20261101-ABCD1234/);
-  assert.doesNotMatch(html, /allocatedRoomIds|S1\+S2/);
+  assert.match(html, /實體房間（系統自動分配）[\s\S]*?S1＋S2/);
+  assert.match(html, /實體房間（本預約寵物共用）[\s\S]*?S1＋S2/);
+  assert.doesNotMatch(html, /allocatedRoomIds|SS1|SSR1/);
 });
 
 test("booking print includes booking data, detailed charges, manual adjustments and payment states", () => {
@@ -167,4 +170,12 @@ test("untrusted customer and pet details are escaped in printable HTML", () => {
   const html = render(sample(), options);
   assert.match(html, /&lt;script&gt;alert\(&#39;x&#39;\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /<script>alert\('x'\)<\/script>/);
+});
+
+
+test("booking print never presents virtual room-combination IDs as physical rooms", () => {
+  const data = sample({ allocatedRoomIdsJson: JSON.stringify(["SS1", "SSR1"]) });
+  const html = render(data, options);
+  assert.match(html, /實體房間（系統自動分配）[\s\S]*?未分配（請核對房態）/);
+  assert.doesNotMatch(html, /SS1|SSR1/);
 });

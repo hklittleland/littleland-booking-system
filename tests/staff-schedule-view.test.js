@@ -9,7 +9,7 @@ const render = (overrides = {}) => renderScheduleView({ year: 2026, monthIndex: 
 test("renders a month calendar with a dropdown for each date and one save button", () => {
   const html = render();
   assert.match(html, /scheduleMonthForm/);
-  assert.equal((html.match(/data-schedule-day/g) || []).length, 30);
+  assert.equal((html.match(/data-schedule-day(?=\s|>)/g) || []).length, 30);
   assert.equal((html.match(/儲存本月排班/g) || []).length, 1);
   assert.match(html, /員工 A/);
   assert.match(html, /員工 B/);
@@ -84,7 +84,7 @@ test("three schedule-only employees are shown by name in each daily dropdown", (
     { staffId: "s2", displayName: "Bob" },
     { staffId: "s3", displayName: "Carol" },
   ] });
-  assert.equal((html.match(/data-schedule-day/g) || []).length, 30);
+  assert.equal((html.match(/data-schedule-day(?=\s|>)/g) || []).length, 30);
   assert.match(html, /員工 A · Alice/);
   assert.match(html, /員工 B · Bob/);
   assert.match(html, /員工 C · Carol/);

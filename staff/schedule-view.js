@@ -72,9 +72,9 @@
       const chosen = selections[date];
       const selectedPerson = peopleOptions.find((person) => person.id === chosen);
       const isToday = date === isoDate(todayISO);
-      const options = `<option value="" ${chosen ? "" : "selected"}>未安排</option>${peopleOptions.map((person) => `<option value="${esc(person.id)}" ${person.id === chosen ? "selected" : ""}>${esc(person.label)} · ${esc(person.name)}</option>`).join("")}`;
+      const options = `<option value=""${chosen ? "" : " selected"}>未安排</option>${peopleOptions.map((person) => `<option value="${esc(person.id)}"${person.id === chosen ? " selected" : ""}>${esc(person.label)} · ${esc(person.name)}</option>`).join("")}`;
       const selectControl = peopleOptions.length >= 2 && peopleOptions.length <= 3
-        ? `<label class="sr-only" for="schedule-${date}">${date} 當值員工</label><select id="schedule-${date}" class="schedule-day-select" data-schedule-day data-date="${date}" aria-label="${date} 選擇當值員工" ${pending ? "disabled" : ""}>${options}</select>`
+        ? `<label class="sr-only" for="schedule-${date}">${date} 當值員工</label><select id="schedule-${date}" class="schedule-day-select" data-schedule-day data-schedule-day-date="${date}" aria-label="${date} 選擇當值員工" ${pending ? "disabled" : ""}>${options}</select>`
         : '<span class="schedule-disabled-cell" aria-label="需要兩至三位有效排班員工">—</span>';
       cells.push(`<article class="schedule-day${isToday ? " schedule-day--today" : ""}${conflict ? " schedule-day--conflict" : ""}" data-schedule-date="${date}"><header class="schedule-day__header"><time datetime="${date}">${day}</time>${isToday ? '<span class="schedule-today-label">今天</span>' : ""}</header>${conflict ? '<p class="schedule-conflict-note">需選一位</p>' : selectedPerson ? `<p class="schedule-current-name">${esc(selectedPerson.name)}</p>` : '<p class="schedule-current-name schedule-current-name--none">休息／未安排</p>'}${selectControl}</article>`);
     }

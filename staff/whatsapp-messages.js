@@ -146,6 +146,26 @@
     return result;
   }
 
+  function moneyValue(value, placeholder) {
+    if (value == null || String(value).trim() === "") return "{" + placeholder + "}";
+    var number = Number(value);
+    if (!Number.isFinite(number)) return "{" + placeholder + "}";
+    return number.toLocaleString("en-HK", { minimumFractionDigits: Number.isInteger(number) ? 0 : 2, maximumFractionDigits: 2 });
+  }
+
+  function isHttpsUrl(value) {
+    try {
+      var parsed = new URL(text(value).trim());
+      return parsed.protocol === "https:" && Boolean(parsed.hostname);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function whatsAppUrl(phone, draft) {
+    return "https://wa.me/" + text(phone) + "?text=" + encodeURIComponent(text(draft));
+  }
+
   function makeTemplates() {
     return [
       {
@@ -171,6 +191,14 @@
           "3️⃣請保留小動物2-3天的💩💩，於入住時提供職員參考以辨健康狀況。",
           "-------------------------------------------------------------------------------------------------------------🖊️",
           "📋現附上【入住須知及寄養條款】以供參考 。",
+          "💰費用詳情：",
+          "基本房費：HK${基本房費}",
+          "附加費合計：HK${附加費合計}",
+          "預計住宿總額：HK${住宿總額}",
+          "現需支付訂金（基本房費 50%）：HK${訂金}",
+          "入住時需繳付尾數：HK${尾數}（入住時需付清尾數及所有額外收費）",
+          "現金備用金／按金：HK${現金備用金}（入住當日另備，不計入住宿總額）",
+          "⚠️訂金不設退回／退款。",
           "💳 _*請透過此連結繳付50%住宿費訂金，作保留房間之用。*_",
           "{付款連結}",
           "請完成付款後於網站/WHATSAPP回傳付款憑證，Thanks ~",
@@ -248,6 +276,21 @@
     var isEarly = Boolean(booking.actualCheckoutDate && booking.checkoutDate && dateInteger(booking.actualCheckoutDate) < dateInteger(booking.checkoutDate));
     var refundAmount = paidEarlyCheckoutRefund(payments, adjustments);
     var paymentLink = text(firstValue(booking, ["paymentLink", "depositPaymentLink", "paymentUrl"]));
+    var totalRaw = firstValue(booking, ["currentTotal", "estimatedTotal"]);
+    var baseFeeRaw = firstValue(booking, ["baseRoomFee"]);
+    var surchargeRaw = firstValue(booking, ["displaySurcharges", "totalSurcharges"]);
+    var depositRaw = firstValue(booking, ["depositAmount"]);
+    var balanceRaw = firstValue(booking, ["remainingBalance"]);
+    var totalNumber = totalRaw === "" ? NaN : Number(totalRaw);
+    var baseFeeNumber = baseFeeRaw === "" ? NaN : Number(baseFeeRaw);
+    var depositNumber = depositRaw !== "" ? Number(depositRaw) : Number.isFinite(baseFeeNumber) ? baseFeeNumber * 0.5 : NaN;
+    var surchargeNumber = surchargeRaw !== "" ? Number(surchargeRaw)
+      : Number.isFinite(totalNumber) && Number.isFinite(baseFeeNumber) ? totalNumber - baseFeeNumber : NaN;
+    var balanceNumber = balanceRaw !== "" ? Number(balanceRaw)
+      : Number.isFinite(totalNumber) && Number.isFinite(depositNumber) ? totalNumber - depositNumber : NaN;
+    var cashRaw = firstValue(booking, ["cashDepositAmount", "cashDeposit"]);
+    var quantity = Number(firstValue(booking, ["quantity"]) || pets.length || 0);
+    var cashNumber = cashRaw !== "" ? Number(cashRaw) : quantity > 0 ? quantity * 1000 : NaN;
     var values = {
       "寵物名": petNames(pets),
       "寵物圖示": speciesIcon(species),
@@ -260,6 +303,12 @@
       "退房時間": checkoutTime,
       "新退房日期": actualCheckout,
       "付款連結": paymentLink,
+      "基本房費": moneyValue(baseFeeRaw, "基本房費"),
+      "附加費合計": moneyValue(surchargeNumber, "附加費合計"),
+      "住宿總額": moneyValue(totalNumber, "住宿總額"),
+      "訂金": moneyValue(depositNumber, "訂金"),
+      "尾數": moneyValue(balanceNumber, "尾數"),
+      "現金備用金": moneyValue(cashNumber, "現金備用金"),
       "退款金額": refundAmount,
     };
     var templates = makeTemplates();
@@ -274,6 +323,7 @@
         reason: reason || "",
         missingFields: Array.from(body.matchAll(/\{[^{}\n]+\}/g)).map(function (match) { return match[0]; }),
         phone: phoneForWhatsApp(booking),
+        paymentLink: template.id === "deposit-arrangement" ? paymentLink : "",
       };
     }
 
@@ -317,7 +367,8 @@
       result(templates[4], !earlyCheckoutReason, earlyCheckoutReason),
     ];
     return messages.map(function (message) {
-      message.copyable = message.eligible && message.missingFields.length === 0;
+      var paymentLinkReady = message.id !== "deposit-arrangement" || isHttpsUrl(message.paymentLink);
+      message.copyable = message.eligible && message.missingFields.length === 0 && paymentLinkReady;
       message.openable = message.copyable && Boolean(message.phone);
       return message;
     });
@@ -327,26 +378,61 @@
     var messages = buildMessages(options);
     var cards = messages.map(function (message, index) {
       var complete = message.missingFields.length === 0;
+      var needsPaymentLink = message.id === "deposit-arrangement";
+      var linkReady = !needsPaymentLink || isHttpsUrl(message.paymentLink);
       var initialHelp = !message.eligible
         ? message.reason
-        : !complete
-          ? "草稿仍有待填欄位：" + message.missingFields.join("、") + "。填妥並核對後才可複製／開啟。"
-          : message.phone
-            ? "草稿已填妥；請先核對內容，再手動傳送。"
-            : "草稿已填妥；此訂單電話格式未確認，仍可複製草稿。";
+        : !linkReady
+          ? "請在下方輸入訂金付款連結（HTTPS）；付款連結未填妥前不能複製或開啟 WhatsApp。"
+          : !complete
+            ? "草稿仍有待填欄位：" + message.missingFields.join("、") + "。填妥並核對後才可複製／開啟。"
+            : message.phone
+              ? "草稿已填妥；請先核對內容，再手動傳送。"
+              : "草稿已填妥；此訂單電話格式未確認，仍可複製草稿。";
       var copyDisabled = !message.copyable;
       var openDisabled = !message.openable;
+      var paymentInput = needsPaymentLink
+        ? '<label class="whatsapp-payment-link"><span>訂金付款連結（必填，HTTPS）</span><input type="url" inputmode="url" autocomplete="url" data-wa-payment-link aria-label="訂金付款連結" placeholder="https://…" value="' + esc(message.paymentLink) + '"' + (!message.eligible ? " disabled" : "") + '></label>'
+        : "";
+      var openControl = '<a class="btn" data-wa-open' + (openDisabled ? ' role="button" aria-disabled="true" tabindex="-1"' : ' href="' + esc(whatsAppUrl(message.phone, message.text)) + '" target="_blank" rel="noopener noreferrer" aria-disabled="false"') + '>開啟 WhatsApp</a>';
       return '<article class="whatsapp-template-card" data-wa-card data-wa-eligible="' + (message.eligible ? "true" : "false") +
-        '" data-wa-phone="' + esc(message.phone) + '" data-wa-reason="' + esc(message.reason) + '"><header class="whatsapp-template-heading">' +
+        '" data-wa-phone="' + esc(message.phone) + '" data-wa-reason="' + esc(message.reason) + '" data-wa-requires-payment-link="' + (needsPaymentLink ? "true" : "false") + '"><header class="whatsapp-template-heading">' +
         '<span class="whatsapp-template-number">' + (index + 1) + '</span><div><h3>' + esc(message.title) + '</h3><p class="whatsapp-template-state ' +
         (message.eligible ? "is-available" : "is-unavailable") + '">' + (message.eligible ? "符合使用條件" : "暫不可使用") + '</p></div></header>' +
-        '<p class="whatsapp-template-help" data-wa-help>' + esc(initialHelp) + '</p><label class="whatsapp-draft-label">訊息草稿（可編輯）</label>' +
+        '<p class="whatsapp-template-help" data-wa-help>' + esc(initialHelp) + '</p>' + paymentInput + '<label class="whatsapp-draft-label">訊息草稿（可編輯）</label>' +
         '<textarea rows="12" data-wa-draft aria-label="' + esc(message.title) + ' WhatsApp 草稿" ' + (!message.eligible ? "readonly" : "") + '>' +
         esc(message.text) + '</textarea><div class="whatsapp-template-actions"><button class="btn secondary" type="button" data-wa-copy' +
-        (copyDisabled ? " disabled" : "") + '>複製草稿</button><button class="btn" type="button" data-wa-open' +
-        (openDisabled ? " disabled" : "") + '>開啟 WhatsApp</button></div></article>';
+        (copyDisabled ? " disabled" : "") + '>複製草稿</button>' + openControl + '</div></article>';
     }).join("");
     return '<section class="card whatsapp-message-panel"><header><h2>WhatsApp 訊息草稿</h2><p>固定顯示五款核准模板；按預約狀態標示可用原因。只建立草稿，不會自動傳送。</p></header><div class="whatsapp-template-list">' + cards + '</div></section>';
+  }
+
+  async function copyDraft(rootObject, draft) {
+    var value = draft.value;
+    var clipboardPromise = null;
+    try {
+      var clipboard = rootObject.navigator && rootObject.navigator.clipboard;
+      if (clipboard && typeof clipboard.writeText === "function") clipboardPromise = clipboard.writeText(value);
+    } catch (_) {}
+    var legacyCopied = false;
+    function selectDraft() {
+      draft.focus();
+      if (typeof draft.select === "function") draft.select();
+      if (typeof draft.setSelectionRange === "function") draft.setSelectionRange(0, value.length);
+    }
+    try {
+      selectDraft();
+      legacyCopied = Boolean(rootObject.document && rootObject.document.execCommand && rootObject.document.execCommand("copy"));
+    } catch (_) {}
+    if (legacyCopied) {
+      if (clipboardPromise && typeof clipboardPromise.catch === "function") clipboardPromise.catch(function () {});
+      return { copied: true, selected: false };
+    }
+    if (clipboardPromise) {
+      try { await clipboardPromise; return { copied: true, selected: false }; } catch (_) {}
+    }
+    try { selectDraft(); } catch (_) {}
+    return { copied: false, selected: true };
   }
 
   function bind(app, toast) {
@@ -355,20 +441,40 @@
       var draft = card.querySelector("[data-wa-draft]");
       var copyButton = card.querySelector("[data-wa-copy]");
       var openButton = card.querySelector("[data-wa-open]");
+      var paymentInput = card.querySelector("[data-wa-payment-link]");
       var help = card.querySelector("[data-wa-help]");
       var eligible = card.dataset.waEligible === "true";
       var phone = card.dataset.waPhone || "";
+      var requiresPaymentLink = card.dataset.waRequiresPaymentLink === "true";
+      var previousPaymentLink = paymentInput ? paymentInput.value.trim() : "";
 
       function refresh() {
         if (!draft) return;
         var missing = Array.from(draft.value.matchAll(/\{[^{}\n]+\}/g)).map(function (match) { return match[0]; });
-        var complete = eligible && missing.length === 0;
+        var linkValue = paymentInput ? paymentInput.value.trim() : "";
+        var paymentLinkReady = !requiresPaymentLink || (isHttpsUrl(linkValue) && draft.value.indexOf(linkValue) >= 0);
+        var complete = eligible && missing.length === 0 && paymentLinkReady;
         if (copyButton) copyButton.disabled = !complete;
-        if (openButton) openButton.disabled = !complete || !phone;
+        if (openButton) {
+          var url = complete && phone ? whatsAppUrl(phone, draft.value) : "";
+          if (url) {
+            openButton.setAttribute("href", url);
+            openButton.setAttribute("target", "_blank");
+            openButton.setAttribute("rel", "noopener noreferrer");
+            openButton.setAttribute("aria-disabled", "false");
+            openButton.setAttribute("tabindex", "0");
+          } else {
+            openButton.removeAttribute("href");
+            openButton.setAttribute("aria-disabled", "true");
+            openButton.setAttribute("tabindex", "-1");
+          }
+        }
         if (!eligible) {
           if (help) help.textContent = card.dataset.waReason || "此預約狀態沒有可用模板。";
         } else if (missing.length) {
           if (help) help.textContent = "草稿仍有待填欄位：" + missing.join("、") + "。填妥並核對後才可複製／開啟。";
+        } else if (!paymentLinkReady) {
+          if (help) help.textContent = "請輸入有效 HTTPS 訂金付款連結，並保留在草稿中；完成後即可複製或開啟 WhatsApp。";
         } else if (!phone) {
           if (help) help.textContent = "草稿已填妥；此訂單電話格式未確認，仍可複製草稿。";
         } else if (help) {
@@ -377,25 +483,29 @@
       }
 
       if (draft && eligible) draft.addEventListener("input", refresh);
+      if (paymentInput && eligible && draft) paymentInput.addEventListener("input", function () {
+        var nextPaymentLink = paymentInput.value.trim();
+        if (previousPaymentLink && draft.value.indexOf(previousPaymentLink) >= 0) {
+          draft.value = draft.value.replace(previousPaymentLink, nextPaymentLink || "{付款連結}");
+        } else if (draft.value.indexOf("{付款連結}") >= 0) {
+          draft.value = draft.value.replace("{付款連結}", nextPaymentLink || "{付款連結}");
+        }
+        previousPaymentLink = nextPaymentLink;
+        refresh();
+      });
       if (copyButton) copyButton.addEventListener("click", async function () {
         if (!eligible || !draft || /\{[^{}\n]+\}/.test(draft.value)) return;
-        try {
-          if (root.navigator && root.navigator.clipboard && root.navigator.clipboard.writeText) {
-            await root.navigator.clipboard.writeText(draft.value);
-          } else {
-            draft.focus();
-            draft.select();
-            if (!root.document.execCommand("copy")) throw new Error("clipboard unavailable");
-          }
+        if (requiresPaymentLink && (!paymentInput || !isHttpsUrl(paymentInput.value) || draft.value.indexOf(paymentInput.value.trim()) < 0)) return;
+        var result = await copyDraft(root, draft);
+        if (result.copied) {
           if (typeof toast === "function") toast("WhatsApp 草稿已複製；請核對後手動傳送。", "success");
-        } catch (_) {
-          if (typeof toast === "function") toast("無法自動複製，請手動選取訊息草稿。", "error");
+        } else {
+          if (help) help.textContent = "Safari 未允許自動複製；草稿已選取，請長按文字框並選擇「複製」。";
+          if (typeof toast === "function") toast("草稿已選取；請在文字框長按並選擇「複製」。", "error");
         }
       });
       if (openButton) openButton.addEventListener("click", function () {
-        if (!eligible || !phone || !draft || /\{[^{}\n]+\}/.test(draft.value)) return;
-        var url = "https://wa.me/" + phone + "?text=" + encodeURIComponent(draft.value);
-        root.open(url, "_blank", "noopener,noreferrer");
+        if (openButton.getAttribute("aria-disabled") === "true") return;
         if (typeof toast === "function") toast("已開啟 WhatsApp 草稿；請核對後手動傳送。", "success");
       });
       refresh();
@@ -406,6 +516,7 @@
     buildMessages: buildMessages,
     render: render,
     bind: bind,
+    copyDraft: copyDraft,
     speciesIcon: speciesIcon,
   });
   root.LittleLandWhatsAppMessages = api;
