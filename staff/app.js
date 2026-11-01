@@ -407,7 +407,7 @@
     const d = store.state.schedules || {}, date = store.state.scheduleDate || new Date();
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()),draftAssignments:(store.state.scheduleDrafts||{})[monthKey]||{},pending:!!store.state.scheduleSaving}) : '<p class="empty">排班月曆元件未載入。</p>';
-    return `${head("員工排班", "每月日曆直接選擇已設定的排班員工，再按一次儲存整月。未安排表示當日無人值班。更新只影響本月。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-schedule-month="-1">‹ 上月</button><button class="btn secondary" data-schedule-month="1">下月 ›</button></div>${html}</section>`;
+    return `${head("員工排班", "每月日曆直接選擇已設定的排班員工，再按一次儲存整月。未安排表示當日無人值班。更新只影響本月。")}<section class="card"><div class="calendar-head"><button class="btn secondary" type="button" data-schedule-month-nav="-1">‹ 上月</button><button class="btn secondary" type="button" data-schedule-month-nav="1">下月 ›</button></div>${html}</section>`;
   }
   function newBooking() {
     const view = window.LittleLandStaffNewBookingView;
@@ -706,10 +706,10 @@
           paint();
         }),
     );
-    app.querySelectorAll("[data-schedule-month]").forEach((button) => {
+    app.querySelectorAll("button[data-schedule-month-nav]").forEach((button) => {
       button.onclick = async () => {
         const current = store.state.scheduleDate || new Date();
-        store.state.scheduleDate = new Date(current.getFullYear(), current.getMonth() + Number(button.dataset.scheduleMonth), 1);
+        store.state.scheduleDate = new Date(current.getFullYear(), current.getMonth() + Number(button.dataset.scheduleMonthNav), 1);
         await loadPageData("schedule", { force: true });
         paint();
       };

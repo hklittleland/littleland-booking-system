@@ -521,6 +521,7 @@
 - 排班頁以月曆格呈現月份每一天，格內直接提供一個下拉選單：「未安排」或 2–3 位有效排班名冊員工其中之一，選單及月曆顯示設定頁所設員工名稱；不再要求逐日進入編輯表單，不顯示複雜班次交換表單。
 - 整月只有一個「儲存本月排班」按鈕；單次登入保護 API mutation 提交整個月份的每日選擇。整個 payload 先驗證日期皆屬選定月份、每日期唯一、所選員工仍有效及 idempotency，驗證失敗不得開始寫入。選中的員工該日為 WORK，其餘有效排班員工為 REST；「未安排」表示當日所有有效排班員工均為 REST。
 - 批次更新只改所選月份 `StaffSchedules`，不得刪除其他月份資料；保留本月／下月導覽、今日標示、當值統計及逐操作 Staff Logs（含登入操作員姓名）。
+- 點選每日員工下拉選單只更新目前月的草稿，不得觸發月份導航；月曆必須停留在同一年／月。月份導航按鈕需使用獨立識別，不能與表單上的 `data-schedule-month` 欄位共用 selector。保存時送出的 year/month 必須是目前顯示月份；保存成功後仍停留本月，API 失敗則保留所有下拉選擇供重試。
 
 ## 19. 排班員工名稱設定（TEST）
 - Settings 頁提供 2–3 個排班員工名稱欄位；最少 2 個必填、第三位可留空。依使用者指定，第三位預填名稱為「Yip」，可更改或留空；員工名稱只用作排班下拉／月曆顯示，不建立登入帳號、不修改 Staff 登入資料或權限。
@@ -600,3 +601,6 @@
 
 
 **V3.1.3 Official sync（2026-11-01 18:43 HKT）：**上一則 18:41 記錄為推送前狀態，現已完成同步：`bb384b1dedc59c10152237d1c926b23a538e7eda` 已推送至 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`。沒有推送 Manus 內部 `origin`，沒有 merge `main`，沒有連 Production。
+
+
+**排班月曆跳月修復（2026-11-01 19:04 HKT）：**根因為月份導航曾選取所有 `[data-schedule-month]`，因此月曆表單內部點擊也觸發跳月；現改為專用 `button[data-schedule-month-nav]`。Focused schedule tests 12/12、完整 `npm test` 222/222；`node --check` 和 `git diff --check` 通過。Staff Preview `/staff/`、`staff/app.js`、`staff/schedule-view.js`、`manus-routes.json` 均 HTTP 200。只改前端／測試／文件；不改 Apps Script 或 Sheets，不寫入任何排班，不接 Production。官方 feature branch 同步待執行。

@@ -377,3 +377,9 @@ Booking Detail's change Logs and follow-up history must visibly identify the res
 - 以使用者最新逐字提供的五款 WhatsApp 草稿取代舊版自創訊息。五張卡固定呈現，只有狀態/訂金/房態/日期條件符合才啟用；不符合時顯示原因。只取代 `{...}` 欄位，不自動傳送，不引入未提供的第六款訊息。未知付款連結或早退退款額保持可編輯欄位；未填完整不可複製／開啟。
 - `staff/whatsapp-messages.js` 負責模板正文、條件與草稿按鈕，`booking-changes-view.js` 負責 per-pet controls，`app.js` 組合 TEST booking payload 和 mutation，`styles.css` 提供 mobile-first 狀態色；Node automated tests 對五款完整正文逐字比對，並覆蓋 eligibility matrix 和單隻 pet IDs。
 - 本輪維持既有 LittleLand_TEST V11；新增內容全為 Staff 前端/renderer/tests，不寫 Production、客人資料、付款或實際 WhatsApp，不部署 Google Apps Script、不 merge main。
+
+
+## 排班月曆自動跳月修正（TEST-only）
+- 根因是 `app.js` 以 `[data-schedule-month]` 綁定導航 click handler；月曆保存表單也有 `data-schedule-month="11"`。點擊表單內日期下拉時，click 冒泡至 form，月份號碼被當作導航位移，因此跳月且令當前編輯月份錯位。
+- 將月份導航改為獨立 `button[data-schedule-month-nav]`，並明確 `type="button"`；保存表單繼續使用 `data-schedule-month` 表示所選月份。日期下拉只改該月份 draft，不觸發導航；同月批次保存成功留在原月，失敗保留 draft。
+- 僅改 Staff 前端和 regression test，不改 Apps Script/API、Google Sheets 或任何現存排班資料；TEST-only，不連 Production、不 merge main。
