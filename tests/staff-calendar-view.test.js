@@ -136,3 +136,42 @@ test("room matrix treats checkout date as available", () => {
   const day15 = row.match(/<td class="room-state room-state--free[^>]*title="S1 · 2025-06-15 · 空房"/);
   assert.ok(day15, "the checkout date is marked vacant");
 });
+
+
+test("EXT stays stop occupying physical rooms at the first extension boundary and multiple bookings share the unlimited EXT calendar", () => {
+  const bookings = [
+    { bookingId: "EXT-ONE", bookingStatus: "CONFIRMED", checkinDate: "2026-11-03", checkoutDate: "2026-11-07", extensionStartDate: "2026-11-05", internalAssignment: "EXT", allocatedRoomIds: ["A1"], roomTypeId: "DELUXE_ROOM", species: "RABBIT", petNames: ["小白"] },
+    { bookingId: "EXT-TWO", bookingStatus: "CHECKED_IN", checkinDate: "2026-11-04", checkoutDate: "2026-11-08", extensionStartDate: "2026-11-05", internalAssignment: "EXT", allocatedRoomIds: ["A2"], roomTypeId: "PRIVATE_SUITE", species: "GUINEA_PIG", petNames: ["豆豆"] },
+  ];
+  const html = renderCalendarView(base({
+    year: 2026, monthIndex: 10, todayISO: "2026-11-05", selectedDate: "2026-11-05",
+    roomNames: { DELUXE_ROOM: "豪華房", PRIVATE_SUITE: "獨立套房" }, bookings,
+  }));
+
+  const a1Row = html.split('<th scope="row" class="room-month-room">A1</th>')[1].split("</tr>")[0];
+  const a2Row = html.split('<th scope="row" class="room-month-room">A2</th>')[1].split("</tr>")[0];
+  assert.match(a1Row, /title="A1 · 2026-11-04 · 已確認佔房/);
+  assert.match(a1Row, /title="A1 · 2026-11-05 · 空房/);
+  assert.match(a2Row, /title="A2 · 2026-11-05 · 空房/);
+  assert.equal((html.match(/<tr><th scope="row" class="room-month-room">/g) || []).length, 10);
+  assert.match(html, /EXT 延期虛擬房 · 2026年11月/);
+  assert.equal((html.match(/class="ext-month-booking"/g) || []).length, 2);
+  assert.match(html, /小白/);
+  assert.match(html, /豆豆/);
+  assert.match(html, /延期至 2026-11-07/);
+  assert.match(html, /延期至 2026-11-08/);
+  const extCards = [...html.matchAll(/<button type="button" class="ext-month-booking"[\s\S]*?<\/button>/g)].map(([card]) => card);
+  assert.equal(extCards.length, 2);
+  assert.doesNotMatch(extCards.join(""), /Full|滿房/);
+  assert.match(html, /EXT 延期客／實際房間由員工安排/);
+});
+
+test("a booking moved from EXT back to its original physical room occupies that room for the extended stay", () => {
+  const html = renderCalendarView(base({
+    year: 2026, monthIndex: 10, todayISO: "2026-11-06", selectedDate: "2026-11-06",
+    bookings: [{ bookingId: "EXT-RETURNED", bookingStatus: "CONFIRMED", checkinDate: "2026-11-03", checkoutDate: "2026-11-07", extensionStartDate: "2026-11-05", internalAssignment: "ORIGINAL_ROOM", allocatedRoomIds: ["A1"], roomTypeId: "DELUXE_ROOM" }],
+  }));
+  const a1Row = html.split('<th scope="row" class="room-month-room">A1</th>')[1].split("</tr>")[0];
+  assert.match(a1Row, /title="A1 · 2026-11-06 · 已確認佔房/);
+  assert.doesNotMatch(html, /class="ext-month-booking"/);
+});

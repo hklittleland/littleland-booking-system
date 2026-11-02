@@ -2,7 +2,7 @@
 
 **Environment:** TEST only
 **Apps Script project:** `LittleLand TEST Booking API`
-**Deployment:** Version 9 (updated 2026-11-01; existing TEST Web App deployment, same URL)
+**Deployment:** Version 12 (updated 2026-11-02; existing TEST Web App deployment, same URL)
 **Deployment ID:** `AKfycby6ecJFVBzQHAwGXS9VZlMLOQ3q3DbZh12Ssjg5nxUBGn1S61Sq_MGzZpmIgNm5EQ_i`
 
 ## API URL

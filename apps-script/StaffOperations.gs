@@ -119,6 +119,8 @@ function littlelandStaffReadAction_(action, body, auth) {
   bookings.forEach(function (booking) {
     booking.checkinDate = littlelandSheetDateOnly_(booking.checkinDate);
     booking.checkoutDate = littlelandSheetDateOnly_(booking.checkoutDate);
+    booking.extensionStartDate = littlelandSheetDateOnly_(booking.extensionStartDate);
+    booking.lastExtensionFromDate = littlelandSheetDateOnly_(booking.lastExtensionFromDate);
   });
   var pets = null,
     payments = null,
@@ -759,6 +761,8 @@ function littlelandStaffCanonical_(v) {
 function littlelandStaffMutate_(action, body, auth, requestId) {
   if (["staff.surchargeAdd", "staff.surchargeReverse", "staff.earlyCheckout", "staff.depositRefund", "staff.petCountUpdate"].indexOf(action) >= 0)
     return littlelandStaffAdjustmentMutation_(action, body, auth, requestId);
+  if (["staff.extendStay", "staff.internalAssignmentUpdate", "staff.internalAssignmentNoteUpdate"].indexOf(action) >= 0)
+    return littlelandStaffExtensionMutation_(action, body, auth, requestId);
 
   var key = String(body.idempotencyKey || "");
   littlelandRequire_(
@@ -1272,7 +1276,8 @@ function littlelandStaffClaim_(claim,action,body,requestId,now){
   littlelandAppendRecord_("IdempotencyKeys",{idempotencyKey:claim.key,operation:action,payloadHash:claim.hash,state:"PROCESSING",bookingId:String(body.bookingId||""),requestId:requestId,responseCode:"",responseSnapshotJson:"",createdAt:now,updatedAt:now});
 }
 function littlelandStaffFinish_(claim,action,body,auth,requestId,now,data,entityType,entityId,changed){
-  littlelandStaffWriteLog_(auth,{bookingId:String(body.bookingId||entityId||"")},requestId,action,"員工操作已記錄。",changed||{});
+  var summary = data && data.logSummary ? String(data.logSummary) : "員工操作已記錄。";
+  littlelandStaffWriteLog_(auth,{bookingId:String(body.bookingId||entityId||"")},requestId,action,summary,changed||{});
   littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",claim.key,{state:"COMPLETED",responseCode:"OK",responseSnapshotJson:JSON.stringify({data:data}),requestId:requestId,updatedAt:now});
   littlelandClearAvailabilityCache_(); return data;
 }
@@ -1461,6 +1466,13 @@ function littlelandStaffAdjustmentMutation_(action, body, auth, requestId) {
     littlelandRequire_(desc !== "" && reason !== "", "VALIDATION_FAILED", "附加費需填寫說明及原因。", false);
     amount = littlelandStaffMoney_(Number(d.amount));
     littlelandRequire_(isFinite(amount) && amount !== 0, "VALIDATION_FAILED", "金額不可為零且必須是有效數值。", false);
+    var billingBasis = String(d.billingBasis || "ONCE").toUpperCase();
+    littlelandRequire_(billingBasis === "ONCE" || billingBasis === "PER_NIGHT", "VALIDATION_FAILED", "費用計算方式無效。", false);
+    var currentNights = littlelandStaffStayNights_(littlelandSheetDateOnly_(b.checkinDate), littlelandSheetDateOnly_(b.checkoutDate));
+    littlelandRequire_(Number.isInteger(currentNights) && currentNights > 0, "VALIDATION_FAILED", "預約晚數無效，不能新增附加費。", false);
+    var unitRate = amount;
+    var nightsCharged = billingBasis === "PER_NIGHT" ? currentNights : 1;
+    var lineAmount = littlelandStaffMoney_(billingBasis === "PER_NIGHT" ? unitRate * currentNights : unitRate);
     type = "SURCHARGE";
 
     var requestedPetIds = Array.isArray(d.petIds) ? d.petIds.map(String) : [];
@@ -1475,7 +1487,6 @@ function littlelandStaffAdjustmentMutation_(action, body, auth, requestId) {
     var targets = targetPets.length ? targetPets : [null];
     var groupId = targets.length > 1 ? "ADJG-" + Utilities.getUuid() : "";
     targets.forEach(function (pet) {
-      var lineAmount = littlelandStaffMoney_(amount);
       var id = "ADJ-" + Utilities.getUuid();
       var line = {
         adjustmentId: id,
@@ -1498,10 +1509,13 @@ function littlelandStaffAdjustmentMutation_(action, body, auth, requestId) {
         petId: pet ? String(pet.petId) : "",
         petNameSnapshot: pet ? String(pet.name || "") : "",
         groupId: groupId,
+        billingBasis: billingBasis,
+        unitRate: unitRate,
+        nightsCharged: nightsCharged,
       };
       createdAdjustments.push(line);
     });
-    amount = littlelandStaffMoney_(amount * targets.length);
+    amount = littlelandStaffMoney_(lineAmount * targets.length);
     settlement = littlelandStaffBalanceAfterChange_(b, Number(b.estimatedTotal || 0), payments, entries.concat(createdAdjustments), update);
   } else if (action === "staff.surchargeReverse") {
     littlelandRequire_(b.bookingStatus !== "CANCELLED", "BOOKING_STATUS_INVALID", "已取消預約不可更改費用。", false);
@@ -1824,6 +1838,217 @@ function littlelandStaffAdjustmentMutation_(action, body, auth, requestId) {
     recordVersion: update.recordVersion,
   });
   return adjustmentData;
+}
+
+function littlelandStaffStayNights_(checkin, checkout) {
+  if (!littlelandIsIsoDate_(checkin) || !littlelandIsIsoDate_(checkout) || checkout <= checkin) return 0;
+  var start = checkin.split("-").map(Number), end = checkout.split("-").map(Number);
+  return (Date.UTC(end[0], end[1] - 1, end[2]) - Date.UTC(start[0], start[1] - 1, start[2])) / 86400000;
+}
+
+function littlelandStaffAssertOriginalRoomAvailable_(booking, checkout, inventory) {
+  var checkin = littlelandSheetDateOnly_(booking.checkinDate);
+  var roomIds;
+  try { roomIds = JSON.parse(String(booking.allocatedRoomIdsJson || "")); } catch (error) { roomIds = null; }
+  littlelandRequire_(Array.isArray(roomIds) && roomIds.length > 0 && roomIds.every(function (id) { return typeof id === "string"; }) &&
+    new Set(roomIds).size === roomIds.length && littlelandIsAllowedAllocation_(booking.roomTypeId, roomIds),
+    "ROOM_INVALID_ALLOCATION", "原實體房配置無效，停止延長；請先人工核對。", false);
+  var competing = inventory.occupying.filter(function (item) { return String(item.bookingId) !== String(booking.bookingId); });
+  var conflict = competing.some(function (item) {
+    return littlelandDateRangesOverlap_(checkin, checkout, item.checkinDate, item.checkoutDate) &&
+      littlelandArraysIntersect_(roomIds, item.roomIds);
+  });
+  littlelandRequire_(!conflict, "ROOM_NO_LONGER_AVAILABLE", "原實體房在延長日期與其他已確認預約重疊；請改選 EXT 延期虛擬房。", false);
+  return roomIds;
+}
+
+function littlelandStaffExtensionMutation_(action, body, auth, requestId) {
+  var claim = littlelandStaffIdempotency_(action, body);
+  if (!claim.key) return claim;
+  var hits = littlelandReadTable_("Bookings").rows.filter(function (row) {
+    return String(row.record.bookingId) === String(body.bookingId);
+  });
+  littlelandRequire_(hits.length === 1, "BOOKING_NOT_FOUND", "找不到預約。", false);
+  var b = hits[0].record;
+  littlelandRequire_(Number(b.recordVersion) === Number(body.expectedRecordVersion) &&
+    String(b.bookingStatus) === String(body.expectedStatus),
+    "BOOKING_VERSION_CONFLICT", "預約資料已更新，請重新載入。", false);
+  littlelandRequire_(["CONFIRMED", "CHECKED_IN"].indexOf(String(b.bookingStatus)) >= 0,
+    "BOOKING_STATUS_INVALID", "只有已確認或入住中的預約可以延長住宿。", false);
+
+  var d = body.data || {};
+  var now = littlelandNowIso_();
+  var reason = String(d.reason || body.reason || "").trim();
+  var update = { updatedAt: now, recordVersion: Number(b.recordVersion) + 1 };
+  var checkin = littlelandSheetDateOnly_(b.checkinDate);
+  var oldCheckout = littlelandSheetDateOnly_(b.checkoutDate);
+  var oldAssignment = String(b.internalAssignment || "ORIGINAL_ROOM");
+  var oldBoundary = littlelandSheetDateOnly_(b.extensionStartDate);
+  var payments = littlelandReadTable_("Payments").rows.map(function (row) { return row.record; });
+  var entries = littlelandReadTable_("BookingAdjustments").rows.map(function (row) { return row.record; });
+  var status = String(b.bookingStatus);
+
+  if (action === "staff.internalAssignmentNoteUpdate") {
+    littlelandRequire_(littlelandIsIsoDate_(oldBoundary) && oldBoundary > checkin && oldBoundary < oldCheckout,
+      "VALIDATION_FAILED", "此預約尚未延期，不能編輯延期內部備註。", false);
+    var note = String(d.note == null ? "" : d.note).trim();
+    littlelandRequire_(note.length <= 1000 && reason !== "", "VALIDATION_FAILED", "請填寫 1,000 字以內的內部備註變更原因。", false);
+    littlelandStaffClaim_(claim, action, body, requestId, now);
+    update.internalAssignmentNote = note;
+    littlelandUpdateRecordByKey_("Bookings", "bookingId", b.bookingId, update);
+    var noteResult = { bookingId: b.bookingId, status: status, internalAssignment: oldAssignment,
+      internalAssignmentNote: note, recordVersion: update.recordVersion, logSummary: "員工更新延期住宿內部備註。" };
+    littlelandStaffFinish_(claim, action, body, auth, requestId, now, noteResult, "BOOKING", b.bookingId, {
+      reason: reason, internalAssignment: oldAssignment, previousNote: String(b.internalAssignmentNote || ""),
+      internalAssignmentNote: note, recordVersion: update.recordVersion,
+    });
+    return noteResult;
+  }
+
+  if (action === "staff.internalAssignmentUpdate") {
+    littlelandRequire_(littlelandIsIsoDate_(oldBoundary) && oldBoundary > checkin && oldBoundary < oldCheckout,
+      "VALIDATION_FAILED", "請先完成延期日期設定，再調整內部房間安排。", false);
+    var nextAssignment = String(d.internalAssignment || "");
+    littlelandRequire_(["EXT", "ORIGINAL_ROOM"].indexOf(nextAssignment) >= 0 && nextAssignment !== oldAssignment,
+      "VALIDATION_FAILED", "請選擇不同且有效的內部房間安排。", false);
+    littlelandRequire_(reason !== "", "VALIDATION_FAILED", "更改內部房間安排需要填寫原因。", false);
+    var inventoryForAssignment = littlelandReadInventory_();
+    if (nextAssignment === "ORIGINAL_ROOM") littlelandStaffAssertOriginalRoomAvailable_(b, oldCheckout, inventoryForAssignment);
+    littlelandStaffClaim_(claim, action, body, requestId, now);
+    update.internalAssignment = nextAssignment;
+    if (d.internalAssignmentNote !== undefined) {
+      var assignmentNote = String(d.internalAssignmentNote == null ? "" : d.internalAssignmentNote).trim();
+      littlelandRequire_(assignmentNote.length <= 1000, "VALIDATION_FAILED", "內部備註不可超過 1,000 字。", false);
+      update.internalAssignmentNote = assignmentNote;
+    }
+    littlelandUpdateRecordByKey_("Bookings", "bookingId", b.bookingId, update);
+    var assignmentResult = { bookingId: b.bookingId, status: status, internalAssignment: nextAssignment,
+      extensionStartDate: oldBoundary, checkoutDate: oldCheckout, recordVersion: update.recordVersion,
+      logSummary: nextAssignment === "EXT" ? "延期住宿已轉入 EXT 虛擬房，延期期間不佔實體房。" : "延期住宿已由 EXT 轉回原實體房。" };
+    littlelandStaffFinish_(claim, action, body, auth, requestId, now, assignmentResult, "BOOKING", b.bookingId, {
+      reason: reason, previousCheckoutDate: oldCheckout, newCheckoutDate: oldCheckout,
+      previousInternalAssignment: oldAssignment, internalAssignment: nextAssignment,
+      internalAssignmentNote: String(update.internalAssignmentNote !== undefined ? update.internalAssignmentNote : b.internalAssignmentNote || ""),
+      recordVersion: update.recordVersion,
+    });
+    return assignmentResult;
+  }
+
+  littlelandRequire_(action === "staff.extendStay", "VALIDATION_FAILED", "不支援的延長住宿操作。", false);
+  var newCheckout = String(d.newCheckoutDate || d.checkoutDate || "");
+  littlelandRequire_(littlelandIsIsoDate_(newCheckout) && newCheckout > oldCheckout,
+    "VALIDATION_FAILED", "新退房日期必須是有效日期，並晚於目前退房日。", false);
+  littlelandRequire_(reason !== "", "VALIDATION_FAILED", "延長住宿需要填寫原因。", false);
+  var addedNights = littlelandStaffStayNights_(oldCheckout, newCheckout);
+  var boundary = oldBoundary || oldCheckout;
+  littlelandRequire_(littlelandIsIsoDate_(boundary) && boundary > checkin && boundary <= oldCheckout && newCheckout > boundary,
+    "VALIDATION_FAILED", "延期開始日期無效，請重新載入預約資料。", false);
+  var assignment = String(d.internalAssignment || (oldAssignment === "EXT" ? "EXT" : "ORIGINAL_ROOM"));
+  littlelandRequire_(["EXT", "ORIGINAL_ROOM"].indexOf(assignment) >= 0,
+    "VALIDATION_FAILED", "請選擇保留原房或轉入 EXT 延期虛擬房。", false);
+  var inventory = littlelandReadInventory_();
+  if (assignment === "ORIGINAL_ROOM") littlelandStaffAssertOriginalRoomAvailable_(b, newCheckout, inventory);
+  else littlelandStaffAssertOriginalRoomAvailable_(b, boundary, inventory);
+
+  var pricingForm = {
+    species: String(b.species), roomId: String(b.roomTypeId), checkin: checkin,
+    checkout: newCheckout, quantity: Number(b.quantity),
+    groomingOnce: littlelandStaffTruthy_(b.groomingOnce), groomingDaily: littlelandStaffTruthy_(b.groomingDaily),
+    medicine: String(b.medicine || "none"), earlyCheckin: littlelandStaffTruthy_(b.earlyCheckin),
+    lateCheckout: littlelandStaffTruthy_(b.lateCheckout),
+  };
+  var repriced;
+  try { repriced = LittleLandPricing.calculatePricing(littlelandPricingInput_(pricingForm)); }
+  catch (pricingError) { throw littlelandMapPricingError_(pricingError); }
+  littlelandRequire_(repriced.roomId === String(b.roomTypeId), "PRICE_CALCULATION_FAILED", "收費房型無法核對，已停止更新。", false);
+  littlelandRequire_(Number(b.cashDepositAmount) === Number(repriced.cashDeposit), "PAYMENT_RECONCILIATION_REQUIRED",
+    "現金按金與入住寵物數量不一致，已停止延期，請先人工核對。", false);
+  var hasPaidDeposit = payments.some(function (payment) {
+    return String(payment.bookingId) === String(b.bookingId) && payment.paymentType === "DEPOSIT" && payment.paymentStatus === "PAID";
+  });
+  littlelandRequire_((String(b.depositStatus) === "PAID") === hasPaidDeposit,
+    "PAYMENT_RECONCILIATION_REQUIRED", "訂金狀態與 Payments 實收紀錄不一致，已停止延期，請先人工核對。", false);
+
+  update.checkoutDate = newCheckout;
+  update.nights = repriced.nights;
+  update.roomPrice = repriced.roomPrice;
+  update.baseRoomFee = repriced.baseRoomFee;
+  update.extraPetFee = repriced.extraPetFee;
+  update.weekendFee = repriced.weekendFee;
+  update.serviceFees = repriced.serviceFees;
+  update.serviceItemsJson = JSON.stringify(repriced.serviceItems);
+  update.totalSurcharges = repriced.totalSurcharges;
+  update.estimatedTotal = repriced.estimatedTotal;
+  update.internalAssignment = assignment;
+  update.extensionStartDate = boundary;
+  update.lastExtensionFromDate = oldCheckout;
+  update.lastExtensionAddedNights = addedNights;
+  update.lastExtensionAddedBaseRoomFee = littlelandStaffMoney_(repriced.roomPrice * addedNights);
+  if (d.internalAssignmentNote !== undefined) {
+    var nextNote = String(d.internalAssignmentNote == null ? "" : d.internalAssignmentNote).trim();
+    littlelandRequire_(nextNote.length <= 1000, "VALIDATION_FAILED", "內部備註不可超過 1,000 字。", false);
+    update.internalAssignmentNote = nextNote;
+  }
+  if (!hasPaidDeposit) update.depositAmount = repriced.depositAmount;
+
+  var createdAdjustments = [];
+  entries.filter(function (entry) {
+    return String(entry.bookingId) === String(b.bookingId) && entry.type === "SURCHARGE" && entry.billingBasis === "PER_NIGHT";
+  }).forEach(function (source) {
+    var openAmount = littlelandStaffAdjustmentOpenAmount_(source, entries.concat(createdAdjustments));
+    if (Math.abs(openAmount) < 0.005) return;
+    var rate = Number(source.unitRate);
+    littlelandRequire_(isFinite(rate) && rate !== 0, "PAYMENT_RECONCILIATION_REQUIRED", "按晚附加費缺少有效單價，已停止延期並保留原帳本。", false);
+    var common = { bookingId: b.bookingId, currency: "HKD", sourcePaymentId: "", paymentId: "",
+      effectiveDate: "", createdAt: now, updatedAt: now, createdByStaffId: auth.staff.staffId,
+      updatedByStaffId: auth.staff.staffId, idempotencyKey: claim.key, petId: source.petId || "",
+      petNameSnapshot: source.petNameSnapshot || "", groupId: source.groupId || "", billingBasis: "PER_NIGHT", unitRate: rate };
+    createdAdjustments.push(Object.assign({}, common, {
+      adjustmentId: "ADJ-" + Utilities.getUuid(), type: "REVERSAL", description: "延長住宿按晚費用沖回",
+      amount: littlelandStaffMoney_(-openAmount), status: "RECORDED", reason: "按延長住宿自動沖回舊按晚費用；" + reason,
+      reversesAdjustmentId: source.adjustmentId, nightsCharged: Number(source.nightsCharged || b.nights || 0),
+    }));
+    var replacementAmount = littlelandStaffMoney_(rate * repriced.nights);
+    createdAdjustments.push(Object.assign({}, common, {
+      adjustmentId: "ADJ-" + Utilities.getUuid(), type: "SURCHARGE", description: String(source.description || "按晚服務費"),
+      amount: replacementAmount, status: "ACTIVE", reason: String(source.reason || "") + "；延長住宿至 " + newCheckout + " 後按原每晚單價重新計算。",
+      reversesAdjustmentId: "", nightsCharged: repriced.nights,
+    }));
+  });
+  var settlement = littlelandStaffBalanceAfterChange_(b, repriced.estimatedTotal, payments, entries.concat(createdAdjustments), update);
+  update.remainingBalance = settlement.remainingBalance;
+  update.balanceStatus = settlement.balanceStatus;
+
+  littlelandStaffClaim_(claim, action, body, requestId, now);
+  createdAdjustments.forEach(function (entry) { littlelandAppendRecord_("BookingAdjustments", entry); });
+  littlelandUpdateRecordByKey_("Bookings", "bookingId", b.bookingId, update);
+  var newTotal = settlement.total;
+  var result = {
+    bookingId: b.bookingId, bookingStatus: status, previousCheckoutDate: oldCheckout, checkoutDate: newCheckout,
+    extensionStartDate: boundary, addedNights: addedNights, nights: repriced.nights,
+    roomTypeId: b.roomTypeId, internalAssignment: assignment, previousInternalAssignment: oldAssignment,
+    roomPrice: repriced.roomPrice, addedBaseRoomFee: littlelandStaffMoney_(repriced.roomPrice * addedNights),
+    baseRoomFee: repriced.baseRoomFee, extraPetFee: repriced.extraPetFee, weekendFee: repriced.weekendFee,
+    serviceFees: repriced.serviceFees, estimatedTotal: repriced.estimatedTotal,
+    total: newTotal, paidAmount: settlement.netPaid,
+    depositAmount: hasPaidDeposit ? Number(b.depositAmount || 0) : repriced.depositAmount,
+    remainingBalance: settlement.remainingBalance, cashDepositAmount: Number(b.cashDepositAmount),
+    adjustmentIds: createdAdjustments.map(function (entry) { return entry.adjustmentId; }),
+    internalAssignmentNote: String(update.internalAssignmentNote !== undefined ? update.internalAssignmentNote : b.internalAssignmentNote || ""),
+    recordVersion: update.recordVersion,
+    logSummary: "延長住宿至 " + newCheckout + "；內部安排：" + (assignment === "EXT" ? "EXT 延期虛擬房" : "原實體房") + "。",
+  };
+  littlelandStaffFinish_(claim, action, body, auth, requestId, now, result, "BOOKING", b.bookingId, {
+    previousCheckoutDate: oldCheckout, newCheckoutDate: newCheckout, previousNights: Number(b.nights || 0),
+    newNights: repriced.nights, addedNights: addedNights, previousInternalAssignment: oldAssignment,
+    internalAssignment: assignment, extensionStartDate: boundary, reason: reason,
+    roomTypeId: b.roomTypeId, addedBaseRoomFee: result.addedBaseRoomFee,
+    baseRoomFee: repriced.baseRoomFee, serviceFees: repriced.serviceFees, estimatedTotal: repriced.estimatedTotal,
+    total: newTotal, paidAmount: settlement.netPaid, depositAmount: result.depositAmount,
+    remainingBalance: settlement.remainingBalance, cashDepositAmount: result.cashDepositAmount,
+    internalAssignmentNote: result.internalAssignmentNote, adjustmentIds: result.adjustmentIds, recordVersion: update.recordVersion,
+  });
+  return result;
 }
 
 function littlelandStaffAdjustmentTotal_(bookingId, entries) {

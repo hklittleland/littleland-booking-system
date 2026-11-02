@@ -383,3 +383,79 @@ Booking Detail's change Logs and follow-up history must visibly identify the res
 - 根因是 `app.js` 以 `[data-schedule-month]` 綁定導航 click handler；月曆保存表單也有 `data-schedule-month="11"`。點擊表單內日期下拉時，click 冒泡至 form，月份號碼被當作導航位移，因此跳月且令當前編輯月份錯位。
 - 將月份導航改為獨立 `button[data-schedule-month-nav]`，並明確 `type="button"`；保存表單繼續使用 `data-schedule-month` 表示所選月份。日期下拉只改該月份 draft，不觸發導航；同月批次保存成功留在原月，失敗保留 draft。
 - 僅改 Staff 前端和 regression test，不改 Apps Script/API、Google Sheets 或任何現存排班資料；TEST-only，不連 Production、不 merge main。
+
+
+# TASK-EXTENSION-01 — Staff 延長住宿 + 預訂清單分頁（TEST only）
+
+狀態：使用者已明確授權 EXT 正式規格；正在實作及 TEST 驗收。停止新增測試訂單，先完成 Staff 延期功能，再處理預訂清單分頁。
+
+## 範圍與既有界線
+
+- 延長住宿是修改既有 Booking 的退房日期，不建立新預約。停止後續客人網站建單；不刪除已建立的虛構 TEST booking。全程只接現有 Apps Script TEST API 和 `LittleLand_TEST`，不連 Production、不合併 `main`，不建立第二個 source-of-truth repository。
+- 官方程式碼仍是 `hklittleland/littleland-booking-system` 的 `feature/test-booking-api`；本地 HEAD 與該 GitHub branch 目前一致，實作只回推同一 repository/branch。若更新公開 Staff TEST UI，只更新既有 Pages TEST branch `feature/booking-ui`，保留 Staff Login 及 TEST API endpoint。
+- 保留現有 LittleLand Staff 視覺、路由、Staff session、付款帳本、Room Calendar 和已確認業務規則；不重新設計後台、不改房價或房態 status 規則。
+
+## 實作方式與重要規則
+
+### A. 延長住宿日期
+
+- 新增受 Staff session 保護的 Apps Script action（建議 `staff.extendStay`），並在現有 `LockService.getScriptLock()` mutation lock 範圍內處理，以避免並行更改。請求須帶 `bookingId`、`expectedRecordVersion`、`expectedStatus`、`idempotencyKey` 及新的 `checkoutDate`；重送同一 key/內容只回放已完成結果，不重複改帳。
+- 只可把退房日延後：新日期必須是有效 ISO 日期並嚴格晚於現有退房日；不可縮短住宿、改入住日或改原退房時間。只允許 `CONFIRMED`、`CHECKED_IN`；`PENDING_CONFIRMATION`、`PENDING_DEPOSIT`、`CANCELLED`、`CHECKED_OUT`、`COMPLETED` 不可延長。
+- 延長時於同一 Script Lock 重新讀取 TEST inventory，驗證原 `allocatedRoomIdsJson` 是有效、合法的實體房組合。若員工選擇保留原房，排除本 Booking 後重新檢查更新後的全段日期；如原房衝突，拒絕此安排、不改 Booking／Payments，並讓員工改選 EXT。若選 EXT，只核對原實體房至首次延期邊界，延期區間不佔任何實體房；退房日仍是排他日期。
+- EXT 不會把待確認申請變成已確認或保房；其範圍只包含已確認／入住中的延期 Booking，待付訂金與待確認流程維持原狀、不受本延期功能修改。
+- 以現有 `LittleLandPricing.calculatePricing()` 重算整段住宿的 `nights`、基本房費、額外寵物費、週末費、現有每晚服務費、附加費總額、總額、訂金及尾數；不可複製或改寫 Pricing Engine。週末規則保持原訂規則。現金備用金／按金維持 `qty × HK$1,000`，獨立於住宿總額。
+- 未有已實收訂金時，更新預計訂金為新基本房費 50%，並重算尾數。已有有效 `DEPOSIT` 實收紀錄時，保留既有 `depositAmount` 與全部 Payments ledger，不自動收款／退款；只以調整後總額、既有付款/退款及人工附加費共用結算 helper 更新未收尾數與付款狀態。若 depositStatus 與 Payments 不一致，fail closed 並要求人工核對。
+- 成功後更新 `updatedAt`／`recordVersion`、清除房態快取，寫入含 Staff 姓名 snapshot 的 Logs，記錄原/新退房日、晚數及金額欄位，不記錄多餘個人資料。回應提供最新 Booking detail。
+
+### B. Staff Booking Detail 操作
+
+- 在 Booking Detail 增加「延長住宿」卡片，只對已確認／入住中的 Booking 顯示。員工輸入新退房日，選擇保留原房或轉入 EXT；先用相同 Pricing Engine 顯示新晚數、基本房費、附加費、住宿總額、訂金、尾數及現金按金。保留原房時後端鎖內重查完整住宿區間房態，若衝突，拒絕保留原房並讓員工選 EXT；轉入 EXT 則釋出首次原退房日之後的實體庫存。
+- 提交前顯示新舊日期與主要金額差異供員工確認；提交中停用按鈕，採現有 `expectedRecordVersion`、idempotency 和錯誤呈現模式；成功後強制重新載入 detail。不要建立 Payments 付款列或執行真正收款/退款。
+
+### C. 完成延住功能後再加預訂清單分頁
+
+- 保留現有 Booking 搜尋、狀態、房型、入住日和退房日篩選。先篩選再排序與 server-side 分頁；預設每頁 20 張，顯示結果總數及上一頁/下一頁，篩選條件改動後回到第 1 頁，避免空白頁與重複 card handler。
+- 預設不按最新建立時間排序；採入住日期升序，同日按建立時間由舊至新，再以 Booking ID 穩定排序。保留現有搜尋及篩選，server-side 分頁每頁 20 筆；條件改動回第 1 頁，卡片仍可打開完整 Booking Detail。只擴充 Staff API 的讀取參數，不改 Google Sheets schema。
+
+## 專案結構與相依
+
+- `apps-script/StaffOperations.gs`：登入後 mutation dispatch、鎖定、版本/idempotency、防衝突、重算、Logs。
+- `apps-script/RoomAvailability.gs`、`PricingEngine.gs`、`BookingValidation.gs`：只重用既有房態、Pricing Engine 與表單價格 mapping；不建立第二套規則。
+- `staff/api-client.js`、`staff/app.js`、`staff/booking-changes-view.js`、`staff/styles.css`：TEST action、detail 延住 UI 及其 mobile layout；預訂清單分頁與日期排序在同一 Staff 清單 view。
+- `tests/apps-script/staff-api.test.js` 及對應 Staff UI tests：以現有 mock runtime 驗證延住成功、非法日期/狀態、房間衝突原子拒絕、版本/idempotency、付款前後重算，及分頁／排序/篩選互動；不在自動測試中寫真實 Sheets。
+- `TODO.md`：方案批准後才新增這個 task 的完整接受條件及進度。
+
+## TEST 驗證與交付路徑
+
+目前本地基線為 `pnpm test`：244 pass / 0 fail。無需再建 booking；全棧測試只更新既有虛構 TEST booking `TEST-LL-20261031-C9F6561F`：目前為 `CONFIRMED`、兔子豪華房、入住 `2026-11-03`、退房 `2026-11-05`、1 隻、實體配置 A1；已有 HK$178 訂金 Payment、兩晚每日梳毛、單次梳毛、提早入住及有效人工減項 HK$70。將退房延長至 `2026-11-07` 並轉 EXT；預期基本房費 HK$712、服務費 HK$470、計價總額 HK$1,182、扣除既有人工減項後住宿總額 HK$1,112、已收款維持 HK$178、待收尾數 HK$934、現金按金 HK$1,000。不得新增 booking/payment 或覆寫既有資料；執行前重新唯讀核對，如候選記錄與上述基準不符即停止 live mutation。
+
+先完成新增自動測試，再確認 Apps Script 現有 TEST Web App 可由已授權方式安全更新；只發布新 TEST API 版本及既有 Staff TEST Pages branch，絕不更新 Production。最後執行完整 `pnpm test`，確認 TEST 預約回讀、操作 Logs/Staff 姓名、延住後金額、無錯誤房間分配及分頁排序，再只推送既有 GitHub Source of Truth branch／TEST Pages branch；不 Merge `develop` 或 `main`。
+
+## 設計／品牌
+
+沿用現有 LittleLand Staff 介面，不另起視覺系統。設計方向是溫和而高辨識度的營運儀表板：白色圓角卡片承載表單；紫色按鈕表示可執行操作；紅色表示房間衝突/需跟進；綠色表示已付款/成功；淡黃提示用於日期與付款規則。延住日期與即時費用預覽置於 Booking Detail 明確卡片，手機單欄、觸控目標足夠大，確認/錯誤訊息保留在同一操作上下文；提交時只做輕量 loading，不造成頁面跳動。維持現有 Nunito／Noto Sans TC、LittleLand 標誌與品牌色，不改客人預約 UI。品牌定位：為 LittleLand 兩位員工清楚而安心管理每一張小動物入住預約；個性清晰、可靠、溫柔。
+
+
+## 延長住宿設計修訂 — EXT 延期虛擬房（本節優先，取代此前相衝突的延住房態描述）
+
+### 架構與資料邊界
+
+本功能只修改 TEST Staff 後台、TEST Apps Script API 及 `LittleLand_TEST`；不改客人預約 UI、Production、Production Sheets 或正式部署。收費房型 `roomTypeId` 永遠代表客人購買的房型，決定定價、收費及營收分類；內部安排另存，兩者不可互相覆寫。採用 Bookings 的內部欄位 `internalAssignment`、`extensionStartDate`、`internalAssignmentNote`，並以 `lastExtensionFromDate`、`lastExtensionAddedNights`、`lastExtensionAddedBaseRoomFee` 顯示最近一次延期增量；費用帳本 `BookingAdjustments` 只在需要記錄自訂按晚服務時追加 `billingBasis`、`unitRate`、`nightsCharged`。以既有 TEST initializer 的已知欄位追加遷移方式加入新欄位；不刪表、不重排/覆寫既有資料。EXT 不建立 Rooms row、不新增客人房型、不加容量、不回傳到客人 Availability 或客人 API。
+
+`internalAssignment` 的 `EXT` 表示延期部分不分配任何實體房；`ORIGINAL_ROOM` 表示延期仍使用 `allocatedRoomIdsJson` 中原本實體房。原始 Booking 保持單一記錄及原 `roomTypeId`，`extensionStartDate` 記錄首次延期前原退房日，日期區間入住日含、退房日不含。當安排為 EXT，實體房態只將原房計至 `extensionStartDate`，EXT 區間為 `[extensionStartDate, checkoutDate)`，不佔 A1–A3、S1–S3 等任何實體房，不影響其他客人的 Availability。保留原房時，後端在整個新住宿區間內用鎖定/最新 TEST 房態重新驗證；遇衝突拒絕該方式並讓員工改選 EXT。移出 EXT 回到原房前也必須重新驗證；衝突時維持 EXT。免費升級等臨場實際房間可寫入員工內部備註，例如「因原房型滿房，部分延期日免費升級 S1」；不建立逐日搬房/住宿分段、不更改原收費房型、不因此提高價格。
+
+### 後端操作、費用及付款
+
+Booking Detail 的「延長住宿」操作收新退房日、安排選擇（保留原房或轉入 EXT）、原因/內部備註；服務端驗證有效 ISO 日期、晚數增加、可延長狀態、recordVersion、員工 session、idempotency，並在 ScriptLock 下用最新資料重新檢查房態、重算與落盤。延住、EXT 進入、EXT 移出均寫 Logs，需包含 Staff 身分與時間、前後退房日、前後安排、變更原因/內部備註；員工可單獨修改內部備註並寫 Log。Booking Detail 顯示原訂房型、收費房型、目前安排（EXT 時顯示「EXT 延期客／實際房間由員工安排」）、首次延期前退房日、最近一次延期前退房日、本次新退房日、本次新增晚數及基本房費、累計延期晚數及延期基本房費、最新住宿總額、已實收款項、待收尾數、現金按金與可編輯內部備註。
+
+延長日期後以原 `roomTypeId`／原每晚房價呼叫正式 `PricingEngine` 重算整張住宿；`estimatedTotal`、各項附加費與住宿基本房費均不得按 EXT 收費。所有會隨晚數增加的標準服務（額外寵物費、每日梳毛、每日餵藥及每日其他週期服務）按新晚數計算；一次性服務只收一次，不因延住複收。新的自訂按晚服務必須儲存 `billingBasis=PER_NIGHT` 與單價，延住時以不可覆寫帳本的沖回舊行＋追加新額度方式更新；有明確 `ONCE`/無舊版計費基準的既有人工項目視為一次性並保持原額。個別毛孩服務仍逐隻記錄。延長後若仍未實收訂金，按新基本房費重算訂金（只取新基本房費 50%）、總額及尾數；如已有任何已收款，原 Payment 記錄與已收訂金金額不變，尾數為新住宿總額加有效人工調整減去所有實際淨收住宿款，退款仍由既有 Payment/REFUND 帳本計算，絕不新增/覆寫付款。延期不改現金按金，維持 HK$1,000 × 寵物數量。原房型 ID 不變，營收仍歸原房型，絕不產生 EXT 房型營收。
+
+### Staff 月曆與後續預訂列表
+
+房間月曆保留全部十個實體房的矩陣；EXT 延期區是獨立內部區域，每日可以顯示不限數量的多張延期 Booking，沒有 Full/容量狀態。每張顯示寵物名稱、原/收費房型及延期至日期。EXT 日期不得被實體房矩陣當作原房佔用。Booking 的普通入住/退房提醒仍按實際完整入住區間顯示；客人前端、營收及房型選擇不得見到 EXT。
+
+在 EXT 完成後再處理已授權的預訂列表分頁：用 server-side 分頁以避免一次載入全部 Booking，預設每頁 20 筆；依入住日期由近至遠（`checkinDate` 升序）排序，同日按 `createdAt` 舊至新，再以 `bookingId` 穩定排序，絕不以最新建立/輸入訂單置頂；翻頁需保留現有搜尋及篩選。
+
+### TEST 驗收資料選擇
+
+只用 LittleLand_TEST 中已存在的一張已確認兔子「豪華房」Booking；不新增訂單、不建立付款、不改任何既有付款紀錄。預期測試將原退房日期延長兩晚並轉入 EXT：維持原 `roomTypeId=DELUXE_ROOM` 及 `allocatedRoomIdsJson`；新增兩晚基本房費 HK$356；每日梳毛從兩晚費用 HK$100 重算至四晚 HK$200；既有單次梳毛 HK$70 和提早入住 HK$200 不複收；基本房費由 HK$356 至 HK$712，標準服務費 HK$370 至 HK$470，`estimatedTotal` HK$1,182。既有人工一次性減項 HK$70 保持有效，調整後住宿總額 HK$1,112；保留已收訂金及原 Payment HK$178，不增造付款，更新待收尾數為 HK$934；現金按金保持 HK$1,000。`extensionStartDate` 等於延期前退房日，EXT 日期不佔實體房；Staff 月曆以多筆同日 fixtures 證明可並列顯示，營收仍屬豪華房。實際候選若唯讀回讀發現與上述基準不同，先按 Sheet 實際資料重新計算並驗證，不強行覆寫預期或改用其他訂單；若遇資料不一致即停止該 TEST mutation。

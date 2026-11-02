@@ -42,6 +42,7 @@ function littlelandReadInventory_() {
     var record = row.record;
     record.checkinDate = littlelandSheetDateOnly_(record.checkinDate);
     record.checkoutDate = littlelandSheetDateOnly_(record.checkoutDate);
+    record.extensionStartDate = littlelandSheetDateOnly_(record.extensionStartDate);
     return record;
   });
   var occupying = littlelandBuildOccupancy_(bookings);
@@ -100,6 +101,31 @@ function littlelandBuildOccupancy_(bookings) {
       '佔房 Booking 的日期資料無效，房態已停止確認。',
       false
     );
+    var internalAssignment = String(booking.internalAssignment || '');
+    var extensionStartDate = String(booking.extensionStartDate || '');
+    littlelandRequire_(
+      ['', 'ORIGINAL_ROOM', 'EXT'].indexOf(internalAssignment) >= 0,
+      'ROOM_INVALID_ALLOCATION',
+      'Booking 的內部房間安排無效，房態已停止確認。',
+      false
+    );
+    if (internalAssignment) {
+      littlelandRequire_(
+        littlelandIsIsoDate_(extensionStartDate) &&
+          extensionStartDate > checkin && extensionStartDate < checkout,
+        'ROOM_INVALID_ALLOCATION',
+        '延期 Booking 的原退房日期無效，房態已停止確認。',
+        false
+      );
+    } else {
+      littlelandRequire_(
+        !extensionStartDate,
+        'ROOM_INVALID_ALLOCATION',
+        'Booking 的延期資料不完整，房態已停止確認。',
+        false
+      );
+    }
+    var physicalCheckout = internalAssignment === 'EXT' ? extensionStartDate : checkout;
     var roomIds;
     try {
       roomIds = JSON.parse(String(booking.allocatedRoomIdsJson || ''));
@@ -125,7 +151,10 @@ function littlelandBuildOccupancy_(bookings) {
       bookingStatus: status,
       roomTypeId: String(booking.roomTypeId || ''),
       checkinDate: checkin,
-      checkoutDate: checkout,
+      checkoutDate: physicalCheckout,
+      bookingCheckoutDate: checkout,
+      internalAssignment: internalAssignment,
+      extensionStartDate: extensionStartDate,
       roomIds: normalizedIds
     });
   });

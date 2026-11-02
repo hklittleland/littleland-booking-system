@@ -134,12 +134,16 @@ test("each pet card exposes a fee form bound only to that pet ID", () => {
   assert.doesNotMatch(html, /Pudding|PET-2|另一隻毛孩/);
 });
 
-test("per-pet fee presets use the approved fixed prices multiplied by the actual stay nights", () => {
+test("per-pet fee presets preserve approved unit rates and explicit billing basis", () => {
   const view = loadView();
   assert.equal(view.feePreset("groom_once", 4).amount, 70);
-  assert.equal(view.feePreset("groom_daily", 4).amount, 200);
-  assert.equal(view.feePreset("medicine_once", 4).amount, 320);
-  assert.equal(view.feePreset("medicine_twice", 4).amount, 600);
+  assert.equal(view.feePreset("groom_once", 4).billingBasis, "ONCE");
+  assert.equal(view.feePreset("groom_daily", 4).amount, 50);
+  assert.equal(view.feePreset("groom_daily", 4).billingBasis, "PER_NIGHT");
+  assert.equal(view.feePreset("medicine_once", 4).amount, 80);
+  assert.equal(view.feePreset("medicine_once", 4).billingBasis, "PER_NIGHT");
+  assert.equal(view.feePreset("medicine_twice", 4).amount, 150);
+  assert.equal(view.feePreset("medicine_twice", 4).billingBasis, "PER_NIGHT");
   assert.equal(view.feePreset("groom_daily", 4).formula, "HK$50 × 4 晚 = HK$200.00");
   assert.equal(view.feePreset("custom", 4), null);
 });

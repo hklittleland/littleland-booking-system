@@ -96,6 +96,8 @@ test('TEST initializer additively creates V3 tabs, preserves existing data, and 
   assert.deepEqual(JSON.parse(JSON.stringify(first.headersCreated)), ['StaffSchedules', 'ScheduleEmployees', 'BookingAdjustments']);
   assert.deepEqual(JSON.parse(JSON.stringify(first.columnsAdded)), [
     'cashDepositCollectedAmount',
+    'internalAssignment', 'extensionStartDate', 'internalAssignmentNote',
+    'lastExtensionFromDate', 'lastExtensionAddedNights', 'lastExtensionAddedBaseRoomFee',
     'petStatus', 'removedAt', 'removedByStaffId', 'removeReason',
     'sourcePaymentId', 'actorStaffNameSnapshot'
   ]);
@@ -116,6 +118,9 @@ test('TEST initializer additively creates V3 tabs, preserves existing data, and 
   assert.deepEqual(JSON.parse(JSON.stringify(adjustments.rows()[0])), JSON.parse(JSON.stringify(definitions.find((item) => item.name === 'BookingAdjustments').headers)));
   assert.ok(adjustments.rows()[0].includes('effectiveDate'));
   assert.ok(adjustments.rows()[0].includes('petId'));
+  assert.ok(adjustments.rows()[0].includes('billingBasis'));
+  assert.ok(adjustments.rows()[0].includes('unitRate'));
+  assert.ok(adjustments.rows()[0].includes('nightsCharged'));
   assert.ok(spreadsheet.getSheetByName('Pets').rows()[0].includes('petStatus'));
   assert.ok(spreadsheet.getSheetByName('Payments').rows()[0].includes('sourcePaymentId'));
   assert.ok(spreadsheet.getSheetByName('Logs').rows()[0].includes('actorStaffNameSnapshot'));
@@ -170,4 +175,25 @@ test('TEST initializer refuses an unknown header before applying any planned add
   assert.deepEqual(spreadsheet.getSheetByName('Bookings').rows(), beforeBookings);
   assert.deepEqual(spreadsheet.getSheetByName('Logs').rows(), beforeLogs);
   assert.equal(spreadsheet.getSheets().some((sheet) => sheet.getName() === 'StaffSchedules'), false);
+});
+
+
+test('TEST initializer appends recurring-fee columns without changing an existing adjustment row', () => {
+  const runtime = createRuntime();
+  const spreadsheet = makeSpreadsheet(runtime);
+  const definition = runtime.context.LITTLELAND_TEST_SHEET_DEFINITIONS.find((item) => item.name === 'BookingAdjustments');
+  const allowed = runtime.context.LITTLELAND_TEST_ADDITIVE_COLUMNS.BookingAdjustments;
+  const legacyHeaders = definition.headers.filter((header) => !allowed.includes(header));
+  const legacyRow = legacyHeaders.map((header) => header === 'adjustmentId' ? 'KEEP-ADJUSTMENT' : '');
+  const sheet = makeSheet('BookingAdjustments', [legacyHeaders, legacyRow]);
+  spreadsheet.sheets.push(sheet);
+
+  const result = runtime.context.initializeLittleLandTestSheets();
+  const rows = sheet.rows();
+  assert.deepEqual(JSON.parse(JSON.stringify(result.columnsAdded.slice(-6))), [
+    'petId', 'petNameSnapshot', 'groupId', 'billingBasis', 'unitRate', 'nightsCharged'
+  ]);
+  assert.deepEqual(rows[0], definition.headers);
+  assert.deepEqual(rows[1].slice(0, legacyHeaders.length), legacyRow);
+  assert.ok(rows[1].slice(legacyHeaders.length).every((value) => value === '' || value === null));
 });

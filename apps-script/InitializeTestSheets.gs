@@ -30,7 +30,9 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
       'consentDepositNonRefundable', 'consentBoardingTerms',
       'consentHealthDeclaration', 'consentEmergencyVet', 'consentedAt',
       'followUpRequired', 'lastContactedAt', 'lastContactedBy', 'followUpNote',
-      'cashDepositCollectedAmount'
+      'cashDepositCollectedAmount', 'internalAssignment', 'extensionStartDate',
+      'internalAssignmentNote', 'lastExtensionFromDate', 'lastExtensionAddedNights',
+      'lastExtensionAddedBaseRoomFee'
     ]
   },
   {
@@ -108,21 +110,27 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
       'adjustmentId', 'bookingId', 'type', 'description', 'amount', 'currency',
       'status', 'sourcePaymentId', 'paymentId', 'reason', 'effectiveDate',
       'reversesAdjustmentId', 'createdAt', 'updatedAt', 'createdByStaffId',
-      'updatedByStaffId', 'idempotencyKey', 'petId', 'petNameSnapshot', 'groupId'
+      'updatedByStaffId', 'idempotencyKey', 'petId', 'petNameSnapshot', 'groupId',
+      'billingBasis', 'unitRate', 'nightsCharged'
     ]
   }
 ];
 
 // Existing TEST headers may be upgraded only by appending these known columns.
 var LITTLELAND_TEST_ADDITIVE_COLUMNS = Object.freeze({
-  Bookings: Object.freeze(['cashDepositCollectedAmount']),
+  Bookings: Object.freeze([
+    'cashDepositCollectedAmount', 'internalAssignment', 'extensionStartDate', 'internalAssignmentNote',
+    'lastExtensionFromDate', 'lastExtensionAddedNights', 'lastExtensionAddedBaseRoomFee'
+  ]),
   Pets: Object.freeze(['petStatus', 'removedAt', 'removedByStaffId', 'removeReason']),
   Payments: Object.freeze(['sourcePaymentId']),
   Logs: Object.freeze(['actorStaffNameSnapshot']),
-  BookingAdjustments: Object.freeze(['petId', 'petNameSnapshot', 'groupId'])
+  BookingAdjustments: Object.freeze([
+    'petId', 'petNameSnapshot', 'groupId', 'billingBasis', 'unitRate', 'nightsCharged'
+  ])
 });
 
-// Only static room master data is seeded. SS1 and SSR1 are virtual combinations.
+// Only physical hotel room master data is seeded. SS1/SSR1 are combinations; EXT is not a room row.
 var LITTLELAND_TEST_ROOM_SEED = [
   ['S1', 'PRIVATE_SUITE', '獨立套房空間', 'PHYSICAL', '[]', 1, true],
   ['S2', 'PRIVATE_SUITE', '獨立套房空間', 'PHYSICAL', '[]', 2, true],

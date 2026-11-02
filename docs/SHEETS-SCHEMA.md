@@ -1,6 +1,6 @@
 # LittleLand V3.0 — TEST Google Sheets 資料結構
 
-**Schema 版本：** 1.1（2026-11-01）
+**Schema 版本：** 1.2（2026-11-02）
 **環境：** 僅限 `LittleLand_TEST`；不連接或複製正式 LittleLand 資料。
 **工作表：** `Bookings`、`Pets`、`Payments`、`Rooms`、`Logs`、`IdempotencyKeys`、`Staff`、`Sessions`、`StaffSchedules`、`ScheduleEmployees`、`BookingAdjustments`。
 
@@ -26,7 +26,9 @@ baseRoomFee, extraPetFee, weekendFee, serviceFees, totalSurcharges, estimatedTot
 depositStatus, balanceStatus, cashDepositStatus,
 cashDepositCollected, cashDepositCollectedAt, cashDepositUsedAmount, cashDepositRefundedAmount, cashDepositRefundedAt, cashDepositNote,
 consentCashDeposit, consentDepositAndBalance, consentDepositNonRefundable, consentBoardingTerms, consentHealthDeclaration, consentEmergencyVet, consentedAt,
-followUpRequired, lastContactedAt, lastContactedBy, followUpNote
+followUpRequired, lastContactedAt, lastContactedBy, followUpNote,
+cashDepositCollectedAmount, internalAssignment, extensionStartDate, internalAssignmentNote,
+lastExtensionFromDate, lastExtensionAddedNights, lastExtensionAddedBaseRoomFee
 ```
 
 日期、時段、房型、物種、數量、家長及緊急聯絡欄位對應已接受前台的表單；`emergency1`／`emergency2` 儲存前台現有的兩位緊急聯絡人值，`vet` 儲存選填獸醫／診所。飲食資料在目前 UI 是訂單層欄位，故存於本表；倉鼠長擺糧，`feeding` 留空，不套用兔／天竺鼠每日次數或星期日／假期次數提醒。`serviceItemsJson` 保存逐項服務名稱與當時金額，其他服務旗標保存當時選擇。
@@ -85,6 +87,8 @@ roomId, roomTypeId, displayName, roomKind, compositionOptionsJson, allocationPri
 | SSR1 | VERY_DELUXE_SUITE | 非常.豪華套房 | VIRTUAL | `[["S1","S2","S3"]]` | 1 |
 
 分配優先次序：獨立套房 S1→S2→S3；豪華套房 S1+S2→S2+S3（禁止 S1+S3）；豪華房 A1→A2→A3；標準房 B1→B2；整理箱 C1；自備籠 F1。SS1／SSR1 僅是虛擬房 ID，不是額外房間。
+
+`EXT` 延期虛擬安排不建立 `Rooms` 資料列。它只存在於 `Bookings.internalAssignment`，不是真實庫存、不屬於任何客人房型、沒有價格或容量，也不參與客人 Availability。`roomTypeId` 保持原訂收費房型。`extensionStartDate` 是首次延期前原退房日；EXT Booking 的原實體房只佔用至該日，之後的延期日期不佔實體房。`lastExtensionFromDate`、`lastExtensionAddedNights`、`lastExtensionAddedBaseRoomFee` 保存最近一次延期操作的前退房日、增晚數和新增基本房費；完整操作脈絡另由 append-only `Logs` 保存。
 
 ## `Logs` — 操作紀錄
 
@@ -154,3 +158,10 @@ scheduleId, workDate, staffId, staffNameSnapshot, status, startTime, endTime, sw
 4. 初始化器只建立缺少的 11 個工作表、補上空白表頭及按 `roomId` 冪等補入 12 筆固定 Rooms 主檔。遇到額外分頁、不符表頭、重複／未知房間 ID 或內容不一致便停止，不清空、不覆寫、不刪除既有資料；新增的 `ScheduleEmployees` 只建表頭、不預設登入帳號。API 初次讀取若名冊空白，會以目前兩位有效 TEST 登入員工名稱及可編輯的第三位「Yip」作為表單預設；正式名冊只於員工明確按下保存後寫入該表。
 
 本次的實際 TEST Spreadsheet 以 Google Workspace Sheets API 建立及初始化；Apps Script source 僅為後續手動重複初始化方法，不部署 API、不建立 Staff Login、不連接正式資料。
+
+
+## 延期 EXT schema addendum（2026-11-02，TEST only）
+
+`Bookings` 欄位採 append-only 遷移：`internalAssignment`（`EXT`／`ORIGINAL_ROOM`）、`extensionStartDate`、`internalAssignmentNote`、`lastExtensionFromDate`、`lastExtensionAddedNights`、`lastExtensionAddedBaseRoomFee`。首次延期日期邊界用來把原實體住宿與延住期間區分；最近一次延期欄位只保存本次前退房日、增加晚數與基本房費，不建立住宿分段，也不修改原 `roomTypeId`、實收付款或 `allocatedRoomIdsJson`。EXT 不新增 `Rooms` 列，亦不參與客人 Availability。
+
+新增人工服務費需在 `BookingAdjustments` 明確使用 `billingBasis=ONCE` 或 `billingBasis=PER_NIGHT`。`PER_NIGHT` 必須保存帶正負方向的 `unitRate` 及 `nightsCharged`；延住時透過 append-only `REVERSAL` 與新 `SURCHARGE` 更新按晚金額，不覆寫既有 adjustment 或 `Payments`。舊人工費缺少 `billingBasis` 時視作一次性費用，不因延住重收。先前「初始建立時不部署 API」的說明是歷史記錄；本 addendum 由既有已核實的 TEST Apps Script API 及 `LittleLand_TEST` 套用，Production 不變。

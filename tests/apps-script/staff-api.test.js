@@ -1564,3 +1564,268 @@ test("legacy booking Logs resolve Staff name by actorStaffId", () => {
   assert.equal(detail.success, true);
   assert.equal(detail.data.logs[0].actorStaffNameSnapshot, "Test Staff");
 });
+
+
+function makeExtensionBooking(r, bookingId, overrides = {}) {
+  return addBooking(r, Object.assign({
+    bookingId,
+    bookingStatus: "CONFIRMED",
+    checkinDate: "2026-11-03",
+    checkoutDate: "2026-11-05",
+    species: "rabbit",
+    roomTypeId: "DELUXE_ROOM",
+    quantity: 1,
+    allocatedRoomIdsJson: '["A1"]',
+    nights: 2,
+    roomPrice: 178,
+    baseRoomFee: 356,
+    extraPetFee: 0,
+    weekendFee: 0,
+    serviceFees: 370,
+    totalSurcharges: 370,
+    estimatedTotal: 726,
+    depositAmount: 178,
+    depositStatus: "PAID",
+    remainingBalance: 478,
+    cashDepositAmount: 1000,
+    groomingOnce: true,
+    groomingDaily: true,
+    medicine: "none",
+    earlyCheckin: true,
+    lateCheckout: false,
+  }, overrides));
+}
+
+function extensionRequest(token, booking, key, data, overrides = {}) {
+  return Object.assign({
+    action: "staff.extendStay",
+    token,
+    bookingId: booking.bookingId,
+    expectedRecordVersion: Number(booking.recordVersion),
+    expectedStatus: booking.bookingStatus,
+    idempotencyKey: key,
+    data: Object.assign({
+      newCheckoutDate: "2026-11-07",
+      internalAssignment: "EXT",
+      reason: "TEST 延長住宿驗收",
+      internalAssignmentNote: "因延期期間原房無法使用，由員工安排實際房間。",
+    }, data),
+  }, overrides);
+}
+
+function addManualExtensionAdjustment(r, bookingId, values = {}) {
+  const adjustment = Object.assign({
+    adjustmentId: "ADJ-EXT-MANUAL-01",
+    bookingId,
+    type: "SURCHARGE",
+    description: "TEST 人工服務費",
+    amount: -70,
+    currency: "HKD",
+    status: "ACTIVE",
+    reason: "TEST 驗收資料",
+    createdByStaffId: "staff-test-1",
+    billingBasis: "ONCE",
+    unitRate: -70,
+    nightsCharged: 1,
+  }, values);
+  r.addRecord("BookingAdjustments", adjustment);
+  return adjustment;
+}
+
+test("staff.extendStay reprices the original room, keeps a paid deposit and Payment ledger, releases EXT physical inventory, logs the Staff action, and replays idempotently", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, "TEST-EXT-PAID-001");
+  addPaidPayment(r, booking.bookingId, "PAY-EXT-DEPOSIT-001", "DEPOSIT", 178);
+  addManualExtensionAdjustment(r, booking.bookingId, { adjustmentId: "ADJ-EXT-ONCE-001" });
+  const paymentsBefore = structuredClone(r.records("Payments"));
+  const payload = extensionRequest(token, booking, "ext-paid-idempotency-001");
+
+  const result = r.invokeStaff(payload);
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.equal(result.data.roomTypeId, "DELUXE_ROOM");
+  assert.equal(result.data.internalAssignment, "EXT");
+  assert.equal(result.data.previousCheckoutDate, "2026-11-05");
+  assert.equal(result.data.checkoutDate, "2026-11-07");
+  assert.equal(result.data.addedNights, 2);
+  assert.equal(result.data.addedBaseRoomFee, 356);
+  assert.equal(result.data.baseRoomFee, 712);
+  assert.equal(result.data.serviceFees, 470);
+  assert.equal(result.data.estimatedTotal, 1182);
+  assert.equal(result.data.total, 1112);
+  assert.equal(result.data.paidAmount, 178);
+  assert.equal(result.data.depositAmount, 178);
+  assert.equal(result.data.remainingBalance, 934);
+  assert.equal(result.data.cashDepositAmount, 1000);
+
+  const saved = r.records("Bookings")[0];
+  assert.equal(saved.roomTypeId, "DELUXE_ROOM");
+  assert.equal(saved.allocatedRoomIdsJson, '["A1"]');
+  assert.equal(saved.internalAssignment, "EXT");
+  assert.equal(saved.extensionStartDate, "2026-11-05");
+  assert.equal(saved.checkoutDate, "2026-11-07");
+  assert.equal(saved.depositAmount, 178);
+  assert.equal(saved.cashDepositAmount, 1000);
+  assert.equal(saved.remainingBalance, 934);
+  assert.deepEqual(r.records("Payments"), paymentsBefore);
+  assert.equal(r.records("BookingAdjustments").length, 1, "a one-time adjustment must not be repeated or rewritten");
+
+  const inventory = r.context.littlelandReadInventory_();
+  const extensionDates = r.context.littlelandAvailability_({
+    roomTypeId: "DELUXE_ROOM", checkin: "2026-11-05", checkout: "2026-11-07",
+  }, inventory);
+  assert.deepEqual(JSON.parse(JSON.stringify(extensionDates)), { available: true, roomIds: ["A1"] });
+  const originalDates = r.context.littlelandAvailability_({
+    roomTypeId: "DELUXE_ROOM", checkin: "2026-11-04", checkout: "2026-11-05",
+  }, inventory);
+  assert.deepEqual(JSON.parse(JSON.stringify(originalDates)), { available: true, roomIds: ["A2"] });
+
+  const logsBeforeReplay = r.records("Logs").length;
+  const replay = r.invokeStaff(payload);
+  assert.equal(replay.success, true, JSON.stringify(replay));
+  assert.equal(r.records("Bookings")[0].recordVersion, 2);
+  assert.equal(r.records("Payments").length, paymentsBefore.length);
+  assert.equal(r.records("BookingAdjustments").length, 1);
+  assert.equal(r.records("Logs").length, logsBeforeReplay);
+  const log = r.records("Logs").at(-1);
+  assert.equal(log.action, "staff.extendStay");
+  assert.equal(log.actorStaffNameSnapshot, "Test Staff");
+  assert.match(log.changedFieldsJson, /previousCheckoutDate/);
+  assert.match(log.changedFieldsJson, /internalAssignment/);
+});
+
+test("staff.extendStay rejects an occupied original room without changing data, then allows the same extension through EXT and reprices an unpaid deposit", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, "TEST-EXT-CONFLICT-001", {
+    groomingOnce: false, groomingDaily: false, earlyCheckin: false, serviceFees: 0,
+    totalSurcharges: 0, estimatedTotal: 356, depositStatus: "UNPAID", depositAmount: 178,
+    remainingBalance: 178,
+  });
+  addBooking(r, {
+    bookingId: "TEST-EXT-CONFLICT-002",
+    bookingStatus: "CONFIRMED",
+    checkinDate: "2026-11-05",
+    checkoutDate: "2026-11-07",
+    roomTypeId: "DELUXE_ROOM",
+    allocatedRoomIdsJson: '["A1"]',
+    cashDepositAmount: 1000,
+  });
+
+  const originalRoom = r.invokeStaff(extensionRequest(token, booking, "ext-conflict-original-001", {
+    internalAssignment: "ORIGINAL_ROOM",
+    internalAssignmentNote: "",
+  }));
+  assert.equal(originalRoom.success, false);
+  assert.equal(originalRoom.code, "ROOM_NO_LONGER_AVAILABLE");
+  assert.equal(r.records("Bookings")[0].checkoutDate, "2026-11-05");
+  assert.equal(r.records("Bookings")[0].internalAssignment, "");
+  assert.equal(r.records("Payments").length, 0);
+  assert.equal(r.records("Logs").length, 0);
+
+  const ext = r.invokeStaff(extensionRequest(token, booking, "ext-conflict-to-ext-001", {
+    internalAssignment: "EXT",
+    internalAssignmentNote: "原房後續已有預約；延期客由員工現場安排。",
+  }));
+  assert.equal(ext.success, true, JSON.stringify(ext));
+  assert.equal(ext.data.internalAssignment, "EXT");
+  assert.equal(ext.data.depositAmount, 356);
+  assert.equal(ext.data.remainingBalance, 356);
+  assert.equal(r.records("Bookings")[0].depositAmount, 356);
+  assert.equal(r.records("Payments").length, 0);
+});
+
+test("staff.extendStay reverses and replaces only active PER_NIGHT manual adjustments while retaining ONCE adjustments and all Payments", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, "TEST-EXT-NIGHTLY-001", {
+    groomingOnce: false, groomingDaily: false, earlyCheckin: false, serviceFees: 0,
+    totalSurcharges: 0, estimatedTotal: 356,
+  });
+  addPaidPayment(r, booking.bookingId, "PAY-EXT-DEPOSIT-003", "DEPOSIT", 178);
+  addManualExtensionAdjustment(r, booking.bookingId, { adjustmentId: "ADJ-EXT-ONCE-003", amount: -10, unitRate: -10 });
+  addManualExtensionAdjustment(r, booking.bookingId, {
+    adjustmentId: "ADJ-EXT-NIGHTLY-003", description: "每晚逐寵物服務費", amount: 40,
+    billingBasis: "PER_NIGHT", unitRate: 20, nightsCharged: 2,
+  });
+  const paymentsBefore = structuredClone(r.records("Payments"));
+
+  const result = r.invokeStaff(extensionRequest(token, booking, "ext-nightly-idempotency-001"));
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.equal(result.data.estimatedTotal, 712);
+  assert.equal(result.data.total, 782);
+  assert.equal(result.data.remainingBalance, 604);
+  assert.deepEqual(r.records("Payments"), paymentsBefore);
+
+  const adjustments = r.records("BookingAdjustments");
+  assert.equal(adjustments.length, 4);
+  const reversal = adjustments.find((entry) => entry.type === "REVERSAL");
+  const replacement = adjustments.find((entry) => entry.type === "SURCHARGE" && entry.adjustmentId !== "ADJ-EXT-ONCE-003" && entry.adjustmentId !== "ADJ-EXT-NIGHTLY-003");
+  assert.equal(reversal.reversesAdjustmentId, "ADJ-EXT-NIGHTLY-003");
+  assert.equal(reversal.amount, -40);
+  assert.equal(replacement.billingBasis, "PER_NIGHT");
+  assert.equal(replacement.unitRate, 20);
+  assert.equal(replacement.nightsCharged, 4);
+  assert.equal(replacement.amount, 80);
+  const once = adjustments.find((entry) => entry.adjustmentId === "ADJ-EXT-ONCE-003");
+  assert.equal(r.context.littlelandStaffAdjustmentOpenAmount_(once, adjustments), -10);
+});
+
+test("staff.internalAssignmentUpdate rechecks room availability when moving out of EXT and logs the Staff actor", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, "TEST-EXT-MOVE-001");
+  addPaidPayment(r, booking.bookingId, "PAY-EXT-MOVE-DEPOSIT-001", "DEPOSIT", 178);
+  const extended = r.invokeStaff(extensionRequest(token, booking, "ext-move-start-001"));
+  assert.equal(extended.success, true, JSON.stringify(extended));
+  addBooking(r, {
+    bookingId: "TEST-EXT-MOVE-COMPETITOR",
+    bookingStatus: "CONFIRMED",
+    checkinDate: "2026-11-06",
+    checkoutDate: "2026-11-08",
+    roomTypeId: "DELUXE_ROOM",
+    allocatedRoomIdsJson: '["A1"]',
+    cashDepositAmount: 1000,
+  });
+
+  const beforeMove = r.records("Bookings")[0];
+  const moveRequest = {
+    action: "staff.internalAssignmentUpdate", token, bookingId: booking.bookingId,
+    expectedRecordVersion: Number(beforeMove.recordVersion), expectedStatus: beforeMove.bookingStatus,
+    idempotencyKey: "ext-move-out-001", data: { internalAssignment: "ORIGINAL_ROOM", reason: "TEST 確認原房再次檢查" },
+  };
+  const rejected = r.invokeStaff(moveRequest);
+  assert.equal(rejected.success, false);
+  assert.equal(rejected.code, "ROOM_NO_LONGER_AVAILABLE");
+  assert.equal(r.records("Bookings")[0].internalAssignment, "EXT");
+
+  r.context.littlelandUpdateRecordByKey_("Bookings", "bookingId", "TEST-EXT-MOVE-COMPETITOR", { bookingStatus: "CANCELLED" });
+  moveRequest.idempotencyKey = "ext-move-out-002";
+  const moved = r.invokeStaff(moveRequest);
+  assert.equal(moved.success, true, JSON.stringify(moved));
+  assert.equal(moved.data.internalAssignment, "ORIGINAL_ROOM");
+  assert.equal(r.records("Bookings")[0].internalAssignment, "ORIGINAL_ROOM");
+  const lastLog = r.records("Logs").at(-1);
+  assert.equal(lastLog.action, "staff.internalAssignmentUpdate");
+  assert.equal(lastLog.actorStaffNameSnapshot, "Test Staff");
+  assert.match(lastLog.changedFieldsJson, /previousInternalAssignment/);
+});
+
+test("staff.internalAssignmentNoteUpdate records a private note edit and Staff identity", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, "TEST-EXT-NOTE-001");
+  addPaidPayment(r, booking.bookingId, "PAY-EXT-NOTE-DEPOSIT-001", "DEPOSIT", 178);
+  const extended = r.invokeStaff(extensionRequest(token, booking, "ext-note-start-001"));
+  assert.equal(extended.success, true, JSON.stringify(extended));
+  const saved = r.records("Bookings")[0];
+  const result = r.invokeStaff({
+    action: "staff.internalAssignmentNoteUpdate", token, bookingId: booking.bookingId,
+    expectedRecordVersion: Number(saved.recordVersion), expectedStatus: saved.bookingStatus,
+    idempotencyKey: "ext-note-edit-001", data: { note: "內部測試備註：延期日免費升級 S1", reason: "TEST note audit" },
+  });
+  assert.equal(result.success, true, JSON.stringify(result));
+  assert.equal(r.records("Bookings")[0].internalAssignmentNote, "內部測試備註：延期日免費升級 S1");
+  assert.equal(r.records("Logs").at(-1).action, "staff.internalAssignmentNoteUpdate");
+  assert.equal(r.records("Logs").at(-1).actorStaffNameSnapshot, "Test Staff");
+});

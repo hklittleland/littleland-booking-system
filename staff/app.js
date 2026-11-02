@@ -21,6 +21,7 @@
     loadSequence = 0;
   const readCache = new Map(),
     readCacheTtlMs = 15000;
+  const extensionDrafts = new Map();
   const esc = (v) =>
     String(v == null || v === "" ? "—" : v).replace(
       /[&<>"']/g,
@@ -143,6 +144,7 @@
   }
   function clearPrivate() {
     readCache.clear();
+    extensionDrafts.clear();
     store.clear();
     store.state.followupDraft = "";
     store.state.depositConflictBookingId = "";
@@ -351,7 +353,9 @@
     const helper = window.LittleLandCalendarView;
     const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.schedules),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
     const selectedItems = arr(d.bookings).filter(b => String(b.checkinDate||"") === selected || String(b.checkoutDate||"") === selected || (["CONFIRMED","CHECKED_IN"].includes(statusOf(b)) && String(b.checkinDate||"") <= selected && String(b.checkoutDate||"") > selected));
-    return `${head("房間月曆", "香港時間今日提醒；退房日不佔房。待確認及待付訂金不會顯示為佔房。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-month="-1">‹ 上月</button><h2>${now.getFullYear()}年${now.getMonth()+1}月</h2><button class="btn secondary" data-month="1">下月 ›</button><button class="btn" data-today>今日</button></div>${monthHtml}</section><section class="card"><h2>${esc(selected)} · 當日詳情</h2>${list(selectedItems,"當日沒有入住、退房或在住房間")}<h3>在職房間／寵物</h3>${rooms.map(r=>{const b=selectedItems.find(x=>["CONFIRMED","CHECKED_IN"].includes(statusOf(x)) && String(x.checkinDate||"")<=selected && String(x.checkoutDate||"")>selected && parseRooms(x).includes(r)); return `<p>${esc(r)} · ${b?`🐾 ${esc(get(b,"petNames"))} · ${esc(roomNames[b.roomTypeId]||b.roomTypeId)} · ${esc(fullIdOf(b))}`:"空房"}</p>`}).join("")}</section>`;
+    const selectedExt = selectedItems.filter(b => String(b.internalAssignment || "").toUpperCase() === "EXT" && String(b.extensionStartDate || "") <= selected && String(b.checkoutDate || "") > selected);
+    const extToday = selectedExt.length ? `<section class="ext-selected-list"><h3>EXT 延期虛擬房 · ${selectedExt.length} 張</h3><p>不佔任何實體房；原訂／收費房型維持不變。</p>${selectedExt.map(b => `<button class="ext-month-booking" type="button" data-detail="${esc(fullIdOf(b))}"><span>${esc(get(b,"petNames") || "寵物名稱未載入")}</span><span>原房型：${esc(roomNames[b.roomTypeId] || b.roomTypeId)}</span><span>延期至 ${esc(String(b.checkoutDate || "").slice(0,10))}</span></button>`).join("")}</section>` : "";
+    return `${head("房間月曆", "香港時間今日提醒；退房日不佔房。待確認及待付訂金不會顯示為佔房。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-month="-1">‹ 上月</button><h2>${now.getFullYear()}年${now.getMonth()+1}月</h2><button class="btn secondary" data-month="1">下月 ›</button><button class="btn" data-today>今日</button></div>${monthHtml}</section><section class="card"><h2>${esc(selected)} · 當日詳情</h2>${list(selectedItems,"當日沒有入住、退房或在住房間")}${extToday}<h3>在職房間／寵物</h3>${rooms.map(r=>{const b=selectedItems.find(x=>["CONFIRMED","CHECKED_IN"].includes(statusOf(x)) && String(x.checkinDate||"")<=selected && String(x.checkoutDate||"")>selected && (String(x.internalAssignment || "").toUpperCase() !== "EXT" || !/^\d{4}-\d{2}-\d{2}$/.test(String(x.extensionStartDate || "")) || selected < String(x.extensionStartDate)) && parseRooms(x).includes(r)); return `<p>${esc(r)} · ${b?`🐾 ${esc(get(b,"petNames"))} · ${esc(roomNames[b.roomTypeId]||b.roomTypeId)} · ${esc(fullIdOf(b))}`:"空房"}</p>`}).join("")}</section>`;
   }
   function whatsapp(b) {
     const phone = String(b.phone || "").replace(/\D/g, "");
@@ -522,7 +526,9 @@
       currentTotal: Number(b.estimatedTotal || 0) + manualAdjustmentTotal,
     });
     const assignedRoomIds = parseRooms(b).map(String).filter((roomId) => rooms.includes(roomId));
-    const roomAllocationSummary = assignedRoomIds.length
+    const roomAllocationSummary = String(b.internalAssignment || "") === "EXT"
+      ? "EXT 延期虛擬房（延期期間由員工安排實際房間）"
+      : assignedRoomIds.length
       ? assignedRoomIds.join("＋")
       : conflict
         ? "尚未分配（房態衝突，待員工跟進）"
@@ -531,7 +537,9 @@
           : ["CANCELLED", "CHECKED_OUT", "COMPLETED"].includes(s)
             ? "無有效房間分配"
             : "未分配（需核對房態）";
-    const roomAllocationNote = assignedRoomIds.length
+    const roomAllocationNote = String(b.internalAssignment || "") === "EXT"
+      ? `原住宿期房間：${assignedRoomIds.join("＋") || "未有有效房號"}；自 ${esc(b.extensionStartDate || "首次延期日")} 起不佔任何實體房，收費房型保持 ${esc(roomNames[b.roomTypeId] || b.roomTypeId)}。實際房間由員工按現場情況安排。`
+      : assignedRoomIds.length
       ? "員工確認已收訂金時，系統會重新核對最新房態並自動分配；同一預約內的寵物共用此房型。"
       : conflict
         ? "系統未找到有效房間，預約未確認亦不佔房；請員工聯絡客人跟進，不可承諾房間。"
@@ -546,6 +554,10 @@
     const bookingChangeControls = window.LittleLandBookingChangesView
       ? window.LittleLandBookingChangesView.render({ booking: b, pets: pets, payments: payments, adjustments: adjustments, pending: pendingAction })
       : "";
+    const extensionDraft = extensionDrafts.get(String(idOf(b))) || {};
+    const extensionMarkup = window.LittleLandExtensionView
+      ? window.LittleLandExtensionView.render({ booking: b, payments, adjustments, roomNames, pending: pendingAction, draft: extensionDraft })
+      : "";
     const whatsappPanel = window.LittleLandWhatsAppMessages
       ? window.LittleLandWhatsAppMessages.render({ booking: feeDisplay, pets, payments, adjustments, roomNames, allocatedRooms: parseRooms(b), roomConflict: conflict })
       : "";
@@ -558,8 +570,8 @@
         ["退房日期", "checkoutDate"],
         ["退房時間", "checkoutTime"],
         ["晚數", "nights"],
-        ["房型", roomNames[b.roomTypeId] || b.roomTypeId],
-        ["實體房間（系統自動分配）", "roomAllocationSummary"],
+        ["原訂／收費房型", roomNames[b.roomTypeId] || b.roomTypeId],
+        ["目前內部安排", "roomAllocationSummary"],
         ["分配方式", "roomAllocationNote"],
         ["訂金狀態", "depositStatus"],
         ["尾數狀態", "balanceStatus"],
@@ -653,7 +665,7 @@
         ["已使用按金", "cashDepositUsedAmount"],
         ["應退按金", refund],
       ],
-    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(friendly(get(p, "paidAt")))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section>${bookingChangeControls}${whatsappPanel}<section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(friendly(get(x, "createdAt", "time")))} · ${esc(get(x, "staffName", "actorStaffNameSnapshot", "actorStaffId"))} · ${esc(get(x, "note", "summary"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${escValue(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(friendly(get(x, "createdAt")))} · <strong>${esc(get(x, "actorStaffNameSnapshot", "staffName") || get(x, "actorStaffId") || (x.actorType === "SYSTEM" ? "系統" : "未知操作者"))}</strong> · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => a === "earlyCheckout" ? `<button class="btn secondary" data-adjust="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>` : `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
+    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(friendly(get(p, "paidAt")))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section>${extensionMarkup}${bookingChangeControls}${whatsappPanel}<section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(friendly(get(x, "createdAt", "time")))} · ${esc(get(x, "staffName", "actorStaffNameSnapshot", "actorStaffId"))} · ${esc(get(x, "note", "summary"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${escValue(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(friendly(get(x, "createdAt")))} · <strong>${esc(get(x, "actorStaffNameSnapshot", "staffName") || get(x, "actorStaffId") || (x.actorType === "SYSTEM" ? "系統" : "未知操作者"))}</strong> · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => a === "earlyCheckout" ? `<button class="btn secondary" data-adjust="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>` : `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
       const draft = store.state.editDraft || {}, fieldValue = (key, fallback) => draft[key] !== undefined ? draft[key] : (fallback == null ? "" : fallback);
       const textField = (label, key, fallback, type = "text") => `<label>${esc(label)}</label><input name="${esc(key)}" type="${type}" value="${escValue(fieldValue(key, fallback))}">`;
       const selectField = (label, key, value, options) => `<label>${esc(label)}</label><select name="${esc(key)}">${options.map(([v, title]) => `<option value="${escValue(v)}" ${String(fieldValue(key, value)) === String(v) ? "selected" : ""}>${esc(title)}</option>`).join("")}</select>`;
@@ -999,6 +1011,8 @@
     const currentBooking = detailState.detail || detailState.booking || {};
     const currentBookingId = currentBooking.bookingId || StaffRouter.current().id;
     const currentVersion = { bookingId: currentBookingId, expectedRecordVersion: currentBooking.recordVersion, expectedStatus: currentBooking.bookingStatus };
+    const extensionView = window.LittleLandExtensionView;
+    if (page === "detail" && extensionView) extensionView.bind(app, { booking: currentBooking, payments: arr(detailState.payments), adjustments: arr(detailState.adjustments) });
     const adjustmentForm = app.querySelector("#bookingAdjustmentForm");
     if (adjustmentForm) adjustmentForm.onsubmit = (event) => {
       event.preventDefault();
@@ -1029,8 +1043,13 @@
           return;
         }
         const sign = petForm.elements.direction.value === "reduce" ? -1 : 1;
-        const data = { description, amount: Math.round(enteredAmount * sign * 100) / 100, reason, petIds: [petId] };
-        if (!confirm(`確認${sign < 0 ? "減少／抵扣" : "新增"}「${petName}」${description}：HK$${enteredAmount.toFixed(2)}？若形成多收款項，不會自動退款。`)) return;
+        const billingBasis = petForm.elements.billingBasis && petForm.elements.billingBasis.value === "PER_NIGHT" ? "PER_NIGHT" : "ONCE";
+        const data = { description, amount: Math.round(enteredAmount * sign * 100) / 100, reason, petIds: [petId], billingBasis };
+        const nights = Math.max(1, Number(petForm.dataset.nights || currentBooking.nights || 1));
+        const chargeText = billingBasis === "PER_NIGHT"
+          ? `每晚 HK$${enteredAmount.toFixed(2)} × ${nights} 晚 = HK$${(enteredAmount * nights).toFixed(2)}`
+          : `一次性 HK$${enteredAmount.toFixed(2)}`;
+        if (!confirm(`確認${sign < 0 ? "減少／抵扣" : "新增收費"}「${petName}」${description}：${chargeText}？若形成多收款項，不會自動退款。`)) return;
         submitApi("addSurcharge", Object.assign({}, currentVersion, { data }), petForm);
       };
     });
@@ -1077,6 +1096,77 @@
       if (!confirm(`確認入住寵物數量由 ${Number(currentBooking.quantity || 0)} 改為 ${Number(currentBooking.quantity || 0) - removePetIds.length + newPets.length}？系統會依原 Pricing Engine 重算費用；已收訂金金額會保留，並只更新尾數。`)) return;
       submitApi("petCountUpdate", Object.assign({}, currentVersion, { data: { removePetIds, newPets, reason } }), petCountForm);
     };
+    const bookingKey = String(currentBookingId || "");
+    const saveExtensionDraft = (kind, form, keys) => {
+      const drafts = extensionDrafts.get(bookingKey) || {};
+      drafts[kind] = Object.fromEntries(keys.map((key) => [key, form.elements[key] ? form.elements[key].value : ""]));
+      extensionDrafts.set(bookingKey, drafts);
+    };
+    const clearExtensionDraft = (kind) => {
+      const drafts = extensionDrafts.get(bookingKey);
+      if (!drafts) return;
+      delete drafts[kind];
+      if (Object.keys(drafts).length) extensionDrafts.set(bookingKey, drafts);
+      else extensionDrafts.delete(bookingKey);
+    };
+    const showExtensionError = (form, message) => {
+      let error = form.querySelector(".form-error");
+      if (!error) { error = document.createElement("p"); error.className = "form-error"; error.setAttribute("role", "alert"); form.prepend(error); }
+      error.textContent = message;
+    };
+    const stayExtensionForm = app.querySelector("#stayExtensionForm");
+    if (stayExtensionForm && extensionView) {
+      const capture = () => saveExtensionDraft("extend", stayExtensionForm, ["newCheckoutDate", "internalAssignment", "reason", "internalAssignmentNote"]);
+      stayExtensionForm.addEventListener("input", capture);
+      stayExtensionForm.addEventListener("change", capture);
+      stayExtensionForm.onsubmit = (event) => {
+        event.preventDefault();
+        capture();
+        const newCheckoutDate = stayExtensionForm.elements.newCheckoutDate.value;
+        const internalAssignment = stayExtensionForm.elements.internalAssignment.value;
+        const reason = stayExtensionForm.elements.reason.value.trim();
+        const internalAssignmentNote = stayExtensionForm.elements.internalAssignmentNote.value;
+        const data = { newCheckoutDate, internalAssignment, reason, internalAssignmentNote };
+        if (!reason) return showExtensionError(stayExtensionForm, "請填寫延長住宿原因。");
+        const estimate = extensionView.preview({ booking: currentBooking, payments: arr(detailState.payments), adjustments: arr(detailState.adjustments) }, newCheckoutDate);
+        if (!estimate.ok) return showExtensionError(stayExtensionForm, estimate.message);
+        const assignmentText = internalAssignment === "EXT" ? "轉入 EXT 延期虛擬房（延期期間不佔實體房）" : "保留原實體房（TEST API 會重新檢查最新房態）";
+        const depositText = currentBooking.depositStatus === "PAID" ? "保留原已收訂金" : "按新基本房費重新計算 50% 訂金";
+        const confirmText = `確認延長住宿？\n退房：${estimate.oldCheckout} → ${estimate.newCheckoutDate}（新增 ${estimate.addedNights} 晚）\n收費房型：${roomNames[currentBooking.roomTypeId] || currentBooking.roomTypeId}\n安排：${assignmentText}\n新增基本房費：HK$${estimate.addedBaseRoomFee.toFixed(2)}\n新住宿總額：HK$${estimate.total.toFixed(2)}\n已收款：HK$${estimate.paid.toFixed(2)}\n${depositText}：HK$${estimate.deposit.toFixed(2)}\n預計待收尾數：HK$${estimate.remaining.toFixed(2)}\n現金按金：HK$${estimate.cashDeposit.toFixed(2)}（不因延期增加）`;
+        if (!confirm(confirmText)) return;
+        submitApi("extendStay", Object.assign({}, currentVersion, { data }), stayExtensionForm, () => clearExtensionDraft("extend"));
+      };
+    }
+    const assignmentForm = app.querySelector("#internalAssignmentForm");
+    if (assignmentForm) {
+      const capture = () => saveExtensionDraft("assignment", assignmentForm, ["internalAssignment", "reason"]);
+      assignmentForm.addEventListener("input", capture);
+      assignmentForm.addEventListener("change", capture);
+      assignmentForm.onsubmit = (event) => {
+        event.preventDefault();
+        capture();
+        const internalAssignment = assignmentForm.elements.internalAssignment.value;
+        const reason = assignmentForm.elements.reason.value.trim();
+        if (!reason) return showExtensionError(assignmentForm, "請填寫更改內部安排的原因。");
+        if (!confirm(internalAssignment === "EXT"
+          ? "確認轉入 EXT？延期日期不會佔用實體房，原收費房型及房費不變。"
+          : "確認轉回原實體房？TEST API 會重新檢查原房至新退房日的最新房態；如有衝突會拒絕。")) return;
+        submitApi("internalAssignmentUpdate", Object.assign({}, currentVersion, { data: { internalAssignment, reason } }), assignmentForm, () => clearExtensionDraft("assignment"));
+      };
+    }
+    const internalNoteForm = app.querySelector("#internalAssignmentNoteForm");
+    if (internalNoteForm) {
+      const capture = () => saveExtensionDraft("note", internalNoteForm, ["note", "reason"]);
+      internalNoteForm.addEventListener("input", capture);
+      internalNoteForm.addEventListener("change", capture);
+      internalNoteForm.onsubmit = (event) => {
+        event.preventDefault();
+        capture();
+        const data = { note: internalNoteForm.elements.note.value, reason: internalNoteForm.elements.reason.value.trim() };
+        if (!data.reason) return showExtensionError(internalNoteForm, "請填寫內部備註變更原因。");
+        submitApi("internalAssignmentNoteUpdate", Object.assign({}, currentVersion, { data }), internalNoteForm, () => clearExtensionDraft("note"));
+      };
+    }
     const newBookingView = window.LittleLandStaffNewBookingView;
     if (newBookingView) newBookingView.bind({
       app, store, api: StaffAPI, router: StaffRouter, readCache, toast, handleAuth, paint,
