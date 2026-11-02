@@ -459,3 +459,22 @@ Booking Detail 的「延長住宿」操作收新退房日、安排選擇（保�
 ### TEST 驗收資料選擇
 
 只用 LittleLand_TEST 中已存在的一張已確認兔子「豪華房」Booking；不新增訂單、不建立付款、不改任何既有付款紀錄。預期測試將原退房日期延長兩晚並轉入 EXT：維持原 `roomTypeId=DELUXE_ROOM` 及 `allocatedRoomIdsJson`；新增兩晚基本房費 HK$356；每日梳毛從兩晚費用 HK$100 重算至四晚 HK$200；既有單次梳毛 HK$70 和提早入住 HK$200 不複收；基本房費由 HK$356 至 HK$712，標準服務費 HK$370 至 HK$470，`estimatedTotal` HK$1,182。既有人工一次性減項 HK$70 保持有效，調整後住宿總額 HK$1,112；保留已收訂金及原 Payment HK$178，不增造付款，更新待收尾數為 HK$934；現金按金保持 HK$1,000。`extensionStartDate` 等於延期前退房日，EXT 日期不佔實體房；Staff 月曆以多筆同日 fixtures 證明可並列顯示，營收仍屬豪華房。實際候選若唯讀回讀發現與上述基準不同，先按 Sheet 實際資料重新計算並驗證，不強行覆寫預期或改用其他訂單；若遇資料不一致即停止該 TEST mutation。
+
+
+# TASK-ROOM-LOCK-01 — Staff 實體房鎖定（TEST-only）
+
+## 已核准的業務行為
+
+- Staff 可為單一實體房建立指定日期區間的鎖房，區間使用入住日含、退房日不含；須選擇有效實體房、有效日期及填寫原因。虛擬組合 SS1／SSR1 和 EXT 不可鎖定。
+- 只有有效的 ACTIVE 鎖房阻止該實體房在區間內被客人房態查詢、員工可用性查詢、建單檢查或確認訂金時的實體房分配。客人端只收到安全的可訂／不可訂結果，不回傳鎖房 ID、原因或 Staff 資料。
+- 建立鎖房時如與同一實體房的 CONFIRMED／CHECKED_IN 實際佔房區間重疊，整筆建立拒絕且不改 Booking 或付款；如與另一 ACTIVE 鎖房重疊，亦拒絕。EXT Booking 只在其首次延期邊界前佔實體房，鎖房衝突按此物理佔用區間計算。
+- PENDING_CONFIRMATION／PENDING_DEPOSIT 不佔房；鎖房不刪除、不取消、不改寫這些 Booking。若鎖房導致該待處理 Booking 所屬房型在其日期內沒有可用實體配置，後台以房態衝突提示員工跟進；付款確認仍須重新檢查最新庫存。
+- Staff 可解除 ACTIVE 鎖房；以 RELEASED 軟狀態保存歷史，不刪除資料。建立及解除都需有效 Staff Session、Script Lock、idempotency、防版本衝突和 Staff／時間／操作內容 Logs；完成操作後刷新房態快取。
+
+## 實作方式與專案結構
+
+- 在 `apps-script/InitializeTestSheets.gs` 以 add-only 方式新增 `StaffRoomLocks` 工作表定義，不變更既有 Bookings／Payments／Logs 列；資料欄包括 `roomLockId`、`roomId`、`startDate`、`endDate`、`reason`、`status`、建立及解除時間、操作者 ID／姓名 snapshot、`releaseReason`、`recordVersion`、`idempotencyKey`。
+- `apps-script/RoomAvailability.gs` 將有效鎖房納入唯一 inventory／availability allocator，校驗房間必須為 Rooms 主檔中的 PHYSICAL、日期有效且半開區間一致；所有客人與 Staff 房態及 `confirmDeposit`／延住原房檢查重用此資料源，不建立第二套房態邏輯。
+- `apps-script/StaffRoomLocks.gs` 提供受登入保護的 Staff 建立／解除 API，在 Dispatcher 已有 Script Lock 內做衝突預檢、idempotency claim、軟解除與 actor-attributed Logs。`staff.calendar` 僅向 Staff 回傳所選月份內的有效鎖房；待處理 Booking 仍保持原狀並按實際剩餘配置計算衝突提示。
+- `staff/api-client.js` 登記兩個 TEST-only action；`staff/calendar-view.js` 在十間實體房月曆格以獨立鎖定色／文字呈現 `[startDate,endDate)`，並顯示有效鎖房與解除操作；`staff/app.js` 在既有日曆加入手機友善的房間／日期／原因表單及解除確認，使用現有 `submitApi`、防重複及刷新模式；樣式延用 LittleLand Staff 現有卡片、按鈕、顏色、字體與手機版布局。
+- 更新 `docs/SHEETS-SCHEMA.md`、initializer mock tests、RoomAvailability／Staff API／calendar view／app UI 測試。只可用本地 mock 與 LittleLand_TEST 驗證；不得建新 Booking／Payment，不觸及 Production，不 Merge `develop`／`main`。程式只推送至 `hklittleland/littleland-booking-system` 已指定的 `feature/test-booking-api`；若需讓既有 Staff TEST Pages 預覽包含 UI，再只同步 Staff 前端至 `feature/booking-ui`，保留登入及 TEST API endpoint。

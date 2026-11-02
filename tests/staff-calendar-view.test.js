@@ -175,3 +175,33 @@ test("a booking moved from EXT back to its original physical room occupies that 
   assert.match(a1Row, /title="A1 · 2026-11-06 · 已確認佔房/);
   assert.doesNotMatch(html, /class="ext-month-booking"/);
 });
+
+test("active room locks occupy [startDate,endDate), including start and excluding checkout", () => {
+  const html = renderCalendarView(base({ roomLocks: [{ roomLockId: "L1", roomId: "S1", startDate: "2025-06-14", endDate: "2025-06-16", reason: "維修", status: "ACTIVE", recordVersion: 3 }] }));
+  const row = html.split('<th scope="row" class="room-month-room">S1</th>')[1].split("</tr>")[0];
+  assert.match(row, /room-state--locked[^>]*2025-06-14/);
+  assert.match(row, /room-state--locked[^>]*2025-06-15/);
+  assert.match(row, /room-state--free[^>]*2025-06-16/);
+  assert.match(html, /legend-locked/);
+  assert.match(html, /S1 · 2025-06-14 · 鎖房 2025-06-14 至 2025-06-16 · 維修/);
+});
+
+test("booking and active room lock remain visible as conflict and lock text is escaped", () => {
+  const html = renderCalendarView(base({ bookings: [{ bookingId: "B", bookingStatus: "CONFIRMED", checkinDate: "2025-06-15", checkoutDate: "2025-06-18", allocatedRoomIds: ["S1"] }], roomLocks: [{ roomLockId: "L", roomId: "S1", startDate: "2025-06-15", endDate: "2025-06-17", reason: '<img src=x onerror="x">', status: "ACTIVE" }] }));
+  const row = html.split('<th scope="row" class="room-month-room">S1</th>')[1].split("</tr>")[0];
+  assert.match(row, /room-state--conflict/);
+  assert.match(row, /鎖房：2025-06-15 至 2025-06-17 · &lt;img src=x onerror=&quot;x&quot;&gt;/);
+  assert.doesNotMatch(html, /<img/);
+});
+
+test("staff calendar includes validated lock form and versioned release via submitApi", () => {
+  const fs = require("node:fs"), path = require("node:path");
+  const app = fs.readFileSync(path.join(__dirname, "..", "staff", "app.js"), "utf8");
+  assert.match(app, /id="roomLockForm"/);
+  assert.match(app, /type="date" required/);
+  assert.match(app, /name="reason" required/);
+  assert.match(app, /submitApi\("roomLockCreate", \{ data \}, roomLockForm\)/);
+  assert.match(app, /releaseReason: "員工於月曆手動解除"/);
+  assert.match(app, /expectedRecordVersion: lock.recordVersion/);
+  assert.match(app, /confirm\(`確認解除/);
+});

@@ -43,6 +43,8 @@ function littlelandStaffDispatch_(body, requestId) {
     var mutationResult;
     if (action === "staff.createBooking")
       mutationResult = littlelandStaffCreateBooking_(body, auth, requestId);
+    else if (action === "staff.roomLockCreate" || action === "staff.roomLockRelease")
+      mutationResult = littlelandStaffRoomLockMutation_(action, body, auth, requestId);
     else if (action === "staff.scheduleSave" || action === "staff.scheduleSwap" || action === "staff.scheduleMonthSave" || action === "staff.scheduleEmployeesSave")
       mutationResult = littlelandStaffScheduleMutation_(action, body, auth, requestId);
     else
@@ -143,7 +145,8 @@ function littlelandStaffReadAction_(action, body, auth) {
   }
   var adjustments = null,
     schedules = null,
-    staffRows = null;
+    staffRows = null,
+    roomLocks = null;
   function getAdjustments() {
     if (adjustments === null) adjustments = readRecords("BookingAdjustments");
     return adjustments;
@@ -151,6 +154,11 @@ function littlelandStaffReadAction_(action, body, auth) {
   function getSchedules() {
     if (schedules === null) schedules = readRecords("StaffSchedules");
     return schedules;
+  }
+  function getActiveRoomLocks() {
+    ensureRoomConflictInventory();
+    littlelandRequire_(roomConflictInventoryValid, "SHEET_READ_FAILED", "房間鎖房資料無法安全讀取，請人工核對。", false);
+    return roomLocks;
   }
   function getActiveStaff() {
     if (staffRows === null)
@@ -174,18 +182,14 @@ function littlelandStaffReadAction_(action, body, auth) {
     if (roomConflictInventoryLoaded) return;
     roomConflictInventoryLoaded = true;
     try {
-      var roomRows = readRecords("Rooms");
-      littlelandValidateRoomMaster_(roomRows);
-      roomConflictInventory = {
-        bookings: bookings,
-        occupying: littlelandBuildOccupancy_(bookings),
-      };
+      roomConflictInventory = littlelandReadInventory_();
+      roomLocks = roomConflictInventory.activeRoomLocks;
     } catch (inventoryError) {
       roomConflictInventoryValid = false;
     }
   }
   function hasRoomConflict(b) {
-    if (b.bookingStatus !== "PENDING_DEPOSIT") return false;
+    if (["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].indexOf(String(b.bookingStatus)) < 0) return false;
     ensureRoomConflictInventory();
     if (!roomConflictInventoryValid) return true;
     var checkin = littlelandSheetDateOnly_(b.checkinDate),
@@ -226,7 +230,7 @@ function littlelandStaffReadAction_(action, body, auth) {
     c.bookingReference = littlelandDisplayBookingReference_(b.bookingId);
     c.petNames = names;
     c.petsSummary = names.join("、");
-    if (b.bookingStatus === "PENDING_DEPOSIT")
+    if (["PENDING_CONFIRMATION", "PENDING_DEPOSIT"].indexOf(String(b.bookingStatus)) >= 0)
       c.roomConflict = hasRoomConflict(b);
     try {
       c.allocatedRoomIds = JSON.parse(b.allocatedRoomIdsJson || "[]");
@@ -417,6 +421,9 @@ function littlelandStaffReadAction_(action, body, auth) {
           );
         })
         .map(card),
+      roomLocks: getActiveRoomLocks().filter(function (roomLock) {
+        return roomLock.startDate < next && roomLock.endDate > first;
+      }),
       staffSchedules: getSchedules().filter(function (row) {
         return String(row.workDate || "").slice(0, 7) === month;
       }).map(function (row) {
@@ -1277,7 +1284,7 @@ function littlelandStaffClaim_(claim,action,body,requestId,now){
 }
 function littlelandStaffFinish_(claim,action,body,auth,requestId,now,data,entityType,entityId,changed){
   var summary = data && data.logSummary ? String(data.logSummary) : "員工操作已記錄。";
-  littlelandStaffWriteLog_(auth,{bookingId:String(body.bookingId||entityId||"")},requestId,action,summary,changed||{});
+  littlelandStaffWriteLog_(auth,{bookingId:String(body.bookingId||entityId||"")},requestId,action,summary,changed||{},entityType,entityId);
   littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",claim.key,{state:"COMPLETED",responseCode:"OK",responseSnapshotJson:JSON.stringify({data:data}),requestId:requestId,updatedAt:now});
   littlelandClearAvailabilityCache_(); return data;
 }
@@ -1859,6 +1866,11 @@ function littlelandStaffAssertOriginalRoomAvailable_(booking, checkout, inventor
       littlelandArraysIntersect_(roomIds, item.roomIds);
   });
   littlelandRequire_(!conflict, "ROOM_NO_LONGER_AVAILABLE", "原實體房在延長日期與其他已確認預約重疊；請改選 EXT 延期虛擬房。", false);
+  var locked = (inventory.activeRoomLocks || []).some(function (lock) {
+    return roomIds.indexOf(String(lock.roomId)) >= 0 &&
+      littlelandDateRangesOverlap_(checkin, checkout, lock.startDate, lock.endDate);
+  });
+  littlelandRequire_(!locked, "ROOM_NO_LONGER_AVAILABLE", "原實體房在延長日期已被員工鎖定；請改選 EXT 延期虛擬房。", false);
   return roomIds;
 }
 

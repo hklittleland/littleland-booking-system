@@ -37,7 +37,8 @@ function littlelandSheetDateOnly_(value) {
 function littlelandReadInventory_() {
   var roomTable = littlelandReadTable_('Rooms');
   var bookingTable = littlelandReadTable_('Bookings');
-  littlelandValidateRoomMaster_(roomTable.rows.map(function (row) { return row.record; }));
+  var roomRows = roomTable.rows.map(function (row) { return row.record; });
+  littlelandValidateRoomMaster_(roomRows);
   var bookings = bookingTable.rows.map(function (row) {
     var record = row.record;
     record.checkinDate = littlelandSheetDateOnly_(record.checkinDate);
@@ -45,8 +46,61 @@ function littlelandReadInventory_() {
     record.extensionStartDate = littlelandSheetDateOnly_(record.extensionStartDate);
     return record;
   });
+  var roomLocks = littlelandValidateRoomLocks_(
+    littlelandReadTable_('StaffRoomLocks').rows.map(function (row) { return row.record; }),
+    roomRows
+  );
   var occupying = littlelandBuildOccupancy_(bookings);
-  return { bookings: bookings, occupying: occupying };
+  return {
+    bookings: bookings,
+    occupying: occupying,
+    rooms: roomRows,
+    roomLocks: roomLocks,
+    activeRoomLocks: roomLocks.filter(function (lock) { return lock.status === 'ACTIVE'; })
+  };
+}
+
+function littlelandValidateRoomLocks_(lockRows, roomRows) {
+  var physicalRooms = {};
+  roomRows.forEach(function (room) {
+    if (String(room.roomKind) === 'PHYSICAL' &&
+      (room.isActive === true || String(room.isActive).toLowerCase() === 'true')) {
+      physicalRooms[String(room.roomId)] = true;
+    }
+  });
+  var seen = {};
+  return lockRows.map(function (row) {
+    var roomLockId = String(row.roomLockId || '').trim();
+    var roomId = String(row.roomId || '').trim();
+    var startDate = littlelandSheetDateOnly_(row.startDate);
+    var endDate = littlelandSheetDateOnly_(row.endDate);
+    var status = String(row.status || '').toUpperCase();
+    var reason = String(row.reason || '').trim();
+    var version = Number(row.recordVersion);
+    littlelandRequire_(roomLockId && !seen[roomLockId], 'ROOM_LOCK_DATA_INVALID', '鎖房資料有空白或重複 ID，已停止房態判斷。', false);
+    seen[roomLockId] = true;
+    littlelandRequire_(physicalRooms[roomId], 'ROOM_LOCK_DATA_INVALID', '鎖房只能指向有效實體房，已停止房態判斷。', false);
+    littlelandRequire_(littlelandIsIsoDate_(startDate) && littlelandIsIsoDate_(endDate) && endDate > startDate,
+      'ROOM_LOCK_DATA_INVALID', '鎖房日期區間無效，已停止房態判斷。', false);
+    littlelandRequire_(reason && reason.length <= 500, 'ROOM_LOCK_DATA_INVALID', '鎖房原因無效，已停止房態判斷。', false);
+    littlelandRequire_(['ACTIVE', 'RELEASED'].indexOf(status) >= 0, 'ROOM_LOCK_DATA_INVALID', '鎖房狀態無效，已停止房態判斷。', false);
+    littlelandRequire_(String(row.createdAt || '') && String(row.createdByStaffId || '') &&
+      String(row.idempotencyKey || '').length >= 8 && Number.isInteger(version) && version >= 1,
+      'ROOM_LOCK_DATA_INVALID', '鎖房建立紀錄不完整，已停止房態判斷。', false);
+    if (status === 'RELEASED') {
+      littlelandRequire_(String(row.releasedAt || '') && String(row.releasedByStaffId || ''),
+        'ROOM_LOCK_DATA_INVALID', '解除鎖房紀錄不完整，已停止房態判斷。', false);
+    }
+    return Object.assign({}, row, {
+      roomLockId: roomLockId,
+      roomId: roomId,
+      startDate: startDate,
+      endDate: endDate,
+      reason: reason,
+      status: status,
+      recordVersion: version
+    });
+  });
 }
 
 function littlelandAvailability_(input, inventory) {
@@ -62,13 +116,18 @@ function littlelandAvailability_(input, inventory) {
     false
   );
   var occupied = inventory.occupying;
+  var activeLocks = Array.isArray(inventory.activeRoomLocks) ? inventory.activeRoomLocks : [];
   for (var index = 0; index < plans.length; index += 1) {
     var plan = plans[index];
     var inUse = occupied.some(function (booking) {
       return littlelandDateRangesOverlap_(checkin, checkout, booking.checkinDate, booking.checkoutDate) &&
         littlelandArraysIntersect_(plan, booking.roomIds);
     });
-    if (!inUse) return { available: true, roomIds: plan.slice() };
+    var locked = activeLocks.some(function (lock) {
+      return plan.indexOf(lock.roomId) >= 0 &&
+        littlelandDateRangesOverlap_(checkin, checkout, lock.startDate, lock.endDate);
+    });
+    if (!inUse && !locked) return { available: true, roomIds: plan.slice() };
   }
   return { available: false, roomIds: [] };
 }

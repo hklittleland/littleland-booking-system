@@ -184,3 +184,63 @@ test('availability API fails closed for a missing TEST allow-list and rejects ca
   assert.equal(suppliedId.success, false);
   assert.equal(suppliedId.code, 'VALIDATION_FAILED');
 });
+
+
+test('active physical room locks block only their room during the half-open interval', () => {
+  const runtime = createRuntime();
+  const stay = dates();
+  runtime.addRecord('StaffRoomLocks', {
+    roomLockId: 'ROOMLOCK-AVAILABILITY-001', roomId: 'S1',
+    startDate: stay.checkin, endDate: stay.checkout, reason: 'Synthetic maintenance',
+    status: 'ACTIVE', createdAt: '2099-01-01T00:00:00.000Z',
+    createdByStaffId: 'TEST-STAFF-001', createdByStaffNameSnapshot: 'Test Staff',
+    releasedAt: '', releasedByStaffId: '', releasedByStaffNameSnapshot: '', releaseReason: '',
+    recordVersion: 1, idempotencyKey: 'availability-lock-001'
+  });
+
+  assert.deepEqual(Array.from(availability(runtime, 'PRIVATE_SUITE').roomIds), ['S2']);
+  assert.deepEqual(Array.from(availability(runtime, 'DELUXE_SUITE').roomIds), ['S2', 'S3']);
+  const sameDayCheckout = runtime.context.littlelandAvailability_({
+    roomTypeId: 'PRIVATE_SUITE', checkin: stay.checkout, checkout: addDays(stay.checkout, 1)
+  }, runtime.context.littlelandReadInventory_());
+  assert.deepEqual(Array.from(sameDayCheckout.roomIds), ['S1']);
+});
+
+test('a lock on S2 blocks both legal deluxe-suite combinations without inventing S1+S3', () => {
+  const runtime = createRuntime();
+  const stay = dates();
+  runtime.addRecord('StaffRoomLocks', {
+    roomLockId: 'ROOMLOCK-DELUXE-001', roomId: 'S2',
+    startDate: stay.checkin, endDate: stay.checkout, reason: 'Synthetic maintenance',
+    status: 'ACTIVE', createdAt: '2099-01-01T00:00:00.000Z',
+    createdByStaffId: 'TEST-STAFF-001', createdByStaffNameSnapshot: 'Test Staff',
+    releasedAt: '', releasedByStaffId: '', releasedByStaffNameSnapshot: '', releaseReason: '',
+    recordVersion: 1, idempotencyKey: 'deluxe-lock-001'
+  });
+  const result = availability(runtime, 'DELUXE_SUITE');
+  assert.equal(result.available, false);
+  assert.deepEqual(Array.from(result.roomIds), []);
+  assert.notDeepEqual(Array.from(result.roomIds), ['S1', 'S3']);
+});
+
+test('guest availability returns only a boolean when a locked single room is unavailable', () => {
+  const runtime = createRuntime();
+  const stay = dates();
+  runtime.addRecord('StaffRoomLocks', {
+    roomLockId: 'ROOMLOCK-GUEST-001', roomId: 'C1',
+    startDate: stay.checkin, endDate: stay.checkout, reason: 'Private staff-only reason',
+    status: 'ACTIVE', createdAt: '2099-01-01T00:00:00.000Z',
+    createdByStaffId: 'TEST-STAFF-001', createdByStaffNameSnapshot: 'Test Staff',
+    releasedAt: '', releasedByStaffId: '', releasedByStaffNameSnapshot: '', releaseReason: '',
+    recordVersion: 1, idempotencyKey: 'guest-lock-001'
+  });
+  const result = runtime.invokeGet({
+    action: 'availability', checkin: stay.checkin, checkout: stay.checkout,
+    species: 'hamster', roomTypeId: 'HAMSTER_BOX', quantity: '1'
+  });
+  assert.equal(result.success, true);
+  assert.deepEqual(Object.keys(result.data), ['available']);
+  assert.equal(result.data.available, false);
+  assert.equal(JSON.stringify(result).includes('ROOMLOCK-GUEST-001'), false);
+  assert.equal(JSON.stringify(result).includes('Private staff-only reason'), false);
+});

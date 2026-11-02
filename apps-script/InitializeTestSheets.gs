@@ -113,6 +113,15 @@ var LITTLELAND_TEST_SHEET_DEFINITIONS = [
       'updatedByStaffId', 'idempotencyKey', 'petId', 'petNameSnapshot', 'groupId',
       'billingBasis', 'unitRate', 'nightsCharged'
     ]
+  },
+  {
+    name: 'StaffRoomLocks',
+    headers: [
+      'roomLockId', 'roomId', 'startDate', 'endDate', 'reason', 'status',
+      'createdAt', 'createdByStaffId', 'createdByStaffNameSnapshot',
+      'releasedAt', 'releasedByStaffId', 'releasedByStaffNameSnapshot',
+      'releaseReason', 'recordVersion', 'idempotencyKey'
+    ]
   }
 ];
 

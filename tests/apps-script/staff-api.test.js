@@ -1892,3 +1892,189 @@ test("staff.internalAssignmentNoteUpdate records a private note edit and Staff i
   assert.equal(r.records("Logs").at(-1).action, "staff.internalAssignmentNoteUpdate");
   assert.equal(r.records("Logs").at(-1).actorStaffNameSnapshot, "Test Staff");
 });
+
+
+function roomLockRequest(token, key, roomId, startDate, endDate, reason = 'Synthetic TEST maintenance') {
+  return {
+    action: 'staff.roomLockCreate', token, idempotencyKey: key,
+    data: { roomId, startDate, endDate, reason }
+  };
+}
+
+test('staff.roomLockCreate requires login, accepts only an active physical room, and is idempotent with actor Logs', () => {
+  const r = staffRuntime();
+  const denied = r.invokeStaff(roomLockRequest('', 'room-lock-auth-001', 'S1', '2099-05-01', '2099-05-03'));
+  assert.equal(denied.success, false);
+  assert.equal(denied.code, 'STAFF_AUTH_REQUIRED');
+  assert.equal(r.records('StaffRoomLocks').length, 0);
+
+  const token = loggedIn(r);
+  const virtual = r.invokeStaff(roomLockRequest(token, 'room-lock-virtual-001', 'SS1', '2099-05-01', '2099-05-03'));
+  assert.equal(virtual.success, false);
+  assert.equal(virtual.code, 'VALIDATION_FAILED');
+  assert.equal(r.records('StaffRoomLocks').length, 0);
+
+  const body = roomLockRequest(token, 'room-lock-create-001', 'S1', '2099-05-01', '2099-05-03', 'Mock plumbing work');
+  const created = r.invokeStaff(body);
+  assert.equal(created.success, true, JSON.stringify(created));
+  assert.equal(created.data.roomId, 'S1');
+  assert.equal(created.data.status, 'ACTIVE');
+  assert.equal(created.data.recordVersion, 1);
+  assert.equal(created.data.reason, 'Mock plumbing work');
+  assert.equal(r.records('StaffRoomLocks').length, 1);
+  assert.equal(r.records('StaffRoomLocks')[0].createdByStaffId, 'staff-test-1');
+  assert.equal(r.records('StaffRoomLocks')[0].createdByStaffNameSnapshot, 'Test Staff');
+  assert.equal(r.records('Logs').length, 1);
+  assert.equal(r.records('Logs')[0].entityType, 'ROOM_LOCK');
+  assert.equal(r.records('Logs')[0].entityId, created.data.roomLockId);
+  assert.equal(r.records('Logs')[0].actorStaffNameSnapshot, 'Test Staff');
+  assert.equal(r.records('IdempotencyKeys')[0].state, 'COMPLETED');
+
+  const replay = r.invokeStaff(body);
+  assert.equal(replay.success, true);
+  assert.equal(replay.data.roomLockId, created.data.roomLockId);
+  assert.equal(r.records('StaffRoomLocks').length, 1);
+  assert.equal(r.records('Logs').length, 1);
+});
+
+test('staff.roomLockCreate rejects invalid ranges and occupied room overlap but allows same-day checkout', () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const occupied = addBooking(r, {
+    bookingStatus: 'CONFIRMED', roomTypeId: 'PRIVATE_SUITE',
+    checkinDate: '2099-05-01', checkoutDate: '2099-05-03', allocatedRoomIdsJson: '["S1"]'
+  });
+  const invalid = r.invokeStaff(roomLockRequest(token, 'room-lock-invalid-001', 'S1', '2099-05-03', '2099-05-03'));
+  assert.equal(invalid.success, false);
+  assert.equal(invalid.code, 'VALIDATION_FAILED');
+  const overlapping = r.invokeStaff(roomLockRequest(token, 'room-lock-overlap-001', 'S1', '2099-05-02', '2099-05-04'));
+  assert.equal(overlapping.success, false);
+  assert.equal(overlapping.code, 'ROOM_LOCK_CONFLICT');
+  assert.equal(r.records('StaffRoomLocks').length, 0);
+  assert.equal(r.records('IdempotencyKeys').length, 0);
+
+  const afterCheckout = r.invokeStaff(roomLockRequest(token, 'room-lock-checkout-001', 'S1', occupied.checkoutDate, '2099-05-04'));
+  assert.equal(afterCheckout.success, true, JSON.stringify(afterCheckout));
+  assert.equal(r.records('StaffRoomLocks').length, 1);
+});
+
+test('room locks do not cancel pending bookings; they flag no-room conflicts and deposit confirmation remains pending', () => {
+  const r = staffRuntime();
+  const pending = addBooking(r, { checkinDate: '2099-05-01', checkoutDate: '2099-05-03', followUpRequired: false });
+  const token = loggedIn(r);
+  const first = r.invokeStaff(roomLockRequest(token, 'room-lock-pending-s1', 'S1', pending.checkinDate, pending.checkoutDate));
+  assert.equal(first.success, true, JSON.stringify(first));
+  assert.deepEqual(JSON.parse(JSON.stringify(first.data.pendingConflictBookingIds)), []);
+  const second = r.invokeStaff(roomLockRequest(token, 'room-lock-pending-s2', 'S2', pending.checkinDate, pending.checkoutDate));
+  assert.equal(second.success, true, JSON.stringify(second));
+  assert.deepEqual(JSON.parse(JSON.stringify(second.data.pendingConflictBookingIds)), [pending.bookingId]);
+
+  const calendar = r.invokeStaff({ action: 'staff.calendar', token, month: '2099-05' });
+  assert.equal(calendar.success, true, JSON.stringify(calendar));
+  assert.equal(calendar.data.roomLocks.length, 2);
+  assert.equal(calendar.data.bookings.find((booking) => booking.bookingId === pending.bookingId).roomConflict, true);
+  const before = r.records('Bookings')[0];
+  assert.equal(before.bookingStatus, 'PENDING_DEPOSIT');
+  assert.equal(before.allocatedRoomIdsJson, '[]');
+
+  const confirmed = r.invokeStaff({
+    action: 'staff.confirmDeposit', token, bookingId: pending.bookingId,
+    expectedRecordVersion: 1, expectedStatus: 'PENDING_DEPOSIT', idempotencyKey: 'room-lock-deposit-001'
+  });
+  assert.equal(confirmed.success, true, JSON.stringify(confirmed));
+  assert.equal(confirmed.data.confirmed, false);
+  assert.equal(confirmed.data.roomConflict, true);
+  assert.equal(confirmed.data.detail.bookingStatus, 'PENDING_DEPOSIT');
+  assert.equal(confirmed.data.detail.depositStatus, 'PAID');
+  assert.deepEqual(JSON.parse(confirmed.data.detail.allocatedRoomIdsJson), []);
+  assert.equal(String(confirmed.data.detail.followUpRequired), 'true');
+  assert.equal(r.records('Payments').length, 1);
+  assert.equal(r.records('Bookings')[0].bookingStatus, 'PENDING_DEPOSIT');
+});
+
+test('staff.roomLockRelease is versioned, soft, idempotent, logged, and restores availability', () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const created = r.invokeStaff(roomLockRequest(token, 'room-lock-release-create', 'C1', '2099-05-01', '2099-05-03'));
+  assert.equal(created.success, true, JSON.stringify(created));
+  const id = created.data.roomLockId;
+  const stale = r.invokeStaff({
+    action: 'staff.roomLockRelease', token, expectedRecordVersion: 99,
+    idempotencyKey: 'room-lock-release-stale', data: { roomLockId: id, releaseReason: 'TEST' }
+  });
+  assert.equal(stale.success, false);
+  assert.equal(stale.code, 'ROOM_LOCK_VERSION_CONFLICT');
+  assert.equal(r.records('StaffRoomLocks')[0].status, 'ACTIVE');
+
+  const body = {
+    action: 'staff.roomLockRelease', token, expectedRecordVersion: 1,
+    idempotencyKey: 'room-lock-release-001',
+    data: { roomLockId: id, releaseReason: 'TEST maintenance completed' }
+  };
+  const released = r.invokeStaff(body);
+  assert.equal(released.success, true, JSON.stringify(released));
+  assert.equal(released.data.status, 'RELEASED');
+  assert.equal(released.data.recordVersion, 2);
+  assert.equal(r.records('StaffRoomLocks')[0].status, 'RELEASED');
+  assert.equal(r.records('StaffRoomLocks')[0].releasedByStaffId, 'staff-test-1');
+  assert.equal(r.records('Logs').length, 2);
+  assert.equal(r.records('Logs')[1].entityType, 'ROOM_LOCK');
+  assert.equal(r.records('Logs')[1].entityId, id);
+
+  const replay = r.invokeStaff(body);
+  assert.equal(replay.success, true);
+  assert.equal(replay.data.status, 'RELEASED');
+  assert.equal(r.records('StaffRoomLocks').length, 1);
+  assert.equal(r.records('Logs').length, 2);
+  const available = r.invokeGet({
+    action: 'availability', checkin: '2099-05-01', checkout: '2099-05-03',
+    species: 'hamster', roomTypeId: 'HAMSTER_BOX', quantity: '1'
+  });
+  assert.equal(available.success, true);
+  assert.equal(available.data.available, true);
+});
+
+
+test('staff.extendStay rejects ORIGINAL_ROOM when its newly extended dates intersect an active lock', () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, 'TEST-EXT-LOCK-ORIGINAL-002');
+  addPaidPayment(r, booking.bookingId, 'PAY-EXT-LOCK-ORIGINAL-002', 'DEPOSIT', 178);
+  const roomId = JSON.parse(booking.allocatedRoomIdsJson)[0];
+  const lock = r.invokeStaff(roomLockRequest(token, 'room-lock-ext-original-002', roomId, booking.checkoutDate, '2026-11-07'));
+  assert.equal(lock.success, true, JSON.stringify(lock));
+  const beforeBooking = structuredClone(r.records('Bookings'));
+  const beforePayments = structuredClone(r.records('Payments'));
+  const beforeKeys = r.records('IdempotencyKeys').length;
+  const result = r.invokeStaff(extensionRequest(token, booking, 'ext-locked-original-002', {
+    internalAssignment: 'ORIGINAL_ROOM', newCheckoutDate: '2026-11-07'
+  }));
+  assert.equal(result.success, false);
+  assert.equal(result.code, 'ROOM_NO_LONGER_AVAILABLE');
+  assert.deepEqual(r.records('Bookings'), beforeBooking);
+  assert.deepEqual(r.records('Payments'), beforePayments);
+  assert.equal(r.records('IdempotencyKeys').length, beforeKeys);
+});
+
+test('staff.internalAssignmentUpdate rejects EXT-to-original move when that room is locked for extension dates', () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, 'TEST-EXT-LOCK-MOVE-002');
+  addPaidPayment(r, booking.bookingId, 'PAY-EXT-LOCK-MOVE-002', 'DEPOSIT', 178);
+  const extended = r.invokeStaff(extensionRequest(token, booking, 'ext-lock-move-start-002'));
+  assert.equal(extended.success, true, JSON.stringify(extended));
+  const current = r.records('Bookings')[0];
+  const roomId = JSON.parse(current.allocatedRoomIdsJson)[0];
+  const lock = r.invokeStaff(roomLockRequest(token, 'room-lock-ext-move-002', roomId, '2026-11-05', '2026-11-07'));
+  assert.equal(lock.success, true, JSON.stringify(lock));
+  const result = r.invokeStaff({
+    action: 'staff.internalAssignmentUpdate', token, bookingId: booking.bookingId,
+    expectedRecordVersion: Number(current.recordVersion), expectedStatus: current.bookingStatus,
+    idempotencyKey: 'ext-lock-move-back-002',
+    data: { internalAssignment: 'ORIGINAL_ROOM', reason: 'TEST locked original room' }
+  });
+  assert.equal(result.success, false);
+  assert.equal(result.code, 'ROOM_NO_LONGER_AVAILABLE');
+  assert.equal(r.records('Bookings')[0].internalAssignment, 'EXT');
+  assert.equal(r.records('Bookings')[0].checkoutDate, '2026-11-07');
+});

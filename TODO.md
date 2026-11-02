@@ -642,3 +642,35 @@
 - 只使用 LittleLand_TEST 內現有已確認兔子豪華房 Booking；不用真實客人、不新增 Booking、不建立付款、不碰 Production。修改後 TEST 資料保留。延住前先唯讀比對日期、房型、住宿晚數、房間分配、服務明細、有效調整、Payments 及現金按金；與已確認候選條件不符即停止，不擅自改期/改訂金。
 - 已指定候選基準：原退房延長兩晚並轉 EXT；原 `roomTypeId=DELUXE_ROOM`、原房間分配保持；新增兩晚基本房費 HK$356；基本房費 HK$712；每日梳毛 HK$200；單次梳毛 HK$70、提早入住 HK$200 不複收；標準服務費 HK$470；`estimatedTotal` HK$1,182；既有一次性人工減項 HK$70 有效，住宿總額 HK$1,112；已收訂金 HK$178 及其 Payment 完全不變；尾數 HK$934；現金按金 HK$1,000 不變；EXT 區間不佔實體房；營收仍分類為豪華房；Staff 月曆以同日多張 fixture 證明不受容量限制；Logs 有日期、安排、Staff、時間與原因。
 - 若實際既有 TEST Booking 的服務/金額與此基準不同，依實際唯讀資料重算並保留付款，不可為符合預期而改寫歷史；有不一致或風險時停止資料 mutation 並回報。
+
+
+# TASK-ROOM-LOCK-01 — Staff 實體房鎖定（TEST-only）
+
+狀態：已按使用者選擇的建議方案核准；實作及 TEST 驗收進行中。只使用 TEST Apps Script／LittleLand_TEST／Staff TEST UI；不接 Production、不 Merge `develop`／`main`。不建立新的 Booking 或 Payment，不改客人預約 UI，不變更已確認的入住狀態規則。
+
+## 1. Staff 鎖定與解除實體房
+
+- 員工登入後可為一間實體房設定不可使用日期區間及必填原因。日期區間使用入住日含、退房日不含；日期須為有效 `YYYY-MM-DD` 且退房日期晚於起始日期。
+- 只可鎖定 LittleLand TEST `Rooms` 主檔中有效的 `PHYSICAL` 實體房；不可鎖定虛擬組合 `SS1`／`SSR1`，不可將 `EXT` 當房間鎖定。
+- 如鎖定日期與該房間任何 `CONFIRMED`／`CHECKED_IN` 實體佔房區間重疊，拒絕建立鎖房且不得更改 Booking、Payment 或房號。日期判斷一律使用 `[startDate,endDate)`；既有 EXT Booking 只佔用首次延期邊界前的原實體房區間。延住若選擇保留原房，或將 Booking 從 EXT 移回原房，也必須重新檢查原房及新增住宿區間是否與任何 `ACTIVE` 鎖房重疊；重疊時拒絕原房安排，但可改用 EXT。
+- 如日期與同一實體房另一個 `ACTIVE` 鎖房重疊，拒絕重複鎖定。只有 `ACTIVE` 鎖房阻止可用性；解除改為 `RELEASED`，不得刪除鎖房或 Logs。
+- 鎖房建立、解除均須登入有效 Staff；採用既有 Script Lock、idempotency／重播保護及 Staff Logs，記錄鎖房 ID、實體房、日期、原因、操作者及時間。重送相同請求不得重複建立／解除或重複寫 Logs。
+
+## 2. 房態與待處理訂單
+
+- `ACTIVE` 鎖房必須參與唯一實體房態 allocator；它會影響客人房態、Staff 可用性、建單檢查及員工確認訂金時的最新房間分配。鎖房詳情及原因不得透過客人 API 暴露。
+- `CONFIRMED`／`CHECKED_IN` 重疊會拒絕鎖房。`PENDING_CONFIRMATION`／`PENDING_DEPOSIT` 不佔房、不因鎖房被刪除、取消、改狀態或改付款；若鎖房令相關待處理 Booking 的房型在其日期內沒有可用實體組合，Staff 後台顯示房態衝突／跟進提示。
+- 收到訂金並準備確認時仍須在鎖內重新檢查最新房態。若鎖房造成無房，依既有規則保留已收款紀錄及待處理狀態、allocation 維持 `[]`、顯示衝突，不得分配已鎖房間或自動取消訂單。解除衝突後可重新確認及分配。
+- 解除鎖房後，該區間重新參與可用房配置；仍有其他 Booking／鎖房佔用時不得錯誤顯示可用。
+
+## 3. Staff 月曆介面
+
+- 房間月曆的十間實體房矩陣以清楚且與空房／已確認／入住中／衝突不同的狀態顯示鎖定日期；起始日屬鎖定區間，結束日不屬鎖定區間。鎖定格不可顯示為空房。
+- 月曆列出目前月份仍有效的鎖房及房號、日期區間、原因，提供員工解除操作；新增表單選房、起始日期、結束日期與原因，手機版可直接使用。成功後重新載入 Staff TEST 房態；衝突或網絡失敗保留表單內容並顯示可讀錯誤。
+- 鎖房操作只供 Staff 使用，不新增客人可選房型，不建立 Booking／Payment，不修改已登入保護或客人網站。
+
+## 4. TEST schema 及操作界線
+
+- 在 TEST 初始化器以 add-only 方式新增 `StaffRoomLocks` 工作表／表頭；原有資料與表頭保留，不清空、不重排、不刪除。所有實際表格操作只可先驗證 Script Property、Spreadsheet ID 與名稱 `LittleLand_TEST` 一致。
+- 自動化驗收使用 Apps Script mock，覆蓋房態半開區間、鎖房與 booking 衝突、PENDING 保留及提示、鎖定／解除／重播／操作 Staff Logs、客人 API 隱私、員工登入保護、schema 初始化與 Staff 月曆顯示；整體 `npm test`、語法檢查及 `git diff --check` 必須通過。
+- 如需實際 TEST 驗證，只能選一間經回讀確認無佔用的實體房及 TEST 日期，建立後立即解除，重新讀回 `StaffRoomLocks`／Logs 並確認房態恢復；不建 Booking／Payment、不保留未經使用者指定的臨時鎖房、不接 Production。

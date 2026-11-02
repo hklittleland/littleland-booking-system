@@ -75,3 +75,17 @@ test("idempotent staff mutation retries once with the same request payload", asy
   assert.deepEqual(requestBodies[0], requestBodies[1]);
   assert.equal(requestBodies[0].idempotencyKey, "deposit-test-0001");
 });
+
+test("room lock aliases map to staff actions and ROOM_LOCK_CONFLICT is marked as conflict", async () => {
+  const bodies = [];
+  const api = createClient(async (_url, options) => { bodies.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ success: true, data: {} }) }; });
+  await api.request("roomLockCreate", { idempotencyKey: "create-1", data: { roomId: "S1", startDate: "2025-06-01", endDate: "2025-06-02", reason: "repair" } }, "token");
+  await api.request("roomLockRelease", { idempotencyKey: "release-1", data: { roomLockId: "L1", releaseReason: "員工於月曆手動解除" }, expectedRecordVersion: 4 }, "token");
+  assert.equal(bodies[0].action, "staff.roomLockCreate");
+  assert.deepEqual(bodies[0].data, { roomId: "S1", startDate: "2025-06-01", endDate: "2025-06-02", reason: "repair" });
+  assert.equal(bodies[1].action, "staff.roomLockRelease");
+  assert.equal(bodies[1].expectedRecordVersion, 4);
+  assert.equal(bodies[1].data.releaseReason, "員工於月曆手動解除");
+  const conflictApi = createClient(async () => ({ ok: false, json: async () => ({ success: false, code: "ROOM_LOCK_CONFLICT", message: "locked" }) }));
+  await assert.rejects(conflictApi.request("roomLockCreate", {}), (error) => error.code === "ROOM_LOCK_CONFLICT" && error.conflict === true);
+});

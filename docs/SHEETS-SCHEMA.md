@@ -1,8 +1,8 @@
 # LittleLand V3.0 — TEST Google Sheets 資料結構
 
-**Schema 版本：** 1.2（2026-11-02）
+**Schema 版本：** 1.3（2026-11-02）
 **環境：** 僅限 `LittleLand_TEST`；不連接或複製正式 LittleLand 資料。
-**工作表：** `Bookings`、`Pets`、`Payments`、`Rooms`、`Logs`、`IdempotencyKeys`、`Staff`、`Sessions`、`StaffSchedules`、`ScheduleEmployees`、`BookingAdjustments`。
+**工作表：** `Bookings`、`Pets`、`Payments`、`Rooms`、`Logs`、`IdempotencyKeys`、`Staff`、`Sessions`、`StaffSchedules`、`ScheduleEmployees`、`BookingAdjustments`、`StaffRoomLocks`。
 
 ## 安全及共通規則
 
@@ -155,7 +155,7 @@ scheduleId, workDate, staffId, staffNameSnapshot, status, startTime, endTime, sw
 1. 複製 `LittleLand_TEST` 試算表 ID（不是網址中的其他參數），在將來的 Apps Script 專案 Script Properties 設定 `LITTLELAND_TEST_SPREADSHEET_ID`。
 2. 將 `apps-script/InitializeTestSheets.gs` 加入該 TEST 專案，確認 Script Property 仍指向 `LittleLand_TEST`。
 3. 手動執行 `initializeLittleLandTestSheets()`。初始化器會同時檢查 Script Property ID、目標 ID 及試算表名稱；任何一項缺失／不符即停止。
-4. 初始化器只建立缺少的 11 個工作表、補上空白表頭及按 `roomId` 冪等補入 12 筆固定 Rooms 主檔。遇到額外分頁、不符表頭、重複／未知房間 ID 或內容不一致便停止，不清空、不覆寫、不刪除既有資料；新增的 `ScheduleEmployees` 只建表頭、不預設登入帳號。API 初次讀取若名冊空白，會以目前兩位有效 TEST 登入員工名稱及可編輯的第三位「Yip」作為表單預設；正式名冊只於員工明確按下保存後寫入該表。
+4. 初始化器只建立缺少的 12 個工作表、補上空白表頭及按 `roomId` 冪等補入 12 筆固定 Rooms 主檔。遇到額外分頁、不符表頭、重複／未知房間 ID 或內容不一致便停止，不清空、不覆寫、不刪除既有資料；新增的 `ScheduleEmployees`、`StaffRoomLocks` 只建表頭、不預設登入帳號或鎖房紀錄。API 初次讀取若名冊空白，會以目前兩位有效 TEST 登入員工名稱及可編輯的第三位「Yip」作為表單預設；正式名冊只於員工明確按下保存後寫入該表。
 
 本次的實際 TEST Spreadsheet 以 Google Workspace Sheets API 建立及初始化；Apps Script source 僅為後續手動重複初始化方法，不部署 API、不建立 Staff Login、不連接正式資料。
 
@@ -165,3 +165,18 @@ scheduleId, workDate, staffId, staffNameSnapshot, status, startTime, endTime, sw
 `Bookings` 欄位採 append-only 遷移：`internalAssignment`（`EXT`／`ORIGINAL_ROOM`）、`extensionStartDate`、`internalAssignmentNote`、`lastExtensionFromDate`、`lastExtensionAddedNights`、`lastExtensionAddedBaseRoomFee`。首次延期日期邊界用來把原實體住宿與延住期間區分；最近一次延期欄位只保存本次前退房日、增加晚數與基本房費，不建立住宿分段，也不修改原 `roomTypeId`、實收付款或 `allocatedRoomIdsJson`。EXT 不新增 `Rooms` 列，亦不參與客人 Availability。
 
 新增人工服務費需在 `BookingAdjustments` 明確使用 `billingBasis=ONCE` 或 `billingBasis=PER_NIGHT`。`PER_NIGHT` 必須保存帶正負方向的 `unitRate` 及 `nightsCharged`；延住時透過 append-only `REVERSAL` 與新 `SURCHARGE` 更新按晚金額，不覆寫既有 adjustment 或 `Payments`。舊人工費缺少 `billingBasis` 時視作一次性費用，不因延住重收。先前「初始建立時不部署 API」的說明是歷史記錄；本 addendum 由既有已核實的 TEST Apps Script API 及 `LittleLand_TEST` 套用，Production 不變。
+
+
+## `StaffRoomLocks` — 員工實體房鎖定（2026-11-02，TEST only）
+
+**主鍵：** `roomLockId`。此表只存員工鎖定的實體房日期區間；不屬於 Booking、付款或客人資料。
+
+```text
+roomLockId, roomId, startDate, endDate, reason, status, createdAt,
+createdByStaffId, createdByStaffNameSnapshot, releasedAt, releasedByStaffId,
+releasedByStaffNameSnapshot, releaseReason, recordVersion, idempotencyKey
+```
+
+`roomId` 必須是啟用中的 `PHYSICAL` 房間；`SS1`／`SSR1` 及 `EXT` 虛擬安排不可鎖定。日期區間採半開方式 `[startDate,endDate)`：起始日整日不可用，結束／退房日重新可用。`ACTIVE` 才會阻擋房態；`RELEASED` 是保留稽核的軟解除紀錄，不刪除列。每次建立／解除均經登入 Staff API、Script Lock 及 idempotency，並於 `Logs` 以 `entityType=ROOM_LOCK`、`entityId=roomLockId` 記錄操作者、時間、房號、區間及原因。
+
+鎖房納入共用 physical inventory：客人 availability、員工分房／收訂金確認及延期檢查都不可以使用被鎖房間。建立鎖房若與 `CONFIRMED`／`CHECKED_IN` 的實際實體佔房或另一個有效鎖房重疊，整項拒絕且不修改 Booking／Payment。`PENDING_CONFIRMATION`／`PENDING_DEPOSIT` 不佔房、不自動取消；如鎖房令其沒有任何合法房間組合，Staff 月曆／待跟進頁標示房態衝突，留待員工處理。鎖房資料只可由登入後的 Staff 月曆讀寫；客人 availability 只回傳 `available` 布林值，不透露鎖房、原因、房號或其他訂單資料。

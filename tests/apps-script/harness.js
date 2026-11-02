@@ -17,6 +17,7 @@ const APPS_SCRIPT_FILES = [
   'apps-script/StaffCrypto.gs',
   'apps-script/StaffAuth.gs',
   'apps-script/StaffOperations.gs',
+  'apps-script/StaffRoomLocks.gs',
   'apps-script/BookingApi.gs'
 ];
 

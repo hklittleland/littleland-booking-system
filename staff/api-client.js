@@ -12,6 +12,7 @@
     availability: "staff.availability", createBooking: "staff.createBooking", schedules: "staff.schedules", scheduleSave: "staff.scheduleSave", scheduleSwap: "staff.scheduleSwap", scheduleMonthSave: "staff.scheduleMonthSave", scheduleEmployeesSave: "staff.scheduleEmployeesSave",
     addSurcharge: "staff.surchargeAdd", reverseSurcharge: "staff.surchargeReverse", refundDeposit: "staff.depositRefund", earlyCheckout: "staff.earlyCheckout", petCountUpdate: "staff.petCountUpdate",
     extendStay: "staff.extendStay", internalAssignmentUpdate: "staff.internalAssignmentUpdate", internalAssignmentNoteUpdate: "staff.internalAssignmentNoteUpdate",
+    roomLockCreate: "staff.roomLockCreate", roomLockRelease: "staff.roomLockRelease",
   });
   const LOGIN_RESPONSE_UNCERTAIN = "登入回應未確認；為避免建立重複 Session，系統不會自動重試。請先確認登入狀態；如仍未能登入，請聯絡管理員檢查 TEST Session。";
   async function request(action, payload, token) {
@@ -27,7 +28,7 @@
     try { result = await response.json(); } catch (_) { throw new Error(actionName === ACTIONS.login ? LOGIN_RESPONSE_UNCERTAIN : "TEST API 回應格式無效；沒有資料被確認成功。"); }
     if (!response.ok || !result || result.success !== true) {
       const failure = new Error((result && result.message) || "TEST API 操作失敗。"); failure.code = result && result.code; failure.data = result && result.data;
-      failure.conflict = ["ROOM_NO_LONGER_AVAILABLE", "ROOM_CONFLICT", "ROOM_ALLOCATION_FAILED", "BOOKING_VERSION_CONFLICT"].includes(failure.code); throw failure;
+      failure.conflict = ["ROOM_NO_LONGER_AVAILABLE", "ROOM_CONFLICT", "ROOM_ALLOCATION_FAILED", "BOOKING_VERSION_CONFLICT", "ROOM_LOCK_CONFLICT"].includes(failure.code); throw failure;
     }
     return result.data || {};
   }

@@ -92,8 +92,8 @@ test('TEST initializer additively creates V3 tabs, preserves existing data, and 
   const beforeBookingRows = spreadsheet.getSheetByName('Bookings').rows();
 
   const first = runtime.context.initializeLittleLandTestSheets();
-  assert.deepEqual(JSON.parse(JSON.stringify(first.sheetsCreated)), ['StaffSchedules', 'ScheduleEmployees', 'BookingAdjustments']);
-  assert.deepEqual(JSON.parse(JSON.stringify(first.headersCreated)), ['StaffSchedules', 'ScheduleEmployees', 'BookingAdjustments']);
+  assert.deepEqual(JSON.parse(JSON.stringify(first.sheetsCreated)), ['StaffSchedules', 'ScheduleEmployees', 'BookingAdjustments', 'StaffRoomLocks']);
+  assert.deepEqual(JSON.parse(JSON.stringify(first.headersCreated)), ['StaffSchedules', 'ScheduleEmployees', 'BookingAdjustments', 'StaffRoomLocks']);
   assert.deepEqual(JSON.parse(JSON.stringify(first.columnsAdded)), [
     'cashDepositCollectedAmount',
     'internalAssignment', 'extensionStartDate', 'internalAssignmentNote',
@@ -109,12 +109,13 @@ test('TEST initializer additively creates V3 tabs, preserves existing data, and 
     assert.deepEqual(bookingsAfterMigration[index + 1].slice(0, row.length), row);
     assert.ok(bookingsAfterMigration[index + 1].slice(row.length).every((value) => value === "" || value === null));
   });
-  assert.equal(spreadsheet.getSheets().length, 11);
+  assert.equal(spreadsheet.getSheets().length, 12);
 
   const definitions = runtime.context.LITTLELAND_TEST_SHEET_DEFINITIONS;
   const adjustments = spreadsheet.getSheetByName('BookingAdjustments');
   const schedule = spreadsheet.getSheetByName('StaffSchedules');
   const scheduleEmployees = spreadsheet.getSheetByName('ScheduleEmployees');
+  const roomLocks = spreadsheet.getSheetByName('StaffRoomLocks');
   assert.deepEqual(JSON.parse(JSON.stringify(adjustments.rows()[0])), JSON.parse(JSON.stringify(definitions.find((item) => item.name === 'BookingAdjustments').headers)));
   assert.ok(adjustments.rows()[0].includes('effectiveDate'));
   assert.ok(adjustments.rows()[0].includes('petId'));
@@ -126,9 +127,12 @@ test('TEST initializer additively creates V3 tabs, preserves existing data, and 
   assert.ok(spreadsheet.getSheetByName('Logs').rows()[0].includes('actorStaffNameSnapshot'));
   assert.deepEqual(JSON.parse(JSON.stringify(schedule.rows()[0])), JSON.parse(JSON.stringify(definitions.find((item) => item.name === 'StaffSchedules').headers)));
   assert.deepEqual(JSON.parse(JSON.stringify(scheduleEmployees.rows()[0])), JSON.parse(JSON.stringify(definitions.find((item) => item.name === 'ScheduleEmployees').headers)));
+  assert.deepEqual(JSON.parse(JSON.stringify(roomLocks.rows()[0])), JSON.parse(JSON.stringify(definitions.find((item) => item.name === 'StaffRoomLocks').headers)));
+  assert.equal(roomLocks.rows().length, 1, 'migration creates only the header; it does not seed lock records');
   assert.equal(adjustments.getFrozenRows(), 1);
   assert.equal(schedule.getFrozenRows(), 1);
   assert.equal(scheduleEmployees.getFrozenRows(), 1);
+  assert.equal(roomLocks.getFrozenRows(), 1);
 
   const second = runtime.context.initializeLittleLandTestSheets();
   assert.deepEqual(JSON.parse(JSON.stringify(second.sheetsCreated)), []);
