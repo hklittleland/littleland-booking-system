@@ -1694,6 +1694,69 @@ test("staff.extendStay reprices the original room, keeps a paid deposit and Paym
   assert.match(log.changedFieldsJson, /internalAssignment/);
 });
 
+test("staff.extendStay can be repeated after each balance is fully paid, adding a new balance without rewriting Payments", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const booking = makeExtensionBooking(r, "TEST-EXT-REPEATED-PAID-BALANCE-001", {
+    balanceStatus: "PAID",
+    remainingBalance: 0,
+  });
+  addPaidPayment(r, booking.bookingId, "PAY-EXT-REPEATED-DEPOSIT-001", "DEPOSIT", 178);
+  addPaidPayment(r, booking.bookingId, "PAY-EXT-REPEATED-ORIGINAL-BALANCE-001", "BALANCE", 478);
+  addManualExtensionAdjustment(r, booking.bookingId, { adjustmentId: "ADJ-EXT-REPEATED-ONCE-001" });
+
+  const checkoutDates = ["2026-11-07", "2026-11-09", "2026-11-11", "2026-11-13", "2026-11-15"];
+  let paidBeforeExtension = 656;
+  let current = r.records("Bookings")[0];
+
+  checkoutDates.forEach((checkoutDate, index) => {
+    const paymentsBefore = structuredClone(r.records("Payments"));
+    const previousVersion = Number(current.recordVersion);
+    const result = r.invokeStaff(extensionRequest(token, current, `ext-paid-repeat-${index + 1}`, {
+      newCheckoutDate: checkoutDate,
+      internalAssignment: "EXT",
+    }));
+
+    assert.equal(result.success, true, JSON.stringify(result));
+    assert.equal(result.data.checkoutDate, checkoutDate);
+    assert.equal(result.data.roomTypeId, "DELUXE_ROOM");
+    assert.equal(result.data.internalAssignment, "EXT");
+    assert.equal(result.data.total, 656 + (index + 1) * 456);
+    assert.equal(result.data.paidAmount, paidBeforeExtension);
+    assert.equal(result.data.depositAmount, 178);
+    assert.equal(result.data.remainingBalance, 456);
+    assert.equal(result.data.cashDepositAmount, 1000);
+    assert.deepEqual(r.records("Payments"), paymentsBefore, "extension must not create or rewrite a Payment");
+
+    current = r.records("Bookings")[0];
+    assert.equal(current.recordVersion, previousVersion + 1);
+    assert.equal(current.balanceStatus, "UNPAID");
+    assert.equal(current.remainingBalance, 456);
+    assert.equal(current.depositAmount, 178);
+    assert.equal(current.cashDepositAmount, 1000);
+    assert.equal(current.extensionStartDate, "2026-11-05");
+    assert.equal(current.lastExtensionFromDate, index === 0 ? "2026-11-05" : checkoutDates[index - 1]);
+
+    if (index < checkoutDates.length - 1) {
+      addPaidPayment(r, booking.bookingId, `PAY-EXT-REPEATED-NEW-BALANCE-${index + 1}`, "BALANCE", 456);
+      r.context.littlelandUpdateRecordByKey_("Bookings", "bookingId", booking.bookingId, {
+        balanceStatus: "PAID",
+        remainingBalance: 0,
+      });
+      paidBeforeExtension += 456;
+      current = r.records("Bookings")[0];
+    }
+  });
+
+  assert.equal(r.records("Payments").length, 2 + checkoutDates.length - 1);
+  assert.equal(r.records("BookingAdjustments").length, 1, "one-time manual adjustment must remain unchanged");
+  assert.equal(r.records("Logs").filter((log) => log.action === "staff.extendStay").length, checkoutDates.length);
+  assert.equal(current.checkoutDate, "2026-11-15");
+  assert.equal(current.internalAssignment, "EXT");
+  assert.equal(current.roomTypeId, "DELUXE_ROOM");
+  assert.equal(current.remainingBalance, 456);
+});
+
 test("staff.extendStay rejects an occupied original room without changing data, then allows the same extension through EXT and reprices an unpaid deposit", () => {
   const r = staffRuntime();
   const token = loggedIn(r);
