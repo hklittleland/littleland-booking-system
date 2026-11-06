@@ -331,6 +331,63 @@ function addStaffPet(r, bookingId, overrides = {}) {
   r.addRecord("Pets", record);
   return record;
 }
+test("staff.bookings paginates 15 records with newest-first order and stable bookingId ties", () => {
+  const r = staffRuntime(), token = loggedIn(r);
+  for (let i = 1; i <= 32; i++) {
+    const id = "BOOKING-" + String(i).padStart(2, "0");
+    addBooking(r, { bookingId: id, createdAt: i <= 3 ? "2026-12-31T00:00:00Z" : "2026-" + String(Math.ceil(i / 30)).padStart(2, "0") + "-" + String(((i - 1) % 30) + 1).padStart(2, "0") + "T00:00:00Z" });
+  }
+  const page1 = r.invokeStaff({ action: "staff.bookings", token });
+  assert.equal(page1.success, true);
+  assert.equal(page1.data.bookings.length, 15);
+  assert.deepEqual([page1.data.page, page1.data.pageSize, page1.data.totalCount, page1.data.totalPages], [1, 15, 32, 3]);
+  assert.equal(page1.data.bookings[0].bookingId, "BOOKING-03");
+  assert.deepEqual(page1.data.bookings.slice(0, 3).map((b) => b.bookingId), ["BOOKING-03", "BOOKING-02", "BOOKING-01"]);
+  const page2 = r.invokeStaff({ action: "staff.bookings", token, page: 2 });
+  assert.equal(page2.data.bookings.length, 15);
+  assert.equal(page2.data.bookings[0].bookingId, "BOOKING-20");
+  const page3 = r.invokeStaff({ action: "staff.bookings", token, page: 3 });
+  assert.equal(page3.data.bookings.length, 2);
+  assert.deepEqual(page3.data.bookings.map((b) => b.bookingId), ["BOOKING-05", "BOOKING-04"]);
+});
+
+test("staff.bookings filters before pagination and searches normalized phone and pet name read-only", () => {
+  const r = staffRuntime(), token = loggedIn(r);
+  for (let i = 1; i <= 20; i++) addBooking(r, {
+    bookingId: "FILTER-" + String(i).padStart(2, "0"),
+    createdAt: "2026-03-" + String(i).padStart(2, "0") + "T00:00:00Z",
+    bookingStatus: i <= 4 ? "CONFIRMED" : "PENDING_DEPOSIT",
+    roomTypeId: i % 2 ? "ROOM_A" : "ROOM_B",
+    checkinDate: i <= 4 ? "2099-07-01" : "2099-08-01",
+    checkoutDate: "2099-08-03",
+    parentName: i === 2 ? "Phone Match" : "Guest " + i,
+    phone: i === 2 ? "+852 9123 4567" : "+852 9000 0000",
+  });
+  addStaffPet(r, "FILTER-20", { name: "Cocoa Bunny" });
+  const before = ["Bookings", "Pets", "Payments", "Logs", "IdempotencyKeys"].map((sheet) => JSON.stringify(r.records(sheet)));
+  const filter = r.invokeStaff({ action: "staff.bookings", token, status: "CONFIRMED", roomTypeId: "ROOM_A", checkinDate: "2099-07-01", checkoutDate: "2099-08-03", page: 2 });
+  assert.equal(filter.data.totalCount, 2);
+  assert.equal(filter.data.totalPages, 1);
+  assert.equal(filter.data.page, 1);
+  assert.deepEqual(filter.data.bookings.map((b) => b.bookingId), ["FILTER-03", "FILTER-01"]);
+  const phone = r.invokeStaff({ action: "staff.bookings", token, search: "9123-4567" });
+  assert.deepEqual(phone.data.bookings.map((b) => b.bookingId), ["FILTER-02"]);
+  const pet = r.invokeStaff({ action: "staff.bookings", token, search: "cocoa" });
+  assert.deepEqual(pet.data.bookings.map((b) => b.bookingId), ["FILTER-20"]);
+  assert.deepEqual(["Bookings", "Pets", "Payments", "Logs", "IdempotencyKeys"].map((sheet) => JSON.stringify(r.records(sheet))), before);
+});
+
+test("staff.bookings clamps pages, defaults invalid page to one, and represents empty results", () => {
+  const r = staffRuntime(), token = loggedIn(r);
+  for (let i = 1; i <= 16; i++) addBooking(r, { bookingId: "PAGE-" + i, createdAt: "2026-04-" + String(i).padStart(2, "0") + "T00:00:00Z" });
+  const over = r.invokeStaff({ action: "staff.bookings", token, page: 99 });
+  assert.deepEqual([over.data.page, over.data.totalPages, over.data.bookings.length], [2, 2, 1]);
+  const invalid = r.invokeStaff({ action: "staff.bookings", token, page: 1.5 });
+  assert.equal(invalid.data.page, 1);
+  const empty = r.invokeStaff({ action: "staff.bookings", token, search: "nothing-matches" });
+  assert.deepEqual([empty.data.bookings.length, empty.data.page, empty.data.pageSize, empty.data.totalCount, empty.data.totalPages], [0, 1, 15, 0, 0]);
+});
+
 function editPetRequest(r, booking, pet, overrides = {}) {
   return Object.assign({
     action: "staff.edit", token: loggedIn(r),

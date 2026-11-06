@@ -308,42 +308,53 @@ function littlelandStaffReadAction_(action, body, auth) {
   if (action === "staff.bookingDetail") return detail(body.bookingId);
   if (action === "staff.bookings") {
     var q = String(body.search || "").toLowerCase();
+    var normalizedQueryPhone = q.replace(/\D/g, "");
+    var filteredBookings = bookings.filter(function (b) {
+      var p = linkedPets(b),
+        match =
+          !q ||
+          [
+            b.bookingId,
+            littlelandDisplayBookingReference_(b.bookingId),
+            b.parentName,
+            b.phone,
+            b.email,
+            b.checkinDate,
+            b.checkoutDate,
+            b.roomTypeId,
+            b.bookingStatus,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .indexOf(q) >= 0 ||
+          (normalizedQueryPhone && String(b.phone || "").replace(/\D/g, "").indexOf(normalizedQueryPhone) >= 0) ||
+          p.some(function (x) {
+            return String(x.name || "").toLowerCase().indexOf(q) >= 0;
+          });
+      return (
+        match &&
+        (!body.status || b.bookingStatus === body.status) &&
+        (!body.roomTypeId || b.roomTypeId === body.roomTypeId) &&
+        (!body.checkinDate || b.checkinDate === body.checkinDate) &&
+        (!body.checkoutDate || b.checkoutDate === body.checkoutDate)
+      );
+    });
+    filteredBookings.sort(function (a, b) {
+      var byCreatedAt = String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+      return byCreatedAt || String(b.bookingId || "").localeCompare(String(a.bookingId || ""));
+    });
+    var requestedPage = Number(body.page);
+    if (!Number.isInteger(requestedPage) || requestedPage < 1) requestedPage = 1;
+    var pageSize = 15,
+      totalCount = filteredBookings.length,
+      totalPages = Math.ceil(totalCount / pageSize),
+      page = totalPages ? Math.min(requestedPage, totalPages) : 1;
     return {
-      bookings: bookings
-        .filter(function (b) {
-          var p = linkedPets(b),
-            match =
-              !q ||
-              [
-                b.bookingId,
-                littlelandDisplayBookingReference_(b.bookingId),
-                b.parentName,
-                b.phone,
-                b.email,
-                b.checkinDate,
-                b.checkoutDate,
-                b.roomTypeId,
-                b.bookingStatus,
-              ]
-                .join(" ")
-                .toLowerCase()
-                .indexOf(q) >= 0 ||
-              p.some(function (x) {
-                return (
-                  String(x.name || "")
-                    .toLowerCase()
-                    .indexOf(q) >= 0
-                );
-              });
-          return (
-            match &&
-            (!body.status || b.bookingStatus === body.status) &&
-            (!body.roomTypeId || b.roomTypeId === body.roomTypeId) &&
-            (!body.checkinDate || b.checkinDate === body.checkinDate) &&
-            (!body.checkoutDate || b.checkoutDate === body.checkoutDate)
-          );
-        })
-        .map(card),
+      bookings: filteredBookings.slice((page - 1) * pageSize, page * pageSize).map(card),
+      page: page,
+      pageSize: pageSize,
+      totalCount: totalCount,
+      totalPages: totalPages,
     };
   }
   if (action === "staff.dashboard") {

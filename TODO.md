@@ -674,3 +674,23 @@
 - 在 TEST 初始化器以 add-only 方式新增 `StaffRoomLocks` 工作表／表頭；原有資料與表頭保留，不清空、不重排、不刪除。所有實際表格操作只可先驗證 Script Property、Spreadsheet ID 與名稱 `LittleLand_TEST` 一致。
 - 自動化驗收使用 Apps Script mock，覆蓋房態半開區間、鎖房與 booking 衝突、PENDING 保留及提示、鎖定／解除／重播／操作 Staff Logs、客人 API 隱私、員工登入保護、schema 初始化與 Staff 月曆顯示；整體 `npm test`、語法檢查及 `git diff --check` 必須通過。
 - 如需實際 TEST 驗證，只能選一間經回讀確認無佔用的實體房及 TEST 日期，建立後立即解除，重新讀回 `StaffRoomLocks`／Logs 並確認房態恢復；不建 Booking／Payment、不保留未經使用者指定的臨時鎖房、不接 Production。
+
+
+# TASK-BOOKING-LIST-01 — Staff 預訂列表分頁、搜尋與篩選（TEST-only）
+
+狀態：已獲授權實作及 TEST 驗收；只修改 Staff TEST UI／TEST Apps Script API，不碰 Production、不 Merge `develop`／`main`。
+
+## 已批准行為
+
+- Staff 預訂列表固定每頁顯示 15 筆。預設依新建／提交時間 `createdAt` 由新到舊排序，較新的訂單永遠先顯示在第 1 頁最頂，舊訂單向後排列；同時間以 Booking ID 作穩定排序，不按入住日期覆蓋此預設。
+- 列表搜尋可按 Booking ID、家長／客人姓名、電話號碼及寵物名稱尋找；篩選可按入住日期、房型及 Booking 狀態。搜尋與篩選可同時套用，重設或更改任一條件時頁碼回到第 1 頁。
+- 列表分頁需顯示目前頁、總頁數及符合條件的總筆數；提供上一頁、頁碼與下一頁操作，並於第一頁／最後一頁停用相應方向。符合條件的排序仍維持 `createdAt` 最新至最舊。
+- 點擊某筆 Booking 必須開啟該筆正確的 Booking Detail；返回列表時保留原有搜尋字詞、篩選條件及頁碼。若結果數改變使原頁碼超出範圍，回到最後一個有效頁。
+- 預訂列表及其搜尋／篩選／分頁操作在 390px 手機 viewport 不得造成橫向捲動；沿用現有 Staff UI 樣式及登入保護。
+- API 只回傳目前頁面所需的最小 Staff booking summary，伺服器依搜尋、篩選及排序完成後再切出 15 筆；不得在前端先載入完整 Booking／Pets 資料集來假裝分頁。房鎖內部資料不得暴露給客人 API。
+
+## 範圍與保護
+
+- 使用既有 TEST Apps Script 專案／LittleLand_TEST 與 Staff TEST UI；不寫入 Booking、Payment、房態或其他測試資料。只做讀取及 UI/API 驗收。
+- 保留已有 Booking Detail、付款、EXT、房鎖功能及 Staff session 行為；此次只增加列表資料查詢與分頁介面，不改寫核心商業規則。
+- 建立／更新相關 Staff API、前端狀態、手機版樣式及 mock automated tests；完成後執行完整測試、核對 TEST API 與正式 GitHub feature branch，不 Merge `main` 或 `develop`。
