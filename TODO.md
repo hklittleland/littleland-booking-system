@@ -646,7 +646,7 @@
 
 # TASK-ROOM-LOCK-01 — Staff 實體房鎖定（TEST-only）
 
-狀態：已按使用者選擇的建議方案核准；實作及 TEST 驗收進行中。只使用 TEST Apps Script／LittleLand_TEST／Staff TEST UI；不接 Production、不 Merge `develop`／`main`。不建立新的 Booking 或 Payment，不改客人預約 UI，不變更已確認的入住狀態規則。
+狀態：程式與本地 mock 測試已完成；`LittleLand_TEST` 的 `StaffRoomLocks` 表目前有 15 個表頭、0 筆資料。TEST Apps Script 新版尚未部署，live 鎖房 API/UI 尚未啟用或驗收。只使用 TEST，不接 Production、不 Merge `develop`／`main`；不建立新的 Booking 或 Payment，不改客人預約 UI，不變更已確認的入住狀態規則。
 
 ## 1. Staff 鎖定與解除實體房
 
@@ -678,7 +678,7 @@
 
 # TASK-BOOKING-LIST-01 — Staff 預訂列表分頁、搜尋與篩選（TEST-only）
 
-狀態：已獲授權實作及 TEST 驗收；只修改 Staff TEST UI／TEST Apps Script API，不碰 Production、不 Merge `develop`／`main`。
+狀態：前後端分頁程式及 automated tests 已完成並推送至 `feature/test-booking-api`（完整套件 282/282 通過）。TEST Apps Script API 仍為 v12，未部署分頁後端；Pages branch 未更新，故線上 Staff UI 暫未啟用新分頁。只限 TEST，不碰 Production、不 Merge `develop`／`main`。
 
 ## 已批准行為
 
