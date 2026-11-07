@@ -6,7 +6,7 @@
 })(typeof window !== "undefined" ? window : globalThis, function () {
   "use strict";
 
-  const STANDARD_BOOKING_ID = /^TEST-LL-\d{8}-([A-Z0-9]{8})$/i;
+  const STANDARD_BOOKING_ID = /^LL-\d{8}-([A-Z0-9]{8})$/i;
 
   function asText(value) {
     return value == null ? "" : String(value);

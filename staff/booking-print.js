@@ -65,7 +65,7 @@
   function shortReference(booking, supplied) {
     if (supplied) return String(supplied);
     const id = String(value(booking, "bookingId", "id") || "");
-    const match = id.match(/^TEST-LL-\d{8}-([A-Z0-9]{8})$/i);
+    const match = id.match(/^LL-\d{8}-([A-Z0-9]{8})$/i);
     return match ? match[1].toUpperCase() : id.slice(-8);
   }
   function allocatedPhysicalRooms(booking) {
@@ -208,7 +208,7 @@
       : collectedCashDeposit - Number(booking.cashDepositUsedAmount || 0) - Number(booking.cashDepositRefundedAmount || 0)));
 
     const mainPage = `<section class="sheet">
-      <header class="brand-row"><div class="brand-lockup">${logo}<div class="brand">LittleLand <small>小寵物酒店服務</small></div></div><div class="test-tag">TEST 測試列印</div></header>
+      <header class="brand-row"><div class="brand-lockup">${logo}<div class="brand">LittleLand <small>小寵物酒店服務</small></div></div><div class="test-tag">預約資料列印</div></header>
       <h1>入住資料核對及收費詳情</h1>
       <div class="notice">請家長於入住時核對下列預約資料及費用。如資料有誤，請先聯絡員工更正。本文件不代表尚未確認的預約已獲房間保留。</div>
       <div class="ref-row"><strong>訂單短編號</strong><span class="ref">${esc(reference || "—")}</span><span class="status">${esc(statusNames[booking.bookingStatus] || display(booking.bookingStatus))}</span></div>
@@ -226,23 +226,23 @@
       <section class="block"><h2>住宿及收費明細</h2><table class="fees"><thead><tr><th>項目</th><th>說明</th><th class="numeric">金額</th></tr></thead><tbody>${feeMarkup}</tbody></table>
         <div class="totals">${surchargeTotalsMarkup}<div class="grand"><span>目前住宿總額（不含現金按金）</span><b>${esc(money(currentTotal))}</b></div>
         <div><span>應付訂金（基本房費 50%） · ${esc(paymentStatus(booking.depositStatus))}</span><b>${esc(money(booking.depositAmount))}</b></div>
-        <div><span>預計尾數 · ${esc(paymentStatus(booking.balanceStatus))}</span><b>${esc(money(booking.remainingBalance))}</b></div>
+        <div><span>目前尚欠住宿款 · ${esc(paymentStatus(booking.balanceStatus))}</span><b>${esc(money(booking.remainingBalance))}</b></div>
         <div class="cash"><span>入住當日現金備用金／按金（每隻 HK$1,000，不計入住宿總額）</span><b>${esc(money(cashDepositAmount))}</b></div>
         <div><span>已收／已使用／已退／尚餘現金按金</span><b>${esc([collectedCashDeposit, booking.cashDepositUsedAmount || 0, booking.cashDepositRefundedAmount || 0, cashRemaining].map(money).join(" / "))}</b></div></div>
         <p class="small-note">尾數於入住時繳付；現金備用金／按金獨立處理，不計入住宿總額、訂金或尾數。訂金收取及退款情況以付款紀錄為準。</p>
       </section>
-      <footer>TEST 測試文件 · 原始入住條款頁原樣附入；醫藥及日常照顧表按訂單資料另行編排。　WhatsApp +852 62886598</footer>
+      <footer>預約資料文件 · 原始入住條款頁原樣附入；醫藥及日常照顧表按訂單資料另行編排。　WhatsApp +852 62886598</footer>
     </section>`;
 
     const paymentPage = `<section class="sheet">
-      <header class="brand-row"><div class="brand-lockup">${logo}<div class="brand">LittleLand <small>小寵物酒店服務</small></div></div><div class="test-tag">TEST 測試列印</div></header>
+      <header class="brand-row"><div class="brand-lockup">${logo}<div class="brand">LittleLand <small>小寵物酒店服務</small></div></div><div class="test-tag">預約資料列印</div></header>
       <h1>付款及入住當日核對</h1>
       <div class="notice">請員工與家長核對訂金、尾數及現金備用金／按金；實際收款及退款以付款紀錄為準。現金按金不計入住宿總額。</div>
       <div class="ref-row"><strong>訂單短編號</strong><span class="ref">${esc(reference || "—")}</span><span class="status">${esc(statusNames[booking.bookingStatus] || display(booking.bookingStatus))}</span></div>
       <section class="block"><h2>付款紀錄</h2><table class="payments"><thead><tr><th>類別</th><th>狀態</th><th class="numeric">金額</th><th>日期</th></tr></thead><tbody>${paymentMarkup}</tbody></table>${refundMarkup ? `<p class="refund-title">已記錄退款</p><ul>${refundMarkup}</ul>` : ""}</section>
       <section class="block"><h2>入住日款項核對</h2><div class="two-col">${infoRows([
         ["目前住宿總額", money(currentTotal)], ["訂金應收／狀態", `${money(booking.depositAmount)} · ${paymentStatus(booking.depositStatus)}`],
-        ["住宿尾數／狀態", `${money(booking.remainingBalance)} · ${paymentStatus(booking.balanceStatus)}`], ["現金按金應收", money(cashDepositAmount)],
+        ["目前尚欠住宿款／狀態", `${money(booking.remainingBalance)} · ${paymentStatus(booking.balanceStatus)}`], ["現金按金應收", money(cashDepositAmount)],
         ["已收現金按金", money(collectedCashDeposit)], ["已使用／已退／尚餘", `${money(booking.cashDepositUsedAmount || 0)} / ${money(booking.cashDepositRefundedAmount || 0)} / ${money(cashRemaining)}`],
       ])}</div>
         <p>入住時尾數實收：HK$________________　付款方式：________________　收取時間：________________</p>
@@ -250,7 +250,7 @@
       </section>
       <div class="signature-row"><div>家長核對／確認簽署：________________________</div><div>日期：________________</div></div>
       <div class="signature-row"><div>員工收款／核對簽署：________________________</div><div>日期：________________</div></div>
-      <footer>TEST 測試文件 · 訂單短編號 ${esc(reference)}　·　WhatsApp +852 62886598</footer>
+      <footer>預約資料文件 · 訂單短編號 ${esc(reference)}　·　WhatsApp +852 62886598</footer>
     </section>`;
 
     const hamster = String(booking.species || "").toUpperCase() === "HAMSTER";
@@ -313,7 +313,7 @@
           if (String(pet.sex || "").toLowerCase() === "female") healthRows.splice(2, 0, ["懷孕", yesNo(pet.pregnant)]);
         }
         carePages.push(`<section class="sheet care-sheet">
-          <header class="brand-row"><div class="brand-lockup">${logo}<div class="brand">LittleLand <small>小寵物酒店服務</small></div></div><div class="test-tag">TEST 測試列印</div></header>
+          <header class="brand-row"><div class="brand-lockup">${logo}<div class="brand">LittleLand <small>小寵物酒店服務</small></div></div><div class="test-tag">預約資料列印</div></header>
           <div class="care-title-row"><h1>每日照顧及餵藥紀錄</h1><span class="cute-tag">${hamster ? "🐹" : booking.species === "GUINEA_PIG" ? "🐽" : "🐰"} 毛孩專屬照顧表</span></div>
           <div class="care-identity"><div><b>家長</b>${esc(value(booking, "parentName", "customerName"))}</div><div><b>電話</b>${esc(booking.phone)}</div><div><b>緊急聯絡人 1</b>${esc(booking.emergency1)}</div><div><b>緊急聯絡人 2</b>${esc(booking.emergency2)}</div><div><b>毛孩</b>${esc(name)} · ${esc(species)}</div><div><b>年齡／品種</b>${esc(`${display(pet.ageValue)} ${display(pet.ageUnit)} · ${value(pet, "breed") || "—"}`)}</div><div><b>訂單編號</b>${esc(reference)}</div><div><b>房型</b>${esc(roomNames[booking.roomTypeId] || display(booking.roomTypeId))}</div><div><b>實體房間（本預約寵物共用）</b>${esc(physicalRoomLabel)}</div></div>
           <section class="care-card diet-card"><h2>🍽 飲食及照顧指示</h2><p>${esc(foodNote)}</p>${!hamster && yesNo(booking.vegetables) === "是" ? `<p>新鮮蔬菜：已選提供</p>` : ""}<p>飲食／日常注意：${esc(value(pet, "specialCare") || "按家長指示")}</p></section>
@@ -321,11 +321,11 @@
           <section class="care-card checklist-card"><div class="checklist-heading"><h2>📅 每日照顧打勾表</h2><span>第 ${segment + 1}/${segments} 張 · 每格為一個住宿日</span></div><div class="table-wrap"><table class="care-grid"><thead><tr><th class="task-col">照顧項目</th>${dateCells}<th class="note-col">內容／提示</th></tr></thead><tbody>${dailyRows}</tbody></table></div></section>
           <div class="care-footnote">此表以預約資料預填；餵藥前請核對藥名、劑量、餵藥時間及家長交代。資料不完整時先聯絡家長，不自行推斷用藥方式。${feedingTwice && !hamster ? "星期日／公眾假期主糧按雙倍份量餵一次。" : ""}</div>
           <div class="signature-row"><div>照顧員工核對：______________________</div><div>家長確認：________________　日期：____________</div></div>
-          <footer>TEST 測試文件 · 毛孩 ${petIndex + 1}/${pets.length} · 住宿日期 ${esc(formatDate(booking.checkinDate))} 至 ${esc(formatDate(booking.checkoutDate))}</footer>
+          <footer>預約資料文件 · 毛孩 ${petIndex + 1}/${pets.length} · 住宿日期 ${esc(formatDate(booking.checkinDate))} 至 ${esc(formatDate(booking.checkoutDate))}</footer>
         </section>`);
       }
     });
-    if (!pets.length) carePages.push(`<section class="sheet care-sheet"><header class="brand-row"><div class="brand">LittleLand <small>小寵物酒店服務</small></div><div class="test-tag">TEST 測試列印</div></header><h1>每日照顧及餵藥紀錄</h1><p>此預約尚未載入寵物資料，請勿自行補填。</p></section>`);
+    if (!pets.length) carePages.push(`<section class="sheet care-sheet"><header class="brand-row"><div class="brand">LittleLand <small>小寵物酒店服務</small></div><div class="test-tag">預約資料列印</div></header><h1>每日照顧及餵藥紀錄</h1><p>此預約尚未載入寵物資料，請勿自行補填。</p></section>`);
 
     const appendices = [
       ["terms-page-1.png", "入住須知及寄養條款（原稿第 1 頁）"],

@@ -175,7 +175,7 @@
     return false;
   }
   function login() {
-    app.innerHTML = `<main class="login-wrap"><section class="login-card"><div class="brand">LittleLand<small>STAFF · TEST 環境</small></div><h1>員工登入</h1><p>登入後才會向 TEST API 讀取後台資料。</p>${errorText ? `<div class="error" role="alert">${esc(errorText)}</div>` : ""}<form id="loginForm"><div class="field"><label for="username">員工帳號</label><input id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="btn" ${busy ? "disabled" : ""}>${busy ? "登入中…" : "登入 TEST 員工後台"}</button></form></section></main>`;
+    app.innerHTML = `<main class="login-wrap"><section class="login-card"><div class="brand">LittleLand<small>STAFF</small></div><h1>員工登入</h1><p>登入後才會向 LittleLand API 讀取後台資料。</p>${errorText ? `<div class="error" role="alert">${esc(errorText)}</div>` : ""}<form id="loginForm"><div class="field"><label for="username">員工帳號</label><input id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="btn" ${busy ? "disabled" : ""}>${busy ? "登入中…" : "登入員工後台"}</button></form></section></main>`;
     document.getElementById("loginForm").onsubmit = async (e) => {
       e.preventDefault();
       if (busy) return;
@@ -208,14 +208,14 @@
           `<button class="${p === page ? "active" : ""}" data-go="${p}"><span>${esc(i)}</span> ${esc(t)}</button>`,
       )
       .join("");
-    app.innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand">LittleLand<small>員工營運台 · TEST</small></div><nav class="side-nav">${buttons}</nav><div class="side-foot meta">資料只來自 TEST API<br><button class="btn ghost" data-logout>登出</button></div></aside><main><header class="topbar"><div class="brand">LittleLand<small>${esc(page)} · TEST</small></div><div class="topbar-actions"><button class="btn secondary" type="button" data-refresh-page ${store.state.loading ? "disabled" : ""}>更新</button><button class="btn ghost" data-logout>登出</button></div></header><nav class="bottom-nav">${navs
+    app.innerHTML = `<div class="shell"><aside class="sidebar"><div class="brand">LittleLand<small>員工營運台</small></div><nav class="side-nav">${buttons}</nav><div class="side-foot meta">資料只來自 LittleLand API<br><button class="btn ghost" data-logout>登出</button></div></aside><main><header class="topbar"><div class="brand">LittleLand<small>${esc(page)}</small></div><div class="topbar-actions"><button class="btn secondary" type="button" data-refresh-page ${store.state.loading ? "disabled" : ""}>更新</button><button class="btn ghost" data-logout>登出</button></div></header><nav class="bottom-nav">${navs
       .map(
         ([p, t, i]) =>
           `<button class="${p === page ? "active" : ""}" data-go="${p}"><span class="ico">${esc(i)}</span>${esc(t)}</button>`,
       )
       .join(
         "",
-      )}</nav><div class="content">${store.state.loading ? '<div class="loading" role="status">正在載入 TEST 資料…</div>' : ""}${errorText ? `<div class="error" role="alert">${esc(errorText)}<br><button class="btn secondary" data-retry>重試載入</button></div>` : ""}${body}</div></main></div>`;
+      )}</nav><div class="content">${store.state.loading ? '<div class="loading" role="status">正在載入 營運資料…</div>' : ""}${errorText ? `<div class="error" role="alert">${esc(errorText)}<br><button class="btn secondary" data-retry>重試載入</button></div>` : ""}${body}</div></main></div>`;
     app
       .querySelectorAll("[data-go]")
       .forEach((x) => (x.onclick = () => StaffRouter.go(x.dataset.go)));
@@ -352,7 +352,7 @@
     const filterForm = `<div class="filters"><div class="field"><label for="bookingQ">Booking ID／客人／電話／寵物</label><input id="bookingQ" value="${escValue(q.search)}" placeholder="搜尋"></div><div class="field"><label for="bookingStatus">預訂狀態</label><select id="bookingStatus"><option value="">全部</option>${Object.entries(labels).map(([value, label]) => `<option value="${value}" ${q.status === value ? "selected" : ""}>${label}</option>`).join("")}</select></div><div class="field"><label for="bookingRoom">房型</label><select id="bookingRoom"><option value="">全部房型</option>${roomOptions}</select></div><div class="field"><label for="bookingCheckin">入住日期</label><input id="bookingCheckin" type="date" value="${escValue(q.checkinDate)}"></div><div class="field"><label for="bookingCheckout">退房日期</label><input id="bookingCheckout" type="date" value="${escValue(q.checkoutDate)}"></div></div>`;
     const paginationSummary = `<p class="booking-pagination-summary" aria-live="polite">符合 ${q.totalCount} 筆 · 第 ${q.totalPages ? q.page : 0}／${q.totalPages} 頁 · 每頁 ${q.pageSize} 筆</p>`;
     const paginationControls = `<div class="booking-pagination" aria-label="預訂列表分頁"><button type="button" class="btn secondary" data-booking-page="${Math.max(1, q.page - 1)}" ${q.page <= 1 ? "disabled" : ""}>上一頁</button>${pageButtons}<button type="button" class="btn secondary" data-booking-page="${Math.min(Math.max(1, q.totalPages), q.page + 1)}" ${q.page >= q.totalPages ? "disabled" : ""}>下一頁</button></div>`;
-    return `${head("預訂", "搜尋及篩選目前 TEST API 預訂清單")}${filterForm}${paginationSummary}${paginationControls}<div id="bookingResults">${list(store.state.records, "沒有符合預訂")}</div>`;
+    return `${head("預訂", "搜尋及篩選目前 LittleLand API 預訂清單")}${filterForm}${paginationSummary}${paginationControls}<div id="bookingResults">${list(store.state.records, "沒有符合預訂")}</div>`;
   }
   function parseJson(v) {
     if (Array.isArray(v)) return v;
@@ -429,7 +429,7 @@
       chart = window.LittleLandRevenueChart
         ? window.LittleLandRevenueChart.renderRevenueChart(d, selectedMonth)
         : '<p class="empty">營收圖表元件未載入。</p>';
-    return `${head("營收分析", `${year} 全年 12 個月 TEST 營收總覽；住宿預訂按入住月份、實際收款按付款日統計；現金按金不計住宿收入。`)}<form id="revenueYearForm" class="revenue-year-form"><label for="revenueYear">檢視年度</label><input id="revenueYear" name="year" type="number" min="2020" max="2100" value="${escValue(year)}"><button class="btn secondary">載入年度</button></form><section class="card">${chart}</section><div class="grid two"><section class="card"><h2>按房型</h2>${groups(d.byRoomType, roomNames)}</section><section class="card"><h2>按寵物種類</h2>${groups(d.bySpecies, speciesNames)}</section></div>`;
+    return `${head("營收分析", `${year} 全年 12 個月 營收總覽；住宿預訂按入住月份、實際收款按付款日統計；現金按金不計住宿收入。`)}<form id="revenueYearForm" class="revenue-year-form"><label for="revenueYear">檢視年度</label><input id="revenueYear" name="year" type="number" min="2020" max="2100" value="${escValue(year)}"><button class="btn secondary">載入年度</button></form><section class="card">${chart}</section><div class="grid two"><section class="card"><h2>按房型</h2>${groups(d.byRoomType, roomNames)}</section><section class="card"><h2>按寵物種類</h2>${groups(d.bySpecies, speciesNames)}</section></div>`;
   }
   function schedule() {
     const d = store.state.schedules || {}, date = store.state.scheduleDate || new Date();
@@ -658,7 +658,7 @@
       ["附加費合計（含人工調整）", "displaySurcharges"],
       ["目前住宿總額", "currentTotal"],
       ["訂金", "depositAmount"],
-      ["尾數", "remainingBalance"],
+      ["目前尚欠住宿款", "remainingBalance"],
       ["現金按金", "cashDepositAmount"],
       ["應退現金按金", refund],
     ].filter(([label, key]) => ["額外寵物費", "週末附加費", "服務費合計", "人工附加費／減項淨額", "附加費合計（含人工調整）"].indexOf(label) < 0 || Number(feeDisplay[key] || 0) !== 0))}<h3>客人同意</h3>${kv(b, [
@@ -721,7 +721,7 @@
       const employee = employees.find((item) => Number(item.sortOrder) === index + 1) || employees[index] || {};
       return String(employee.displayName || "");
     };
-    return `${head("設定／登出", "TEST 環境帳戶")}<section class="card"><h2>排班員工名稱</h2><p class="meta">設定 2–3 位用於排班下拉選單的員工名稱。這份名冊與登入帳號及權限分開；不會新增登入帳號。</p><form id="scheduleEmployeesForm" class="field schedule-employee-settings-form"><label for="scheduleEmployeeA">員工 A 名稱</label><input id="scheduleEmployeeA" name="employeeA" type="text" maxlength="40" required value="${escValue(employeeValue(0))}" autocomplete="off"><label for="scheduleEmployeeB">員工 B 名稱</label><input id="scheduleEmployeeB" name="employeeB" type="text" maxlength="40" required value="${escValue(employeeValue(1))}" autocomplete="off"><label for="scheduleEmployeeC">員工 C 名稱（選填）</label><input id="scheduleEmployeeC" name="employeeC" type="text" maxlength="40" value="${escValue(employeeValue(2))}" autocomplete="off"><p class="field-help">員工 A、B 必須填寫；C 可留空。每個名稱最多 40 字，且不可重複。</p><button class="btn" type="submit" ${pendingAction ? "disabled" : ""}>儲存排班員工名稱</button></form></section><section class="card"><h2>登入資料</h2><p>${esc(get(s, "staff.displayName"))} · 完整管理權限（TEST）</p><p class="meta">Session token 只保存在 sessionStorage。</p><button class="btn danger" data-logout>登出並撤銷 Session</button></section>`;
+    return `${head("設定／登出", "員工帳戶")}<section class="card"><h2>排班員工名稱</h2><p class="meta">設定 2–3 位用於排班下拉選單的員工名稱。這份名冊與登入帳號及權限分開；不會新增登入帳號。</p><form id="scheduleEmployeesForm" class="field schedule-employee-settings-form"><label for="scheduleEmployeeA">員工 A 名稱</label><input id="scheduleEmployeeA" name="employeeA" type="text" maxlength="40" required value="${escValue(employeeValue(0))}" autocomplete="off"><label for="scheduleEmployeeB">員工 B 名稱</label><input id="scheduleEmployeeB" name="employeeB" type="text" maxlength="40" required value="${escValue(employeeValue(1))}" autocomplete="off"><label for="scheduleEmployeeC">員工 C 名稱（選填）</label><input id="scheduleEmployeeC" name="employeeC" type="text" maxlength="40" value="${escValue(employeeValue(2))}" autocomplete="off"><p class="field-help">員工 A、B 必須填寫；C 可留空。每個名稱最多 40 字，且不可重複。</p><button class="btn" type="submit" ${pendingAction ? "disabled" : ""}>儲存排班員工名稱</button></form></section><section class="card"><h2>登入資料</h2><p>${esc(get(s, "staff.displayName"))} · 完整管理權限</p><p class="meta">Session token 只保存在 sessionStorage。</p><button class="btn danger" data-logout>登出並撤銷 Session</button></section>`;
   }
   function paint() {
     if (!store.token) {
@@ -897,7 +897,7 @@
           if (typeof onSuccess === "function") onSuccess();
           if (form) { delete form.dataset.idempotencyFingerprint; delete form.dataset.idempotencyKey; }
           readCache.clear();
-          toast("TEST API 已確認操作。");
+          toast("LittleLand API 已確認操作。");
         } catch (e) {
           const handled = handleAuth(e);
           if (handled) repaint = true;
@@ -1132,7 +1132,7 @@
         if (!reason) return showExtensionError(stayExtensionForm, "請填寫延長住宿原因。");
         const estimate = extensionView.preview({ booking: currentBooking, payments: arr(detailState.payments), adjustments: arr(detailState.adjustments) }, newCheckoutDate);
         if (!estimate.ok) return showExtensionError(stayExtensionForm, estimate.message);
-        const assignmentText = internalAssignment === "EXT" ? "轉入 EXT 延期虛擬房（延期期間不佔實體房）" : "保留原實體房（TEST API 會重新檢查最新房態）";
+        const assignmentText = internalAssignment === "EXT" ? "轉入 EXT 延期虛擬房（延期期間不佔實體房）" : "保留原實體房（LittleLand API 會重新檢查最新房態）";
         const depositText = currentBooking.depositStatus === "PAID" ? "保留原已收訂金" : "按新基本房費重新計算 50% 訂金";
         const confirmText = `確認延長住宿？\n退房：${estimate.oldCheckout} → ${estimate.newCheckoutDate}（新增 ${estimate.addedNights} 晚）\n收費房型：${roomNames[currentBooking.roomTypeId] || currentBooking.roomTypeId}\n安排：${assignmentText}\n新增基本房費：HK$${estimate.addedBaseRoomFee.toFixed(2)}\n新住宿總額：HK$${estimate.total.toFixed(2)}\n已收款：HK$${estimate.paid.toFixed(2)}\n${depositText}：HK$${estimate.deposit.toFixed(2)}\n預計待收尾數：HK$${estimate.remaining.toFixed(2)}\n現金按金：HK$${estimate.cashDeposit.toFixed(2)}（不因延期增加）`;
         if (!confirm(confirmText)) return;
@@ -1152,7 +1152,7 @@
         if (!reason) return showExtensionError(assignmentForm, "請填寫更改內部安排的原因。");
         if (!confirm(internalAssignment === "EXT"
           ? "確認轉入 EXT？延期日期不會佔用實體房，原收費房型及房費不變。"
-          : "確認轉回原實體房？TEST API 會重新檢查原房至新退房日的最新房態；如有衝突會拒絕。")) return;
+          : "確認轉回原實體房？LittleLand API 會重新檢查原房至新退房日的最新房態；如有衝突會拒絕。")) return;
         submitApi("internalAssignmentUpdate", Object.assign({}, currentVersion, { data: { internalAssignment, reason } }), assignmentForm, () => clearExtensionDraft("assignment"));
       };
     }
@@ -1345,7 +1345,7 @@
         store.state.depositConflictBookingId = String(bookingId);
         errorText = "";
         toast("訂金已記錄，但仍待處理、未分房，請人工跟進");
-      } else toast("操作已由 TEST API 確認。");
+      } else toast("操作已由 LittleLand API 確認。");
       if (action === "followup" && payload.data?.required)
         store.state.followupDraft = "";
       if (action === "edit") store.state.editDraft = null;

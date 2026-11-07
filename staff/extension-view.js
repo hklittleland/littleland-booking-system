@@ -85,7 +85,7 @@
     const depositRecorded = String(booking.depositStatus || "") === "PAID" || array(o.payments).some((payment) =>
       String(payment.bookingId) === String(booking.bookingId) && payment.paymentType === "DEPOSIT" && payment.paymentStatus === "PAID");
     const deposit = depositRecorded ? Number(booking.depositAmount || 0) : Number(quote.depositAmount || 0);
-    const remaining = Math.max(0, total - paid - (depositRecorded ? 0 : deposit));
+    const remaining = Math.max(0, total - paid);
     return {
       ok: true,
       quote,

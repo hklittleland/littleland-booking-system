@@ -1,6 +1,6 @@
 (function (root) {
   "use strict";
-  const TOKEN_KEY = "littlelandStaffSessionToken", NAV_KEY = "littlelandStaffNav";
+  const TOKEN_KEY = "littlelandProdStaffSessionToken", NAV_KEY = "littlelandProdStaffNav";
   let token = sessionStorage.getItem(TOKEN_KEY) || "";
   const state = {
     records: [], payments: [], paymentData: null, followups: [], customers: [], calendar: null,

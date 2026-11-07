@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const DRAFT_KEY = 'littleland_booking_draft_v1';
+  const DRAFT_KEY = 'littleland_prod_booking_draft_v1';
   const TERMS_URL = 'https://www.hklittleland.com/%E5%B0%8F%E5%AF%B5%E7%89%A9%E9%85%92%E5%BA%97%E6%9C%8D%E5%8B%99';
   const AVAILABILITY = Object.freeze({
     checking: '查詢中',
@@ -261,7 +261,7 @@
 
     const results = await Promise.all(rooms.map(async (room) => {
       try {
-        if (!window.LittleLandBookingApi) throw new Error('TEST API client unavailable');
+        if (!window.LittleLandBookingApi) throw new Error('LittleLand API client unavailable');
         const available = await window.LittleLandBookingApi.getAvailability({
           checkin: state.form.checkin,
           checkout: state.form.checkout,
@@ -336,7 +336,7 @@
     const checkinMin = localDateValue(new Date());
     const checkinDate = state.form.checkin;
     const checkoutMin = checkinDate && checkinDate >= checkinMin ? checkinDate : checkinMin;
-    const statusLabel = datesAreValid() ? '房態將於房型步驟即時查詢' : '選擇有效日期後查詢 TEST 房態';
+    const statusLabel = datesAreValid() ? '房態將於房型步驟即時查詢' : '選擇有效日期後查詢房態';
     return `${sectionHeading('🗓️', '選擇入住時間', '先告訴我們毛孩何時入住和回家。', 'STEP 01')}
       ${notice('yellow', '☀️', '<strong>入住日包括，退房日不包括。</strong> 例如 11 月 1 日入住、11 月 3 日退房，即住宿兩晚。最少入住一晚。')}
       <div class="field-grid">
@@ -352,7 +352,7 @@
         <div class="toggle-line"><div class="toggle-copy"><strong>提早入住安排</strong><small>一次性附加費 HK$200；時間另行確認</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇提早入住"><input type="checkbox" data-field="earlyCheckin" ${state.form.earlyCheckin ? 'checked' : ''}><span></span></label></div>
         <div class="toggle-line"><div class="toggle-copy"><strong>延遲退房安排</strong><small>17:00 後，一次性附加費 HK$200</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇延遲退房"><input type="checkbox" data-field="lateCheckout" ${state.form.lateCheckout ? 'checked' : ''}><span></span></label></div>
       </div>
-      <div class="availability-banner" id="availabilityBanner" data-status="unknown"><div class="availability-copy"><span class="availability-pulse" aria-hidden="true"></span><span class="availability-label" id="availabilityLabel">${statusLabel}</span></div><span class="availability-meta" id="availabilityMeta">${datesAreValid() ? `${dateNights()} 晚 · 房型頁將查詢 TEST 房態` : '選擇有效日期後查詢 TEST 房態'}</span></div>`;
+      <div class="availability-banner" id="availabilityBanner" data-status="unknown"><div class="availability-copy"><span class="availability-pulse" aria-hidden="true"></span><span class="availability-label" id="availabilityLabel">${statusLabel}</span></div><span class="availability-meta" id="availabilityMeta">${datesAreValid() ? `${dateNights()} 晚 · 房型頁將查詢房態` : '選擇有效日期後查詢房態'}</span></div>`;
   }
 
   function stepTwo() {
@@ -522,7 +522,7 @@
         ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong>')}
       </section>
       <section class="form-section"><h3 class="form-section-title"><span aria-hidden="true">🤍</span>提交前請確認</h3><p class="field-help">六項同意都需要勾選，才能繼續。</p><div class="terms-list">${TERMS.map((term, index) => `<div class="term-row"><label class="term-item"><input type="checkbox" data-term-index="${index}" ${state.terms[index] ? 'checked' : ''}><span>${escapeHtml(term)}</span></label>${index === 3 ? `<a class="term-service-link" href="${escapeHtml(TERMS_URL)}" target="_blank" rel="noopener noreferrer" aria-label="在新分頁查看 LittleLand 小寵物酒店服務條款">查看「小寵物酒店服務」<span aria-hidden="true">↗</span></a>` : ''}</div>`).join('')}</div><p class="terms-error" id="termsError" ${state.terms.every(Boolean) ? 'hidden' : ''}>請勾選以上六項同意事項。</p></section>
-      ${notice('blue', '💬', '提交後會建立<strong>TEST 環境預約申請</strong>；只有 TEST API 成功回傳有效 Booking ID 後才顯示完成頁。此為 TEST 記錄，不代表正式確認或付款。')}`;
+      ${notice('blue', '💬', '提交後會建立<strong>預約申請</strong>；只有 API 成功回傳有效 Booking ID 後才顯示完成頁。此為預約記錄，不代表正式確認或付款。')}`;
   }
 
   function updateStepper() {
@@ -562,7 +562,7 @@
     el.nextButton.innerHTML = state.step === 5
       ? `${state.submitFailed ? '重試提交申請' : '提交預約申請'} <span aria-hidden="true">✦</span>`
       : '下一步 <span aria-hidden="true">→</span>';
-    el.actionHint.textContent = state.step === 5 ? '只會提交至 TEST 環境' : `第 ${state.step}／5 步 · 約 3 分鐘完成`;
+    el.actionHint.textContent = state.step === 5 ? '只會提交預約申請' : `第 ${state.step}／5 步 · 約 3 分鐘完成`;
     el.formAlert.hidden = true;
     updateSummary();
   }
@@ -605,8 +605,8 @@
     const banner = document.getElementById('availabilityBanner');
     if (banner) {
       banner.dataset.status = 'unknown';
-      document.getElementById('availabilityLabel').textContent = datesAreValid() ? '房態將於房型步驟即時查詢' : '選擇有效日期後查詢 TEST 房態';
-      document.getElementById('availabilityMeta').textContent = datesAreValid() ? `${dateNights()} 晚 · 房型頁將查詢 TEST 房態` : '選擇有效日期後查詢 TEST 房態';
+      document.getElementById('availabilityLabel').textContent = datesAreValid() ? '房態將於房型步驟即時查詢' : '選擇有效日期後查詢房態';
+      document.getElementById('availabilityMeta').textContent = datesAreValid() ? `${dateNights()} 晚 · 房型頁將查詢房態` : '選擇有效日期後查詢房態';
     }
   }
 
@@ -850,7 +850,7 @@
       el.nextButton.innerHTML = isSubmitting
         ? '正在提交…'
         : `${state.submitFailed ? '重試提交申請' : '提交預約申請'} <span aria-hidden="true">✦</span>`;
-      el.actionHint.textContent = isSubmitting ? '正在提交至 LittleLand TEST API…' : '只會提交至 TEST 環境';
+      el.actionHint.textContent = isSubmitting ? '正在提交預約申請…' : '只會提交預約申請';
     }
   }
 
@@ -858,7 +858,7 @@
     const code = error && error.code;
     if (code === 'PRICE_VERSION_EXPIRED' || code === 'PRICE_CLIENT_MISMATCH') return '費用預覽需要更新；資料已保留，請重新核對費用後再提交。';
     if (code === 'VALIDATION_FAILED' || code === 'PET_QTY_INVALID' || code === 'PET_QTY_EXCEEDS_LIMIT' || code === 'PET_AGE_BELOW_MINIMUM' || code === 'PET_PREGNANT_NOT_ACCEPTED' || code === 'PET_RECENT_SURGERY_NOT_ACCEPTED') return '預約資料未能通過系統檢查；資料已保留，請返回相關步驟核對後重試。';
-    return '暫時未能完成 TEST 預約申請；你已填寫的資料已保留，請稍後重試。';
+    return '暫時未能完成 預約申請；你已填寫的資料已保留，請稍後重試。';
   }
 
   function validBookingResult(result) {
@@ -937,7 +937,7 @@
     return `<div class="completion-screen"><div class="completion-badge" aria-hidden="true">🎉</div>
       <h2>已收到您的預約申請！</h2>
       <p>謝謝你把毛孩的照顧需要告訴我們。LittleLand 將確認預約及提供訂金付款安排。</p>
-      <span class="demo-label">TEST 預約記錄 · 尚待 LittleLand 確認</span>
+      <span class="demo-label">預約記錄 · 尚待 LittleLand 確認</span>
       <div><span class="booking-reference">Booking reference：${escapeHtml(shortReference)}</span></div>
       <div class="completion-details"><h3>本次畫面摘要</h3>
         ${completionRow('家長', state.form.parentName)}
@@ -949,7 +949,7 @@
         ${completionRow('預計尾數（入住當日支付）', money(price.remainingBalance))}
         ${completionRow('現金備用金／按金', money(price.cashDeposit))}
       </div>
-      ${notice('green', '🌱', '<strong>LittleLand 將確認預約及提供訂金付款安排。</strong> 完成訂金付款及確認後，房間才正式保留；此 TEST 記錄不代表正式確認。')}
+      ${notice('green', '🌱', '<strong>LittleLand 將確認預約及提供訂金付款安排。</strong> 完成訂金付款及確認後，房間才正式保留；此預約記錄不代表正式確認。')}
       ${notice('yellow', '⚠️', '<strong>訂金一經支付，不設退還。</strong>')}
       <div class="cash-deposit-reminder"><strong>💰 現金備用金／按金 HK$1,000／隻</strong><span>合計 ${money(price.cashDeposit)}</span><p>請於入住當日準備，不計入住宿總額、訂金或尾數。</p></div>
       <div class="completion-actions"><a class="button button-primary" href="${escapeHtml(whatsappHref)}" target="_blank" rel="noopener noreferrer">📲 WhatsApp LittleLand · 62886598 <span aria-hidden="true">↗</span></a></div>

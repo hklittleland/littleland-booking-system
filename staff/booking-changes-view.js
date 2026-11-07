@@ -1,4 +1,4 @@
-/* Staff TEST booking fee/refund/pet-count controls. Submission is delegated to app.js. */
+/* Staff booking fee/refund/pet-count controls. Submission is delegated to app.js. */
 (function (root) {
   "use strict";
 
@@ -203,7 +203,7 @@
 
     return '<section class="card booking-changes"><h2>持續調整訂單</h2>' +
       '<div class="current-settlement"><p>目前住宿總額（含人工附加費）<strong>' + escapeHtml(money(currentTotal)) + '</strong></p>' +
-      '<p>' + (depositPaid ? "目前未收住宿尾數" : "扣除應收訂金後預計尾數") + ' <strong>' + escapeHtml(money(booking.remainingBalance || 0)) + '</strong></p>' +
+      '<p>目前尚欠住宿款 <strong>' + escapeHtml(money(booking.remainingBalance || 0)) + '</strong></p>' +
       (creditDue > 0 ? '<p class="money-credit">多收／待人工退款 ' + escapeHtml(money(creditDue)) + '；不會自動退款。</p>' : "") +
       (depositExceedsTotal > 0 ? '<p class="notice">目前住宿總額低於應收訂金 ' + escapeHtml(money(depositExceedsTotal)) + '；訂金仍按基本房費 50% 計算，請人工核對費用調整。</p>' : "") +
       '<small>現金備用金／按金獨立計算，不加入住宿總額、訂金或尾數。</small></div>' +

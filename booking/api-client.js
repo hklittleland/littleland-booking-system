@@ -7,14 +7,14 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
   'use strict';
 
-  const API_URL = 'https://script.google.com/macros/s/AKfycby6ecJFVBzQHAwGXS9VZlMLOQ3q3DbZh12Ssjg5nxUBGn1S61Sq_MGzZpmIgNm5EQ_i/exec';
+  const API_URL = 'https://script.google.com/macros/s/AKfycbwKh4rEb9poV0Q4ZwWk50iAULT-YP3Sk1ifoF-ywG2O1F80K3h9troLXb_8zO6HgEzNdQ/exec';
   const PRICE_VERSION = '6f002fd9ea921c313ecf90502091f1de051f332c';
   const REQUEST_TIMEOUT_MS = 60000;
-  const BOOKING_ID_PATTERN = /^TEST-LL-\d{8}-[A-F0-9]{8}$/;
+  const BOOKING_ID_PATTERN = /^LL-\d{8}-[A-F0-9]{8}$/;
 
   class ApiError extends Error {
     constructor(code, message, retryable, status) {
-      super(message || 'TEST API 暫時未能處理要求。');
+      super(message || 'LittleLand API 暫時未能處理要求。');
       this.name = 'LittleLandApiError';
       this.code = code || 'API_ERROR';
       this.retryable = Boolean(retryable);
@@ -29,7 +29,7 @@
   function resolveFetch(fetchImpl) {
     const candidate = fetchImpl || (root && root.fetch);
     if (typeof candidate !== 'function') {
-      throw new ApiError('NETWORK_ERROR', '瀏覽器無法連接 TEST API。', true);
+      throw new ApiError('NETWORK_ERROR', '瀏覽器無法連接 LittleLand API。', true);
     }
     return candidate;
   }
@@ -47,16 +47,16 @@
       try {
         envelope = await response.json();
       } catch (error) {
-        throw new ApiError('INVALID_RESPONSE', 'TEST API 回應格式無法讀取，請重試。', true, response.status);
+        throw new ApiError('INVALID_RESPONSE', 'LittleLand API 回應格式無法讀取，請重試。', true, response.status);
       }
 
       if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope) || typeof envelope.success !== 'boolean') {
-        throw new ApiError('INVALID_RESPONSE', 'TEST API 回應格式不完整，請重試。', true, response.status);
+        throw new ApiError('INVALID_RESPONSE', 'LittleLand API 回應格式不完整，請重試。', true, response.status);
       }
       if (!response.ok) {
         throw new ApiError(
           typeof envelope.code === 'string' ? envelope.code : 'HTTP_ERROR',
-          typeof envelope.message === 'string' ? envelope.message : 'TEST API 暫時未能處理要求。',
+          typeof envelope.message === 'string' ? envelope.message : 'LittleLand API 暫時未能處理要求。',
           Boolean(envelope.retryable) || response.status >= 500,
           response.status
         );
@@ -64,20 +64,20 @@
       if (!envelope.success) {
         throw new ApiError(
           typeof envelope.code === 'string' ? envelope.code : 'API_ERROR',
-          typeof envelope.message === 'string' ? envelope.message : 'TEST API 暫時未能處理要求。',
+          typeof envelope.message === 'string' ? envelope.message : 'LittleLand API 暫時未能處理要求。',
           Boolean(envelope.retryable),
           response.status
         );
       }
       if (envelope.code !== 'OK' || !envelope.data || typeof envelope.data !== 'object' || Array.isArray(envelope.data)) {
-        throw new ApiError('INVALID_RESPONSE', 'TEST API 成功回應資料不完整，請重試。', true, response.status);
+        throw new ApiError('INVALID_RESPONSE', 'LittleLand API 成功回應資料不完整，請重試。', true, response.status);
       }
       return envelope;
     } catch (error) {
       if (error instanceof ApiError) throw error;
       const message = error && error.name === 'AbortError'
-        ? 'TEST API 查詢逾時，已保留你填寫的資料，請重試。'
-        : '暫時無法連接 TEST API，已保留你填寫的資料，請重試。';
+        ? 'LittleLand API 查詢逾時，已保留你填寫的資料，請重試。'
+        : '暫時無法連接 LittleLand API，已保留你填寫的資料，請重試。';
       throw new ApiError('NETWORK_ERROR', message, true);
     } finally {
       if (timeoutId !== null) clearTimeout(timeoutId);
@@ -106,7 +106,7 @@
     }, fetchImpl);
 
     if (typeof envelope.data.available !== 'boolean') {
-      throw new ApiError('INVALID_RESPONSE', 'TEST API 房態回應格式不正確，請重試。', true);
+      throw new ApiError('INVALID_RESPONSE', 'LittleLand API 房態回應格式不正確，請重試。', true);
     }
     return envelope.data.available;
   }
@@ -131,7 +131,7 @@
 
     const data = envelope.data;
     if (!validBookingId(data.bookingId) || data.bookingStatus !== 'PENDING_CONFIRMATION') {
-      throw new ApiError('INVALID_BOOKING_RESPONSE', 'TEST API 未回傳有效預約編號，沒有顯示成功頁。', true);
+      throw new ApiError('INVALID_BOOKING_RESPONSE', 'LittleLand API 未回傳有效預約編號，沒有顯示成功頁。', true);
     }
     return data;
   }
