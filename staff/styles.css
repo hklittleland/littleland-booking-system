@@ -213,6 +213,40 @@ a {
   gap: 10px;
   margin-bottom: 14px;
 }
+.booking-pagination-summary {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.booking-pagination,
+.detail-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 8px 0 14px;
+}
+.booking-pagination .btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 9px 12px;
+}
+.booking-pagination-ellipsis {
+  display: inline-flex;
+  min-width: 24px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.booking-pagination .btn:disabled {
+  cursor: not-allowed;
+}
+.detail-head-actions {
+  justify-content: flex-end;
+  margin: 0;
+}
 .booking-card {
   width: 100%;
   margin: 8px 0;

@@ -221,13 +221,13 @@
       .forEach((x) => (x.onclick = () => StaffRouter.go(x.dataset.go)));
     app.querySelectorAll("[data-logout]").forEach((x) => (x.onclick = logout));
     app
-      .querySelectorAll("[data-detail]")
+    .querySelectorAll("[data-detail]")
       .forEach(
         (x) => (x.onclick = () => StaffRouter.go("detail", x.dataset.detail)),
       );
   }
   const head = (t, s = "") =>
-    `<div class="page-head"><div><h1>${esc(t)}</h1>${s ? `<p>${esc(s)}</p>` : ""}</div>${t === "Booking Detail" ? '<button type="button" class="btn secondary" data-print-booking>列印／另存 PDF</button>' : ""}</div>`;
+    `<div class="page-head"><div><h1>${esc(t)}</h1>${s ? `<p>${esc(s)}</p>` : ""}</div>${t === "Booking Detail" ? '<div class="detail-head-actions"><button type="button" class="btn ghost" data-go="bookings">返回預訂列表</button><button type="button" class="btn secondary" data-print-booking>列印／另存 PDF</button></div>' : ""}</div>`;
   const stat = (t, v) =>
     `<div class="stat"><strong>${esc(v == null ? "—" : v)}</strong><span>${esc(t)}</span></div>`;
   function conflictNotice(b) {
@@ -268,10 +268,14 @@
     const sequence = ++loadSequence;
     store.state.loading = true;
     errorText = "";
-    paint();
+    if (!options.silent) paint();
     try {
       let p = {};
       if (page === "detail") p = { bookingId: StaffRouter.current().id };
+      if (page === "bookings") {
+        const q = store.state.bookingList;
+        p = { page: q.page, search: q.search, status: q.status, roomTypeId: q.roomTypeId, checkinDate: q.checkinDate, checkoutDate: q.checkoutDate };
+      }
       if (page === "schedule") { const d=store.state.scheduleDate||new Date(); p.month=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
       if (page === "revenue") {
         p.year = store.state.revenueYear || "2026";
@@ -290,8 +294,15 @@
       if (page === "dashboard") {
         store.state.dashboard = d;
         store.state.summary = d.counts || {};
-      } else if (page === "bookings") store.state.records = d.bookings || [];
-      else if (page === "calendar") {
+      } else if (page === "bookings") {
+        store.state.records = d.bookings || [];
+        Object.assign(store.state.bookingList, {
+          page: Number(d.page) || store.state.bookingList.page,
+          pageSize: Number(d.pageSize) || 15,
+          totalCount: Number(d.totalCount) || 0,
+          totalPages: Number(d.totalPages) || 0,
+        });
+      } else if (page === "calendar") {
         store.state.calendar = d;
         store.state.records = d.bookings || [];
       } else if (page === "followups")
@@ -322,13 +333,26 @@
     return `${head("概覽", "今日營運與近期預約")}<div class="stats">${stat("今日入住", c.todayCheckins)}${stat("今日退房", c.todayCheckouts)}${stat("待確認", c.pendingConfirmation)}${stat("待付訂金", c.pendingDeposit)}${stat("本月預訂住宿", amount(revenue.monthBookedRevenue ?? revenue.monthAccommodationRevenue))}${stat("本月實際收款", amount(revenue.monthCollected))}</div><p><button class="btn secondary" data-go="schedule">查看員工排班</button> <button class="btn" data-go="new-booking">新增預約</button></p><section class="card"><h2>今日入住／退房提醒</h2>${list(d.todaySchedule, "今日沒有入住／退房預約")}</section><section class="card"><h2>房間衝突／待跟進</h2>${list(d.roomConflicts || d.followups, "目前沒有需處理事項")}</section><section class="card"><h2>近期預約</h2>${list(d.recent, "目前沒有近期預約")}</section>`;
   }
   function bookings() {
-    return `${head("預訂", "搜尋及篩選目前 TEST API 預訂清單")}<div class="filters"><div class="field"><label for="bookingQ">Booking ID／客人／電話／寵物</label><input id="bookingQ" placeholder="搜尋"></div><div class="field"><label for="bookingStatus">預訂狀態</label><select id="bookingStatus"><option value="">全部</option>${Object.entries(
-      labels,
-    )
-      .map(([v, l]) => `<option value="${v}">${l}</option>`)
-      .join(
-        "",
-      )}</select></div><div class="field"><label for="bookingRoom">房型 ID</label><input id="bookingRoom" placeholder="例如 PRIVATE_SUITE"></div><div class="field"><label for="bookingCheckin">入住日期</label><input id="bookingCheckin" type="date"></div><div class="field"><label for="bookingCheckout">退房日期</label><input id="bookingCheckout" type="date"></div></div><div id="bookingResults">${list(store.state.records, "沒有符合預訂")}</div>`;
+    const q = store.state.bookingList;
+    const roomOptions = Object.entries(roomNames)
+      .map(([id, name]) => `<option value="${id}" ${q.roomTypeId === id ? "selected" : ""}>${esc(name)}</option>`)
+      .join("");
+    const pageNumbers = q.totalPages <= 7
+      ? Array.from({ length: q.totalPages }, (_, index) => index + 1)
+      : [...new Set([1, q.page - 1, q.page, q.page + 1, q.totalPages]
+        .filter((page) => page >= 1 && page <= q.totalPages))].sort((a, b) => a - b);
+    const pageItems = [];
+    pageNumbers.forEach((page, index) => {
+      if (index > 0 && page - pageNumbers[index - 1] > 1) pageItems.push(null);
+      pageItems.push(page);
+    });
+    const pageButtons = pageItems.map((page) => page === null
+      ? '<span class="booking-pagination-ellipsis" aria-hidden="true">…</span>'
+      : `<button type="button" class="btn ${q.page === page ? "" : "secondary"}" data-booking-page="${page}" aria-current="${q.page === page ? "page" : "false"}">${page}</button>`).join("");
+    const filterForm = `<div class="filters"><div class="field"><label for="bookingQ">Booking ID／客人／電話／寵物</label><input id="bookingQ" value="${escValue(q.search)}" placeholder="搜尋"></div><div class="field"><label for="bookingStatus">預訂狀態</label><select id="bookingStatus"><option value="">全部</option>${Object.entries(labels).map(([value, label]) => `<option value="${value}" ${q.status === value ? "selected" : ""}>${label}</option>`).join("")}</select></div><div class="field"><label for="bookingRoom">房型</label><select id="bookingRoom"><option value="">全部房型</option>${roomOptions}</select></div><div class="field"><label for="bookingCheckin">入住日期</label><input id="bookingCheckin" type="date" value="${escValue(q.checkinDate)}"></div><div class="field"><label for="bookingCheckout">退房日期</label><input id="bookingCheckout" type="date" value="${escValue(q.checkoutDate)}"></div></div>`;
+    const paginationSummary = `<p class="booking-pagination-summary" aria-live="polite">符合 ${q.totalCount} 筆 · 第 ${q.totalPages ? q.page : 0}／${q.totalPages} 頁 · 每頁 ${q.pageSize} 筆</p>`;
+    const paginationControls = `<div class="booking-pagination" aria-label="預訂列表分頁"><button type="button" class="btn secondary" data-booking-page="${Math.max(1, q.page - 1)}" ${q.page <= 1 ? "disabled" : ""}>上一頁</button>${pageButtons}<button type="button" class="btn secondary" data-booking-page="${Math.min(Math.max(1, q.totalPages), q.page + 1)}" ${q.page >= q.totalPages ? "disabled" : ""}>下一頁</button></div>`;
+    return `${head("預訂", "搜尋及篩選目前 TEST API 預訂清單")}${filterForm}${paginationSummary}${paginationControls}<div id="bookingResults">${list(store.state.records, "沒有符合預訂")}</div>`;
   }
   function parseJson(v) {
     if (Array.isArray(v)) return v;
@@ -762,62 +786,40 @@
           paint();
         }),
     );
-    const q = app.querySelector("#bookingQ");
-    if (q) {
-      const filter = () => {
-        const val = (id) => app.querySelector(id)?.value || "",
-          term = val("#bookingQ").toLowerCase(),
-          st = val("#bookingStatus"),
-          room = val("#bookingRoom").toLowerCase(),
-          ci = val("#bookingCheckin"),
-          co = val("#bookingCheckout");
-        const filtered = arr(store.state.records).filter((b) => {
-          const hay = [
-            idOf(b),
-            b.customerName,
-            b.parentName,
-            b.phone,
-            b.petNames,
-            arr(b.pets)
-              .map((p) => p.name)
-              .join(" "),
-          ]
-            .join(" ")
-            .toLowerCase();
-          return (
-            hay.includes(term) &&
-            (!st || statusOf(b) === st) &&
-            (!room ||
-              String(b.roomTypeId || "")
-                .toLowerCase()
-                .includes(room)) &&
-            (!ci || String(b.checkinDate || "") === ci) &&
-            (!co || String(b.checkoutDate || "") === co)
+    const bookingQueryControls = {
+      search: "#bookingQ",
+      status: "#bookingStatus",
+      roomTypeId: "#bookingRoom",
+      checkinDate: "#bookingCheckin",
+      checkoutDate: "#bookingCheckout",
+    };
+    const bookingListState = store.state.bookingList;
+    let bookingSearchTimer;
+    Object.entries(bookingQueryControls).forEach(([key, selector]) => {
+      const control = app.querySelector(selector);
+      if (!control) return;
+      control.addEventListener(
+        control.tagName === "SELECT" || control.type === "date" ? "change" : "input",
+        () => {
+          bookingListState[key] = control.value;
+          bookingListState.page = 1;
+          clearTimeout(bookingSearchTimer);
+          const delay = key === "search" ? 250 : 0;
+          bookingSearchTimer = setTimeout(
+            () => loadPageData("bookings", { force: true, silent: true }).then(paint),
+            delay,
           );
-        });
-        const box = app.querySelector("#bookingResults");
-        box.innerHTML = list(filtered, "沒有符合預訂");
-        box
-          .querySelectorAll("[data-detail]")
-          .forEach(
-            (x) =>
-              (x.onclick = () => StaffRouter.go("detail", x.dataset.detail)),
-          );
+        },
+      );
+    });
+    app.querySelectorAll("[data-booking-page]").forEach((button) => {
+      button.onclick = () => {
+        const nextPage = Number(button.dataset.bookingPage);
+        if (button.disabled || !Number.isInteger(nextPage) || nextPage < 1 || nextPage > bookingListState.totalPages || nextPage === bookingListState.page) return;
+        bookingListState.page = nextPage;
+        loadPageData("bookings", { force: true, silent: true }).then(paint);
       };
-      [
-        "#bookingQ",
-        "#bookingStatus",
-        "#bookingRoom",
-        "#bookingCheckin",
-        "#bookingCheckout",
-      ].forEach((sel) => {
-        const el = app.querySelector(sel);
-        el.addEventListener(
-          el.tagName === "SELECT" ? "change" : "input",
-          filter,
-        );
-      });
-    }
+    });
     const cq = app.querySelector("#customerQ");
     if (cq)
       cq.oninput = () => { const norm = v => String(v||"").replace(/\D/g,"").replace(/^852(?=\d{8}$)/,"").replace(/^00852(?=\d{8}$)/,""); const term=norm(cq.value); app.querySelectorAll(".customer").forEach(x => { const phone=norm(x.querySelector("p")?.textContent); x.hidden=!!term && !phone.includes(term); }); };

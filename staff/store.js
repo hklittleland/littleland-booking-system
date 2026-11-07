@@ -7,6 +7,7 @@
     calendarDate: null, selectedCalendarDate: "", scheduleDate: null, scheduleDrafts: {}, scheduleMonthIdempotency: {}, summary: null, dashboard: null, detail: null,
     booking: null, revenue: null, settings: null, staff: null, schedules: null, notice: "", loading: false,
     newBookingDraft: null, newBookingAvailability: null, newBookingIdempotencyKey: "", newBookingPayloadFingerprint: "",
+    bookingList: { page: 1, pageSize: 15, totalCount: 0, totalPages: 0, search: "", status: "", roomTypeId: "", checkinDate: "", checkoutDate: "" },
   };
   root.StaffStore = {
     state,
@@ -17,6 +18,7 @@
     clear() {
       this.setToken(""); sessionStorage.removeItem(NAV_KEY);
       Object.assign(state, { records: [], payments: [], paymentData: null, followups: [], customers: [], calendar: null, calendarDate: null, selectedCalendarDate: "", scheduleDate: null, scheduleDrafts: {}, scheduleMonthIdempotency: {}, summary: null, dashboard: null, detail: null, booking: null, revenue: null, settings: null, schedules: null, staff: null, newBookingDraft: null, newBookingAvailability: null, newBookingIdempotencyKey: "", newBookingPayloadFingerprint: "" });
+      state.bookingList = { page: 1, pageSize: 15, totalCount: 0, totalPages: 0, search: "", status: "", roomTypeId: "", checkinDate: "", checkoutDate: "" };
     },
   };
 })(window);
