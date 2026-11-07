@@ -152,7 +152,9 @@ function littlelandStaffReadAction_(action, body, auth) {
     return adjustments;
   }
   function getSchedules() {
-    if (schedules === null) schedules = readRecords("StaffSchedules");
+    if (schedules === null) schedules = readRecords("StaffSchedules").map(function (record) {
+      return Object.assign({}, record, { workDate: littlelandSheetDateOnly_(record.workDate) });
+    });
     return schedules;
   }
   function getActiveRoomLocks() {
@@ -1366,7 +1368,7 @@ function littlelandStaffScheduleMutation_(action,body,auth,requestId){
   littlelandRequire_(littlelandIsIsoDate_(date)&&["WORK","REST"].indexOf(status)>=0,"VALIDATION_FAILED","排班日期或狀態無效。",false);
   var active=littlelandStaffActiveScheduleEmployees_().filter(function(x){return String(x.staffId)===staffId;});
   littlelandRequire_(active.length===1,"VALIDATION_FAILED","只能指派有效員工。",false);
-  var rows=littlelandReadTable_("StaffSchedules").rows.map(function(x){return x.record;}), now=littlelandNowIso_();
+  var rows=littlelandReadTable_("StaffSchedules").rows.map(function(x){return Object.assign({},x.record,{workDate:littlelandSheetDateOnly_(x.record.workDate)});}), now=littlelandNowIso_();
   if(action==="staff.scheduleSwap"){
     var target=String(d.targetStaffId||d.toStaffId||"");
     var targetRows=littlelandStaffActiveScheduleEmployees_().filter(function(x){return String(x.staffId)===target;});
@@ -1427,7 +1429,7 @@ function littlelandStaffScheduleMonthMutation_(body,auth,requestId){
     byDate[date]=staffId;
   });
   for(var day=1;day<=daysInMonth;day++){var expected=monthKey+"-"+(day<10?"0":"")+String(day);littlelandRequire_(Object.prototype.hasOwnProperty.call(byDate,expected),"VALIDATION_FAILED","排班月份有缺漏日期。",false);}
-  var table=littlelandReadTable_("StaffSchedules"),rows=table.rows.map(function(x){return x.record;}),existingByKey={};
+  var table=littlelandReadTable_("StaffSchedules"),rows=table.rows.map(function(x){return Object.assign({},x.record,{workDate:littlelandSheetDateOnly_(x.record.workDate)});}),existingByKey={};
   rows.forEach(function(row){var date=String(row.workDate||""),id=String(row.staffId||"");if(date.slice(0,7)!==monthKey||!staffById[id])return;var key=date+"|"+id;existingByKey[key]=existingByKey[key]||[];existingByKey[key].push(row);});
   Object.keys(existingByKey).forEach(function(key){littlelandRequire_(existingByKey[key].length===1,"SHEET_READ_FAILED","本月已有重複排班資料，請先人工核對。",false);});
   var now=littlelandNowIso_(),eventBody=Object.assign({},body,{bookingId:"SCHEDULE:"+monthKey}),updatedRows=0,createdRows=0;

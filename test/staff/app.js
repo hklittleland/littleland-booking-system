@@ -869,7 +869,7 @@
         mutate("edit", StaffRouter.current().id, { data }, ef);
       };
     }
-    const submitApi = async (action, payload, form, onSuccess) => {
+    const submitApi = async (action, payload, form, onSuccess, successMessage) => {
       if (pendingAction) return;
       const requestBody = Object.assign({}, payload);
       const suppliedIdempotencyKey = String(requestBody.idempotencyKey || "");
@@ -898,6 +898,7 @@
           if (form) { delete form.dataset.idempotencyFingerprint; delete form.dataset.idempotencyKey; }
           readCache.clear();
           toast("TEST API 已確認操作。");
+          if (successMessage) toast(successMessage);
         } catch (e) {
           const handled = handleAuth(e);
           if (handled) repaint = true;
@@ -990,6 +991,7 @@
       });
       scheduleMonthForm.onsubmit = async (event) => {
         event.preventDefault();
+        if (pendingAction) return;
         const assignments = Array.from(scheduleMonthForm.querySelectorAll("[data-schedule-day]"), (control) => ({ workDate: control.dataset.scheduleDayDate, staffId: control.value || "" }));
         const data = { year, month, assignments };
         const fingerprint = JSON.stringify(data);
@@ -999,10 +1001,22 @@
           retry = { fingerprint, key: uuid() };
           store.state.scheduleMonthIdempotency[monthKey] = retry;
         }
-        await submitApi("scheduleMonthSave", { data, idempotencyKey: retry.key }, scheduleMonthForm, () => {
+        store.state.scheduleSaving = true;
+        const saveButton = scheduleMonthForm.querySelector('button[type="submit"]');
+        const saveStatus = scheduleMonthForm.querySelector("[data-schedule-save-status]");
+        if (saveButton) { saveButton.disabled = true; saveButton.textContent = "正在儲存排班…"; }
+        if (saveStatus) saveStatus.textContent = "正在儲存排班…";
+        const saved = await submitApi("scheduleMonthSave", { data, idempotencyKey: retry.key }, scheduleMonthForm, () => {
+          store.state.scheduleSaving = false;
           if (store.state.scheduleDrafts) delete store.state.scheduleDrafts[monthKey];
           if (store.state.scheduleMonthIdempotency) delete store.state.scheduleMonthIdempotency[monthKey];
-        });
+        }, "排班已儲存");
+        store.state.scheduleSaving = false;
+        if (!saved && scheduleMonthForm.isConnected) {
+          const error = scheduleMonthForm.querySelector(".form-error");
+          if (saveStatus) saveStatus.textContent = error ? error.textContent : "儲存失敗，請檢查後重試。";
+          if (saveButton) { saveButton.disabled = false; saveButton.textContent = "儲存本月排班"; }
+        }
       };
     }
     const changesView = window.LittleLandBookingChangesView;
