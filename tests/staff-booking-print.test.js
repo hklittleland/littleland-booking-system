@@ -72,7 +72,7 @@ test("booking print uses an eight-character guest reference and prints assigned 
 
 test("booking print includes booking data, detailed charges, manual adjustments and payment states", () => {
   const html = render(sample(), options);
-  for (const expected of ["入住資料核對及收費詳情", "55500000", "2026-11-01", "豪華套房", "基本房費", "額外寵物費", "單次梳毛", "寵物：Mochi", "額外護理", "目前住宿總額", "應付訂金", "預計尾數", "已收"])
+  for (const expected of ["入住資料核對及收費詳情", "55500000", "2026-11-01", "豪華套房", "基本房費", "額外寵物費", "單次梳毛", "寵物：Mochi", "額外護理", "目前住宿總額", "應付訂金", "目前尚欠住宿款", "已收"])
     assert.ok(html.includes(expected), `missing expected print content: ${expected}`);
   assert.match(html, /HK\$920/);
   assert.match(html, /HK\$2,000/);

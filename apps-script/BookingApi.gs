@@ -230,7 +230,8 @@ function littlelandBuildBookingRecord_(validated, pricing, bookingId, timestamp)
     totalSurcharges: pricing.totalSurcharges,
     estimatedTotal: pricing.estimatedTotal,
     depositAmount: pricing.depositAmount,
-    remainingBalance: pricing.remainingBalance,
+    // No accommodation payment exists at creation; the pricing quote remains unchanged.
+    remainingBalance: Math.max(0, pricing.estimatedTotal),
     cashDepositAmount: pricing.cashDeposit,
     depositStatus: 'UNPAID',
     balanceStatus: 'UNPAID',

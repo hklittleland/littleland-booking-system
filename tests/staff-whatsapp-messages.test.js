@@ -293,3 +293,15 @@ test("iPhone Safari copy fallback selects the draft when clipboard permissions a
   assert.equal(legacyCalls, 1);
   assert.ok(focusCalls >= 2);
 });
+
+
+test('payment arrangement keeps projected check-in balance separate from the actual full unpaid remainingBalance', () => {
+  const booking = baseBooking({ remainingBalance: 456 });
+  const before = JSON.stringify(booking);
+  const message = get(Messages.buildMessages({ booking, pets, payments: [], roomNames }), 'deposit-arrangement');
+  assert.equal(message.eligible, true);
+  assert.match(message.text, /現需支付訂金（基本房費 50%）：HK\$178/);
+  assert.match(message.text, /入住時需繳付尾數：HK\$278/);
+  assert.doesNotMatch(message.text, /入住時需繳付尾數：HK\$456/);
+  assert.equal(JSON.stringify(booking), before);
+});

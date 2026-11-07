@@ -166,3 +166,13 @@ test("per-pet fees are not editable for cancelled bookings and missing pet IDs a
   assert.doesNotMatch(missingId, /data-pet-adjustment-form/);
   assert.match(missingId, /缺少寵物 ID/);
 });
+
+
+test('unpaid settlement labels remainingBalance as actual current debt, not projected post-deposit balance', () => {
+  const html = loadView().render({
+    booking: { bookingId: 'TEST-QA-DUE', bookingStatus: 'PENDING_DEPOSIT', species: 'rabbit', roomTypeId: 'DELUXE_ROOM', quantity: 1, estimatedTotal: 356, depositAmount: 178, depositStatus: 'UNPAID', remainingBalance: 356 },
+    pets: [{ petId: 'TEST-QA-PET', name: 'Synthetic' }], payments: [], adjustments: [],
+  });
+  assert.match(html, /目前尚欠住宿款 <strong>HK\$356\.00/);
+  assert.doesNotMatch(html, /扣除應收訂金後預計尾數/);
+});

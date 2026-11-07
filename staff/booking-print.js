@@ -226,7 +226,7 @@
       <section class="block"><h2>住宿及收費明細</h2><table class="fees"><thead><tr><th>項目</th><th>說明</th><th class="numeric">金額</th></tr></thead><tbody>${feeMarkup}</tbody></table>
         <div class="totals">${surchargeTotalsMarkup}<div class="grand"><span>目前住宿總額（不含現金按金）</span><b>${esc(money(currentTotal))}</b></div>
         <div><span>應付訂金（基本房費 50%） · ${esc(paymentStatus(booking.depositStatus))}</span><b>${esc(money(booking.depositAmount))}</b></div>
-        <div><span>預計尾數 · ${esc(paymentStatus(booking.balanceStatus))}</span><b>${esc(money(booking.remainingBalance))}</b></div>
+        <div><span>目前尚欠住宿款 · ${esc(paymentStatus(booking.balanceStatus))}</span><b>${esc(money(booking.remainingBalance))}</b></div>
         <div class="cash"><span>入住當日現金備用金／按金（每隻 HK$1,000，不計入住宿總額）</span><b>${esc(money(cashDepositAmount))}</b></div>
         <div><span>已收／已使用／已退／尚餘現金按金</span><b>${esc([collectedCashDeposit, booking.cashDepositUsedAmount || 0, booking.cashDepositRefundedAmount || 0, cashRemaining].map(money).join(" / "))}</b></div></div>
         <p class="small-note">尾數於入住時繳付；現金備用金／按金獨立處理，不計入住宿總額、訂金或尾數。訂金收取及退款情況以付款紀錄為準。</p>
@@ -242,7 +242,7 @@
       <section class="block"><h2>付款紀錄</h2><table class="payments"><thead><tr><th>類別</th><th>狀態</th><th class="numeric">金額</th><th>日期</th></tr></thead><tbody>${paymentMarkup}</tbody></table>${refundMarkup ? `<p class="refund-title">已記錄退款</p><ul>${refundMarkup}</ul>` : ""}</section>
       <section class="block"><h2>入住日款項核對</h2><div class="two-col">${infoRows([
         ["目前住宿總額", money(currentTotal)], ["訂金應收／狀態", `${money(booking.depositAmount)} · ${paymentStatus(booking.depositStatus)}`],
-        ["住宿尾數／狀態", `${money(booking.remainingBalance)} · ${paymentStatus(booking.balanceStatus)}`], ["現金按金應收", money(cashDepositAmount)],
+        ["目前尚欠住宿款／狀態", `${money(booking.remainingBalance)} · ${paymentStatus(booking.balanceStatus)}`], ["現金按金應收", money(cashDepositAmount)],
         ["已收現金按金", money(collectedCashDeposit)], ["已使用／已退／尚餘", `${money(booking.cashDepositUsedAmount || 0)} / ${money(booking.cashDepositRefundedAmount || 0)} / ${money(cashRemaining)}`],
       ])}</div>
         <p>入住時尾數實收：HK$________________　付款方式：________________　收取時間：________________</p>

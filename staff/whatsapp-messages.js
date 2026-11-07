@@ -286,8 +286,11 @@
     var depositNumber = depositRaw !== "" ? Number(depositRaw) : Number.isFinite(baseFeeNumber) ? baseFeeNumber * 0.5 : NaN;
     var surchargeNumber = surchargeRaw !== "" ? Number(surchargeRaw)
       : Number.isFinite(totalNumber) && Number.isFinite(baseFeeNumber) ? totalNumber - baseFeeNumber : NaN;
-    var balanceNumber = balanceRaw !== "" ? Number(balanceRaw)
-      : Number.isFinite(totalNumber) && Number.isFinite(depositNumber) ? totalNumber - depositNumber : NaN;
+    // Payment-arrangement messages quote the future balance after the requested
+    // deposit; Booking.remainingBalance is the actual amount still owed now.
+    var balanceNumber = !depositPaid && Number.isFinite(totalNumber) && Number.isFinite(depositNumber)
+      ? Math.max(0, totalNumber - depositNumber)
+      : balanceRaw !== "" ? Number(balanceRaw) : NaN;
     var cashRaw = firstValue(booking, ["cashDepositAmount", "cashDeposit"]);
     var quantity = Number(firstValue(booking, ["quantity"]) || pets.length || 0);
     var cashNumber = cashRaw !== "" ? Number(cashRaw) : quantity > 0 ? quantity * 1000 : NaN;

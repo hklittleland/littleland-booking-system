@@ -1355,7 +1355,7 @@ test("fee reversals append signed offsets, preserve source rows, and cannot doub
   assert.equal(Number(reversal.amount), -50);
   assert.equal(reversal.status, "RECORDED");
   assert.equal(reversal.reversesAdjustmentId, sourceBefore.adjustmentId);
-  assert.equal(Number(r.records("Bookings")[0].remainingBalance), 50);
+  assert.equal(Number(r.records("Bookings")[0].remainingBalance), 100, "an unpaid requested deposit is not an actual receipt");
 
   const afterReverse = r.records("Bookings")[0];
   const duplicate = r.invokeStaff({
@@ -1412,13 +1412,13 @@ test("pet addition before deposit recalculates all canonical totals and required
   assert.equal(Number(updated.extraPetFee), 100);
   assert.equal(Number(updated.estimatedTotal), 800);
   assert.equal(Number(updated.depositAmount), 350, "deposit remains 50% of base room fee");
-  assert.equal(Number(updated.remainingBalance), 450);
+  assert.equal(Number(updated.remainingBalance), 800, "before payment the whole accommodation total is still owed");
   assert.equal(Number(updated.cashDepositAmount), 2000);
   assert.equal(updated.allocatedRoomIdsJson, "[]", "pending booking must not receive physical allocation");
   assert.equal(r.records("Pets").filter((pet) => pet.petStatus !== "REMOVED").length, 2);
   assert.equal(r.records("Pets").find((pet) => pet.name === "Hazel").healthReviewStatus, "");
   assert.equal(r.records("Logs").at(-1).actorStaffNameSnapshot, "Test Staff");
-  assert.equal(result.data.remainingBalance, 450);
+  assert.equal(result.data.remainingBalance, 800);
   assert.equal(result.data.creditDue, 0);
   const replay = r.invokeStaff(request);
   assert.equal(replay.success, true);
@@ -1850,7 +1850,7 @@ test("staff.extendStay rejects an occupied original room without changing data, 
   assert.equal(ext.success, true, JSON.stringify(ext));
   assert.equal(ext.data.internalAssignment, "EXT");
   assert.equal(ext.data.depositAmount, 356);
-  assert.equal(ext.data.remainingBalance, 356);
+  assert.equal(ext.data.remainingBalance, 712, "EXT has no actual deposit receipt to deduct");
   assert.equal(r.records("Bookings")[0].depositAmount, 356);
   assert.equal(r.records("Payments").length, 0);
 });

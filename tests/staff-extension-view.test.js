@@ -118,3 +118,15 @@ test('extension preview rejects a checkout date that is not later than the curre
   assert.equal(extensionView.preview({ booking, payments: [], adjustments: [] }, '2026-11-05', pricing).ok, false);
   assert.equal(extensionView.preview({ booking, payments: [], adjustments: [] }, 'not-a-date', pricing).ok, false);
 });
+
+
+test('remainingBalance preview never deducts an unpaid requested deposit from actual outstanding accommodation money', () => {
+  const booking = deluxeBooking({ depositStatus: 'UNPAID', bookingStatus: 'PENDING_DEPOSIT' });
+  const result = extensionView.preview({ booking, payments: [], adjustments: [] }, '2026-11-07', pricing);
+  assert.equal(result.ok, true);
+  assert.equal(result.total, 1182);
+  assert.equal(result.deposit, 356);
+  assert.equal(result.paid, 0);
+  assert.equal(result.remaining, result.total);
+  assert.equal(result.quote.remainingBalance, result.quote.estimatedTotal - result.quote.depositAmount);
+});

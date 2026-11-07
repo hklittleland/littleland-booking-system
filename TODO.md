@@ -694,3 +694,16 @@
 - 使用既有 TEST Apps Script 專案／LittleLand_TEST 與 Staff TEST UI；不寫入 Booking、Payment、房態或其他測試資料。只做讀取及 UI/API 驗收。
 - 保留已有 Booking Detail、付款、EXT、房鎖功能及 Staff session 行為；此次只增加列表資料查詢與分頁介面，不改寫核心商業規則。
 - 建立／更新相關 Staff API、前端狀態、手機版樣式及 mock automated tests；完成後執行完整測試、核對 TEST API 與正式 GitHub feature branch，不 Merge `main` 或 `develop`。
+
+
+# V3.2 授權修正 — remainingBalance 實際尚欠款（2026-11-07）
+
+本段取代任何把 Booking.remainingBalance 當作歷史預計尾數的舊說明；Pricing Engine 報價及 pricing snapshot 的預計尾數仍保留原規則，其他已驗收商業規則凍結。
+
+- [ ] `remainingBalance` 只代表客人目前實際尚欠住宿金額；未付款時為目前全數尚欠，已收訂金後按實收款扣減，尾數全數收清後為 0。
+- [ ] 全數付清後再延期／增加費用時，`remainingBalance = 新住宿總額 − 所有適用的已實收款項`，再次收清新增尾數後為 0；可重複多次。
+- [ ] 已收訂金及歷史 Payment 不覆寫、不重算；現金備用金／按金不抵扣住宿款。歷史預計尾數留在既有 pricing snapshot，不使用 Booking.remainingBalance 代表歷史計價。
+- [ ] 未付款、已收訂金、尾數收清、付清後延期、新尾数再次收清、Payment歷史保留、Revenue正確至少七類回歸測試通過，再跑完整 automated tests。
+- [ ] 只修正 remainingBalance 語意及相關既有流程；不改電話儲存、Pricing、房型、EXT安排、鎖房或新增功能；不merge main/develop。
+- [ ] 先經TEST與非持久mock驗收；Production QA不建立假已收訂金／尾數／現金按金記錄。後續合成電話採合規8位數、不聯絡任何該號碼持有人；維持只一張明確Production QA合成Booking。
+- [ ] 修正及驗收通過後，完成Production最後驗收並切換正式客人／Staff網站；遇接錯表／遺失資料／未核准資料修改則停止。

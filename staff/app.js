@@ -662,7 +662,7 @@
       ["附加費合計（含人工調整）", "displaySurcharges"],
       ["目前住宿總額", "currentTotal"],
       ["訂金", "depositAmount"],
-      ["尾數", "remainingBalance"],
+      ["目前尚欠住宿款", "remainingBalance"],
       ["現金按金", "cashDepositAmount"],
       ["應退現金按金", refund],
     ].filter(([label, key]) => ["額外寵物費", "週末附加費", "服務費合計", "人工附加費／減項淨額", "附加費合計（含人工調整）"].indexOf(label) < 0 || Number(feeDisplay[key] || 0) !== 0))}<h3>客人同意</h3>${kv(b, [

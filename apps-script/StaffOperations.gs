@@ -226,6 +226,11 @@ function littlelandStaffReadAction_(action, body, auth) {
     Object.keys(b).forEach(function (k) {
       c[k] = b[k];
     });
+    if (String(b.bookingStatus) !== "CANCELLED") {
+      var settlement = littlelandStaffBalanceAfterChange_(b, Number(b.estimatedTotal || 0), getPayments(), getAdjustments(), {});
+      c.remainingBalance = settlement.remainingBalance;
+      c.balanceStatus = settlement.balanceStatus;
+    }
     c.customerName = b.parentName;
     c.bookingReference = littlelandDisplayBookingReference_(b.bookingId);
     c.petNames = names;
@@ -470,7 +475,8 @@ function littlelandStaffReadAction_(action, body, auth) {
         cashDepositsToRefundTotal: 0,
         receivedTodayTotal: 0,
       };
-    bookings.forEach(function (b) {
+    var paymentCards = bookings.map(card);
+    paymentCards.forEach(function (b) {
       if (b.bookingStatus === "PENDING_DEPOSIT" && b.depositStatus !== "PAID")
         s.pendingDepositsTotal += Number(b.depositAmount || 0);
       if (b.bookingStatus === "CHECKED_IN" && b.balanceStatus !== "PAID")
@@ -503,7 +509,7 @@ function littlelandStaffReadAction_(action, body, auth) {
       )
         s.receivedTodayTotal += Number(p.amount || 0);
     });
-    var items = bookings
+    var items = paymentCards
       .filter(function (b) {
         return (
           (b.bookingStatus === "PENDING_DEPOSIT" && b.depositStatus !== "PAID") ||
@@ -511,10 +517,9 @@ function littlelandStaffReadAction_(action, body, auth) {
             (b.balanceStatus !== "PAID" ||
               b.cashDepositStatus === "NOT_COLLECTED")) ||
           (["CHECKED_OUT", "COMPLETED"].indexOf(b.bookingStatus) >= 0 &&
-            card(b).cashDepositRefundDue > 0)
+            b.cashDepositRefundDue > 0)
         );
-      })
-      .map(card);
+      });
     return { summary: s, items: items, payments: getPayments() };
   }
   if (action === "staff.customers")
@@ -849,6 +854,15 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
     inventory = null,
     allocated = null,
     petEdits = null;
+  var accommodationPayments = null,
+    accommodationEntries = null,
+    balanceSettlement = null;
+  if (action === "staff.confirmDeposit" || action === "staff.recordBalance") {
+    // Dispatch holds the script lock: never collect from a stale Booking balance.
+    accommodationPayments = littlelandReadTable_("Payments").rows.map(function (r) { return r.record; });
+    accommodationEntries = littlelandReadTable_("BookingAdjustments").rows.map(function (r) { return r.record; });
+    balanceSettlement = littlelandStaffBalanceAfterChange_(b, Number(b.estimatedTotal || 0), accommodationPayments, accommodationEntries, updates);
+  }
   var transitions = {
     "staff.confirmData": ["PENDING_CONFIRMATION", "PENDING_DEPOSIT"],
     "staff.checkIn": ["CONFIRMED", "CHECKED_IN"],
@@ -878,19 +892,19 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
       "只有待付訂金的預約可確認。",
       false,
     );
-    var priorDepositPayments = littlelandReadTable_("Payments").rows.filter(
-      function (paymentRow) {
+    var priorDepositPayments = accommodationPayments.filter(
+      function (priorPayment) {
         return (
-          String(paymentRow.record.bookingId) === String(b.bookingId) &&
-          paymentRow.record.paymentType === "DEPOSIT" &&
-          paymentRow.record.paymentStatus === "PAID"
+          String(priorPayment.bookingId) === String(b.bookingId) &&
+          priorPayment.paymentType === "DEPOSIT" &&
+          priorPayment.paymentStatus === "PAID"
         );
       },
     );
     if (b.depositStatus === "PAID") {
       littlelandRequire_(
         priorDepositPayments.length === 1 &&
-          Number(priorDepositPayments[0].record.amount) === Number(b.depositAmount),
+          Number(priorDepositPayments[0].amount) === Number(b.depositAmount),
         "PAYMENT_RECONCILIATION_REQUIRED",
         "已付訂金資料未能唯一核對，請先人工核對付款紀錄。",
         false,
@@ -921,6 +935,9 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
         now,
         body,
       );
+    balanceSettlement = littlelandStaffBalanceAfterChange_(b, Number(b.estimatedTotal || 0), accommodationPayments.concat(payment ? [payment] : []), accommodationEntries, updates);
+    updates.remainingBalance = balanceSettlement.remainingBalance;
+    updates.balanceStatus = balanceSettlement.balanceStatus;
   } else if (transitions[action])
     littlelandRequire_(
       b.bookingStatus === transitions[action][0],
@@ -941,7 +958,7 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
   else if (action === "staff.recordBalance")
     littlelandRequire_(
       ["CHECKED_IN", "CHECKED_OUT", "COMPLETED"].indexOf(String(b.bookingStatus)) >= 0 &&
-        Number(b.remainingBalance || 0) > 0,
+        balanceSettlement.remainingBalance > 0,
       "BOOKING_STATUS_INVALID",
       "只有有應收尾數的入住／退房／完成預約可記錄尾數。",
       false,
@@ -1057,6 +1074,16 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
       "不支援的 Staff action。",
       false,
     );
+  if (action !== "staff.cancel" && String(b.bookingStatus) !== "CANCELLED" &&
+      !Object.prototype.hasOwnProperty.call(updates, "remainingBalance")) {
+    if (!balanceSettlement) {
+      accommodationPayments = littlelandReadTable_("Payments").rows.map(function (r) { return r.record; });
+      accommodationEntries = littlelandReadTable_("BookingAdjustments").rows.map(function (r) { return r.record; });
+      balanceSettlement = littlelandStaffBalanceAfterChange_(b, Number(b.estimatedTotal || 0), accommodationPayments, accommodationEntries, updates);
+    }
+    updates.remainingBalance = balanceSettlement.remainingBalance;
+    updates.balanceStatus = balanceSettlement.balanceStatus;
+  }
   // Claim is deliberately delayed until every read/preflight/validation above succeeds.
   littlelandAppendRecord_("IdempotencyKeys", {
     idempotencyKey: key,
@@ -1113,12 +1140,13 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
     payment = littlelandStaffPayment_(
       b,
       "BALANCE",
-      Number(b.remainingBalance),
+      balanceSettlement.remainingBalance,
       auth,
       now,
       body,
     );
     littlelandAppendRecord_("Payments", payment);
+    updates.remainingBalance = 0;
     updates.balanceStatus = "PAID";
   } else if (action === "staff.cashDepositCollect") {
     payment = littlelandStaffPayment_(
@@ -1216,7 +1244,16 @@ function littlelandStaffFreshBooking_(id) {
   var rows = littlelandReadTable_("Bookings").rows.filter(function (r) {
     return String(r.record.bookingId) === String(id);
   });
-  return rows.length ? rows[0].record : null;
+  if (!rows.length) return null;
+  var booking = Object.assign({}, rows[0].record);
+  if (String(booking.bookingStatus) !== "CANCELLED") {
+    var payments = littlelandReadTable_("Payments").rows.map(function (r) { return r.record; });
+    var entries = littlelandReadTable_("BookingAdjustments").rows.map(function (r) { return r.record; });
+    var settlement = littlelandStaffBalanceAfterChange_(booking, Number(booking.estimatedTotal || 0), payments, entries, {});
+    booking.remainingBalance = settlement.remainingBalance;
+    booking.balanceStatus = settlement.balanceStatus;
+  }
+  return booking;
 }
 function littlelandStaffPayment_(b, type, amount, auth, now, body) {
   return {
@@ -1442,7 +1479,9 @@ function littlelandStaffAdjustmentMutation_(action, body, auth, requestId) {
   var type = "";
   var amount = 0;
   var source = null;
-  var settlement = null;
+  var settlement = String(b.bookingStatus) === "CANCELLED" ? null
+    : littlelandStaffBalanceAfterChange_(b, Number(b.estimatedTotal || 0), payments, entries, update);
+  var beforeRemainingBalance = settlement ? settlement.remainingBalance : Number(b.remainingBalance || 0);
 
   if (action === "staff.earlyCheckout") {
     littlelandRequire_(b.bookingStatus === "CHECKED_IN", "BOOKING_STATUS_INVALID", "只有已入住預約可提早退房。", false);
@@ -1772,7 +1811,7 @@ function littlelandStaffAdjustmentMutation_(action, body, auth, requestId) {
       serviceFees: Number(b.serviceFees || 0),
       estimatedTotal: Number(b.estimatedTotal || 0),
       depositAmount: Number(b.depositAmount || 0),
-      remainingBalance: Number(b.remainingBalance || 0),
+      remainingBalance: beforeRemainingBalance,
     };
     var newQuote = {
       quantity: nextQuantity,
@@ -1910,6 +1949,9 @@ function littlelandStaffExtensionMutation_(action, body, auth, requestId) {
   var payments = littlelandReadTable_("Payments").rows.map(function (row) { return row.record; });
   var entries = littlelandReadTable_("BookingAdjustments").rows.map(function (row) { return row.record; });
   var status = String(b.bookingStatus);
+  var currentSettlement = littlelandStaffBalanceAfterChange_(b, Number(b.estimatedTotal || 0), payments, entries, update);
+  update.remainingBalance = currentSettlement.remainingBalance;
+  update.balanceStatus = currentSettlement.balanceStatus;
 
   if (action === "staff.internalAssignmentNoteUpdate") {
     littlelandRequire_(littlelandIsIsoDate_(oldBoundary) && oldBoundary > checkin && oldBoundary < oldCheckout,
@@ -2102,11 +2144,8 @@ function littlelandStaffNetAccommodationPaid_(bookingId, payments) {
 function littlelandStaffBalanceAfterChange_(booking, baseTotal, payments, entries, updates) {
   var total = littlelandStaffMoney_(Number(baseTotal || 0) + littlelandStaffAdjustmentTotal_(booking.bookingId, entries));
   var netPaid = littlelandStaffNetAccommodationPaid_(booking.bookingId, payments);
-  var hasPaidDeposit = payments.some(function (payment) {
-    return String(payment.bookingId) === String(booking.bookingId) && payment.paymentType === "DEPOSIT" && payment.paymentStatus === "PAID";
-  });
-  var requiredDeposit = hasPaidDeposit ? 0 : Number(updates.depositAmount !== undefined ? updates.depositAmount : booking.depositAmount || 0);
-  var rawDue = littlelandStaffMoney_(total - netPaid - requiredDeposit);
+  // Required but unpaid deposits are not receipts; cash deposits stay outside this ledger.
+  var rawDue = littlelandStaffMoney_(total - netPaid);
   var remainingBalance = Math.max(0, rawDue);
   var balanceStatus = remainingBalance <= 0 ? "PAID" : "UNPAID";
   return {
