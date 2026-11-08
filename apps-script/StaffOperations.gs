@@ -405,7 +405,7 @@ function littlelandStaffReadAction_(action, body, auth) {
         })
         .map(card),
       staffSchedules: getSchedules().filter(function (row) {
-        return String(row.workDate) === today;
+        return littlelandSheetDateOnly_(row.workDate) === today && String(row.status || "").toUpperCase() === "WORK";
       }),
       staff: getActiveStaff(),
       monthRevenue: littlelandStaffRevenue_(
@@ -436,7 +436,7 @@ function littlelandStaffReadAction_(action, body, auth) {
         return roomLock.startDate < next && roomLock.endDate > first;
       }),
       staffSchedules: getSchedules().filter(function (row) {
-        return String(row.workDate || "").slice(0, 7) === month;
+        return littlelandSheetDateOnly_(row.workDate).slice(0, 7) === month && String(row.status || "").toUpperCase() === "WORK";
       }).map(function (row) {
         return {
           date: littlelandSheetDateOnly_(row.workDate),
@@ -633,7 +633,10 @@ function littlelandStaffSchedules_(body, schedules, staff) {
     month: month,
     staff: staff,
     schedules: schedules.filter(function (row) {
-      return !month || String(row.workDate || "").slice(0, 7) === month;
+      var date = littlelandSheetDateOnly_(row.workDate);
+      return (!month || date.slice(0, 7) === month) && String(row.status || "").toUpperCase() === "WORK";
+    }).map(function (row) {
+      return Object.assign({}, row, { workDate: littlelandSheetDateOnly_(row.workDate) });
     }),
   };
 }
@@ -1321,32 +1324,54 @@ function littlelandStaffCreateBooking_(body,auth,requestId){
   littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",key,{state:"COMPLETED",bookingId:id,responseCode:"OK",responseSnapshotJson:JSON.stringify({data:data}),requestId:requestId,updatedAt:now});
   littlelandClearAvailabilityCache_(); return data;
 }
+function littlelandStaffDeleteScheduleRows_(scheduleRows){
+  var rows=Array.isArray(scheduleRows)?scheduleRows:[];
+  if(!rows.length)return 0;
+  littlelandRequire_(Boolean(LITTLELAND_API_WRITE_SHEETS&&LITTLELAND_API_WRITE_SHEETS.StaffSchedules),"SHEET_WRITE_FAILED","此 API 不允許修改排班資料。",false);
+  var wanted=Object.create(null);
+  rows.forEach(function(row){var id=String(row&&row.record&&row.record.scheduleId||"");littlelandRequire_(!!id&&!wanted[id],"SHEET_WRITE_FAILED","排班資料識別缺失或重複，已停止修改。",false);wanted[id]=true;});
+  var table=littlelandReadTable_("StaffSchedules"),matches=table.rows.filter(function(row){return wanted[String(row.record.scheduleId||"")];});
+  littlelandRequire_(matches.length===rows.length,"SHEET_WRITE_FAILED","排班資料已變更，請重新載入後再儲存。",false);
+  matches.sort(function(a,b){return b.rowNumber-a.rowNumber;}).forEach(function(row){table.sheet.deleteRow(row.rowNumber);});
+  return matches.length;
+}
+function littlelandStaffAssignScheduleDate_(date,selectedPerson,dateRows,auth,idempotencyKey,now,swapFromStaffId){
+  var rows=Array.isArray(dateRows)?dateRows:[];
+  if(!selectedPerson)return {rowsDeleted:littlelandStaffDeleteScheduleRows_(rows),rowsUpdated:0,rowsCreated:0,record:null};
+  var selectedId=String(selectedPerson.staffId),keep=null;
+  if(swapFromStaffId)keep=rows.filter(function(row){return String(row.record.staffId||"")===String(swapFromStaffId)&&String(row.record.status||"").toUpperCase()==="WORK";})[0]||null;
+  if(!keep)keep=rows.filter(function(row){return String(row.record.staffId||"")===selectedId&&String(row.record.status||"").toUpperCase()==="WORK";})[0]||null;
+  if(!keep)keep=rows.filter(function(row){return String(row.record.staffId||"")===selectedId;})[0]||rows.filter(function(row){return String(row.record.status||"").toUpperCase()==="WORK";})[0]||rows[0]||null;
+  var remove=rows.filter(function(row){return row!==keep;}),deleted=littlelandStaffDeleteScheduleRows_(remove),old=keep?keep.record:{},sameStaff=String(old.staffId||"")===selectedId;
+  var record=Object.assign({},old,{scheduleId:String(old.scheduleId||"SCH-"+Utilities.getUuid()),workDate:date,staffId:selectedId,staffNameSnapshot:String(selectedPerson.displayName||selectedId),status:"WORK",startTime:sameStaff?String(old.startTime||""):"",endTime:sameStaff?String(old.endTime||""):"",swapGroupId:swapFromStaffId?"SCH-"+Utilities.getUuid():"",swappedFromStaffId:swapFromStaffId?String(swapFromStaffId):"",notes:sameStaff?String(old.notes||""):"",createdAt:old.createdAt||now,updatedAt:now,createdByStaffId:old.createdByStaffId||auth.staff.staffId,updatedByStaffId:auth.staff.staffId,idempotencyKey:idempotencyKey});
+  if(keep)littlelandUpdateRecordByKey_("StaffSchedules","scheduleId",record.scheduleId,record);else littlelandAppendRecord_("StaffSchedules",record);
+  return {rowsDeleted:deleted,rowsUpdated:keep?1:0,rowsCreated:keep?0:1,record:record};
+}
 function littlelandStaffScheduleMutation_(action,body,auth,requestId){
   if(action==="staff.scheduleMonthSave")return littlelandStaffScheduleMonthMutation_(body,auth,requestId);
   if(action==="staff.scheduleEmployeesSave")return littlelandStaffScheduleEmployeesMutation_(body,auth,requestId);
   var claim=littlelandStaffIdempotency_(action,body);if(!claim.key)return claim;
-  var d=body.data||body.schedule||{}, date=String(d.workDate||d.date||""), staffId=String(d.staffId||""), status=String(d.status||"WORK").toUpperCase();
+  var d=body.data||body.schedule||{},date=String(d.workDate||d.date||""),staffId=String(d.staffId||""),status=String(d.status||"WORK").toUpperCase();
   littlelandRequire_(littlelandIsIsoDate_(date)&&["WORK","REST"].indexOf(status)>=0,"VALIDATION_FAILED","排班日期或狀態無效。",false);
-  var active=littlelandStaffActiveScheduleEmployees_().filter(function(x){return String(x.staffId)===staffId;});
+  var activeEmployees=littlelandStaffActiveScheduleEmployees_(),active=activeEmployees.filter(function(x){return String(x.staffId)===staffId;}),now=littlelandNowIso_();
   littlelandRequire_(active.length===1,"VALIDATION_FAILED","只能指派有效員工。",false);
-  var rows=littlelandReadTable_("StaffSchedules").rows.map(function(x){return x.record;}), now=littlelandNowIso_();
+  var table=littlelandReadTable_("StaffSchedules"),dateRows=table.rows.filter(function(row){return littlelandSheetDateOnly_(row.record.workDate)===date;});
   if(action==="staff.scheduleSwap"){
-    var target=String(d.targetStaffId||d.toStaffId||"");
-    var targetRows=littlelandStaffActiveScheduleEmployees_().filter(function(x){return String(x.staffId)===target;});
+    var target=String(d.targetStaffId||d.toStaffId||""),targetRows=activeEmployees.filter(function(x){return String(x.staffId)===target;});
     littlelandRequire_(target&&target!==staffId&&targetRows.length===1,"VALIDATION_FAILED","交換對象必須是另一位有效員工。",false);
-    var src=rows.filter(function(x){return String(x.workDate)===date&&String(x.staffId)===staffId&&x.status==="WORK";})[0];
-    littlelandRequire_(!!src,"VALIDATION_FAILED","找不到可交換的工作班次。",false);
-    littlelandRequire_(!rows.some(function(x){return String(x.workDate)===date&&String(x.staffId)===target;}),"VALIDATION_FAILED","交換對象於該日期已有工作或休息安排。",false);
+    var source=dateRows.filter(function(row){return String(row.record.staffId)===staffId&&String(row.record.status||"").toUpperCase()==="WORK";})[0];
+    littlelandRequire_(!!source,"VALIDATION_FAILED","找不到可交換的工作班次。",false);
     littlelandStaffClaim_(claim,action,body,requestId,now);
-    var id="SCH-"+Utilities.getUuid(); littlelandUpdateRecordByKey_("StaffSchedules","scheduleId",src.scheduleId,{staffId:target,staffNameSnapshot:targetRows[0].displayName,swapGroupId:id,swappedFromStaffId:staffId,updatedAt:now,updatedByStaffId:auth.staff.staffId,idempotencyKey:claim.key});
-    var out={scheduleId:src.scheduleId,workDate:date,staffId:target,status:"WORK"}; littlelandStaffWriteLog_(auth,{bookingId:"SCHEDULE:"+date},requestId,action,"員工班次交換已記錄。",{scheduleId:src.scheduleId,workDate:date,fromStaffId:staffId,toStaffId:target});littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",claim.key,{state:"COMPLETED",responseCode:"OK",responseSnapshotJson:JSON.stringify({data:out}),updatedAt:now,requestId:requestId});littlelandClearAvailabilityCache_();return out;
+    var saved=littlelandStaffAssignScheduleDate_(date,targetRows[0],dateRows,auth,claim.key,now,staffId),swapResult={scheduleId:saved.record.scheduleId,workDate:date,staffId:target,status:"WORK",rowsDeleted:saved.rowsDeleted};
+    littlelandStaffWriteLog_(auth,{bookingId:"SCHEDULE:"+date},requestId,action,"員工當值安排已更新。",{scheduleId:swapResult.scheduleId,workDate:date,fromStaffId:staffId,toStaffId:target,rowsDeleted:saved.rowsDeleted});
+    littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",claim.key,{state:"COMPLETED",responseCode:"OK",responseSnapshotJson:JSON.stringify({data:swapResult}),updatedAt:now,requestId:requestId});littlelandClearAvailabilityCache_();return swapResult;
   }
-  var existing=rows.filter(function(x){return String(x.workDate)===date&&String(x.staffId)===staffId;});
-  littlelandRequire_(existing.length<=1,"SHEET_READ_FAILED","排班重複資料，請人工核對。",false);
+  var workRows=dateRows.filter(function(row){return String(row.record.status||"").toUpperCase()==="WORK";});
+  if(status==="REST")littlelandRequire_(!workRows.length||(workRows.length===1&&String(workRows[0].record.staffId)===staffId),"VALIDATION_FAILED","當日由另一位員工當值，不能以休息操作移除。",false);
   littlelandStaffClaim_(claim,action,body,requestId,now);
-  var rec={scheduleId:existing.length?existing[0].scheduleId:"SCH-"+Utilities.getUuid(),workDate:date,staffId:staffId,staffNameSnapshot:active[0].displayName,status:status,startTime:status==="WORK"?String(d.startTime||""):"",endTime:status==="WORK"?String(d.endTime||""):"",swapGroupId:"",swappedFromStaffId:"",notes:String(d.notes||""),createdAt:existing.length?existing[0].createdAt:now,updatedAt:now,createdByStaffId:auth.staff.staffId,updatedByStaffId:auth.staff.staffId,idempotencyKey:claim.key};
-  if(existing.length)littlelandUpdateRecordByKey_("StaffSchedules","scheduleId",rec.scheduleId,rec);else littlelandAppendRecord_("StaffSchedules",rec);
-  var result={scheduleId:rec.scheduleId,workDate:date,staffId:staffId,status:status};littlelandStaffWriteLog_(auth,{bookingId:"SCHEDULE:"+date},requestId,action,"員工排班已記錄。",{scheduleId:rec.scheduleId,workDate:date,staffId:staffId,status:status});littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",claim.key,{state:"COMPLETED",responseCode:"OK",responseSnapshotJson:JSON.stringify({data:result}),updatedAt:now,requestId:requestId});littlelandClearAvailabilityCache_();return result;
+  var savedDate=littlelandStaffAssignScheduleDate_(date,status==="WORK"?active[0]:null,dateRows,auth,claim.key,now),result={scheduleId:savedDate.record?savedDate.record.scheduleId:"",workDate:date,staffId:savedDate.record?staffId:"",status:savedDate.record?"WORK":"UNASSIGNED",rowsDeleted:savedDate.rowsDeleted};
+  littlelandStaffWriteLog_(auth,{bookingId:"SCHEDULE:"+date},requestId,action,"員工當值安排已更新。",{workDate:date,staffId:result.staffId,status:result.status,rowsDeleted:savedDate.rowsDeleted});
+  littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",claim.key,{state:"COMPLETED",responseCode:"OK",responseSnapshotJson:JSON.stringify({data:result}),updatedAt:now,requestId:requestId});littlelandClearAvailabilityCache_();return result;
 }
 function littlelandStaffScheduleEmployeesMutation_(body,auth,requestId){
   var claim=littlelandStaffIdempotency_("staff.scheduleEmployeesSave",body);if(!claim.key)return claim;
@@ -1373,14 +1398,14 @@ function littlelandStaffScheduleEmployeesMutation_(body,auth,requestId){
 }
 function littlelandStaffScheduleMonthMutation_(body,auth,requestId){
   var claim=littlelandStaffIdempotency_("staff.scheduleMonthSave",body);if(!claim.key)return claim;
-  var d=body.data||{}, year=Number(d.year), month=Number(d.month), monthKey, daysInMonth;
+  var d=body.data||{},year=Number(d.year),month=Number(d.month),monthKey,daysInMonth;
   littlelandRequire_(Number.isInteger(year)&&year>=2020&&year<=2100&&Number.isInteger(month)&&month>=1&&month<=12,"VALIDATION_FAILED","排班年月無效。",false);
   monthKey=String(year)+"-"+(month<10?"0":"")+String(month);daysInMonth=new Date(year,month,0).getDate();
   var active=littlelandStaffActiveScheduleEmployees_();
   littlelandRequire_(active.length>=2&&active.length<=3,"VALIDATION_FAILED","月曆批次排班需要兩至三位有效排班員工。",false);
-  var staffById={};active.forEach(function(x){staffById[String(x.staffId)] = x;});
+  var staffById={};active.forEach(function(person){staffById[String(person.staffId)]=person;});
   littlelandRequire_(Object.keys(staffById).length===active.length,"VALIDATION_FAILED","排班員工 ID 必須不同。",false);
-  var assignments=Array.isArray(d.assignments)?d.assignments:[], byDate={};
+  var assignments=Array.isArray(d.assignments)?d.assignments:[],byDate={};
   littlelandRequire_(assignments.length===daysInMonth,"VALIDATION_FAILED","必須為所選月份的每一天提供排班選擇。",false);
   assignments.forEach(function(item){
     var date=String(item&&item.workDate||""),staffId=String(item&&item.staffId||""),day=Number(date.slice(8,10));
@@ -1390,22 +1415,16 @@ function littlelandStaffScheduleMonthMutation_(body,auth,requestId){
     byDate[date]=staffId;
   });
   for(var day=1;day<=daysInMonth;day++){var expected=monthKey+"-"+(day<10?"0":"")+String(day);littlelandRequire_(Object.prototype.hasOwnProperty.call(byDate,expected),"VALIDATION_FAILED","排班月份有缺漏日期。",false);}
-  var table=littlelandReadTable_("StaffSchedules"),rows=table.rows.map(function(x){return x.record;}),existingByKey={};
-  rows.forEach(function(row){var date=String(row.workDate||""),id=String(row.staffId||"");if(date.slice(0,7)!==monthKey||!staffById[id])return;var key=date+"|"+id;existingByKey[key]=existingByKey[key]||[];existingByKey[key].push(row);});
-  Object.keys(existingByKey).forEach(function(key){littlelandRequire_(existingByKey[key].length===1,"SHEET_READ_FAILED","本月已有重複排班資料，請先人工核對。",false);});
-  var now=littlelandNowIso_(),eventBody=Object.assign({},body,{bookingId:"SCHEDULE:"+monthKey}),updatedRows=0,createdRows=0;
+  var table=littlelandReadTable_("StaffSchedules"),existingByDate={};
+  table.rows.forEach(function(row){var date=littlelandSheetDateOnly_(row.record.workDate);if(date.slice(0,7)!==monthKey)return;existingByDate[date]=existingByDate[date]||[];existingByDate[date].push(row);});
+  var now=littlelandNowIso_(),eventBody=Object.assign({},body,{bookingId:"SCHEDULE:"+monthKey}),updatedRows=0,createdRows=0,deletedRows=0,assignedDays=0;
   littlelandStaffClaim_(claim,"staff.scheduleMonthSave",eventBody,requestId,now);
   assignments.forEach(function(item){
-    var date=String(item.workDate),selected=String(item.staffId||"");
-    active.forEach(function(person){
-      var id=String(person.staffId),matches=existingByKey[date+"|"+id]||[],old=matches[0]||{};
-      var record={scheduleId:old.scheduleId||"SCH-"+Utilities.getUuid(),workDate:date,staffId:id,staffNameSnapshot:String(person.displayName||id),status:selected===id?"WORK":"REST",startTime:String(old.startTime||""),endTime:String(old.endTime||""),swapGroupId:String(old.swapGroupId||""),swappedFromStaffId:String(old.swappedFromStaffId||""),notes:String(old.notes||""),createdAt:old.createdAt||now,updatedAt:now,createdByStaffId:old.createdByStaffId||auth.staff.staffId,updatedByStaffId:auth.staff.staffId,idempotencyKey:claim.key};
-      if(matches.length){littlelandUpdateRecordByKey_("StaffSchedules","scheduleId",record.scheduleId,record);updatedRows++;}
-      else{littlelandAppendRecord_("StaffSchedules",record);createdRows++;}
-    });
+    var date=String(item.workDate),selected=String(item.staffId||""),saved=littlelandStaffAssignScheduleDate_(date,selected?staffById[selected]:null,existingByDate[date]||[],auth,claim.key,now);
+    updatedRows+=saved.rowsUpdated;createdRows+=saved.rowsCreated;deletedRows+=saved.rowsDeleted;if(saved.record)assignedDays++;
   });
-  var result={year:year,month:month,daysSaved:daysInMonth,rowsUpdated:updatedRows,rowsCreated:createdRows};
-  littlelandStaffWriteLog_(auth,{bookingId:eventBody.bookingId},requestId,"staff.scheduleMonthSave","員工已一次保存整月排班。",{year:year,month:month,daysSaved:daysInMonth,rowsUpdated:updatedRows,rowsCreated:createdRows});
+  var result={year:year,month:month,daysSaved:daysInMonth,assignedDays:assignedDays,rowsUpdated:updatedRows,rowsCreated:createdRows,rowsDeleted:deletedRows};
+  littlelandStaffWriteLog_(auth,{bookingId:eventBody.bookingId},requestId,"staff.scheduleMonthSave","員工已保存整月當值安排。",{year:year,month:month,daysSaved:daysInMonth,assignedDays:assignedDays,rowsUpdated:updatedRows,rowsCreated:createdRows,rowsDeleted:deletedRows});
   littlelandUpdateRecordByKey_("IdempotencyKeys","idempotencyKey",claim.key,{state:"COMPLETED",responseCode:"OK",responseSnapshotJson:JSON.stringify({data:result}),updatedAt:now,requestId:requestId});
   littlelandClearAvailabilityCache_();return result;
 }

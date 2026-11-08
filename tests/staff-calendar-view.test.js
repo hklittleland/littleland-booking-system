@@ -67,12 +67,12 @@ test("shows physical room IDs and room type label", () => {
   assert.doesNotMatch(html, /VIRTUAL_SUITE/);
 });
 
-test("shows selected-day work and rest schedules", () => {
+test("shows the selected-day assignee and ignores legacy REST schedule rows", () => {
   const html = renderCalendarView(base({ schedules: [{ date: "2025-06-15", staffId: "S1", displayName: "Alice", shiftTime: "09:00–17:00", status: "WORK" }, { date: "2025-06-15", displayName: "Bob", status: "REST" }, { date: "2025-06-16", displayName: "Other", status: "WORK" }] }));
   assert.match(html, /Alice/);
   assert.match(html, /09:00–17:00/);
-  assert.match(html, /Bob/);
-  assert.match(html, /休息/);
+  assert.doesNotMatch(html, /Bob/);
+  assert.doesNotMatch(html, /休息/);
   assert.doesNotMatch(html, /Other/);
 });
 

@@ -45,10 +45,10 @@
     const summary = summarizeScheduleAssignments(people, assignments);
     const rows = summary.staff.map((person) => `<li data-schedule-summary-staff="${esc(person.id)}"><div class="schedule-summary-person-head"><span class="schedule-name-chip schedule-person--${person.colorIndex}"><span class="schedule-staff-swatch" aria-hidden="true"></span>${esc(person.name)}</span><strong data-schedule-summary-count>${person.count} 日</strong></div><small data-schedule-summary-days>${person.days.length ? `當值日期：${person.days.map((day) => `${day}日`).join("、")}` : "當值日期：暫未安排"}</small></li>`).join("");
     const assignedDates = Object.entries(assignments || {}).filter(([, staffIdValue]) => !String(staffIdValue || "")).map(([date]) => Number(isoDate(date).slice(-2))).filter(Number.isFinite).sort((a, b) => a - b);
-    return `<h3>本月當值日數及日期</h3><ul>${rows}<li class="schedule-summary-unassigned" data-schedule-unassigned-count><div class="schedule-summary-person-head"><span>未安排／全員休息</span><strong data-schedule-summary-count>${summary.unassignedCount} 日</strong></div><small data-schedule-summary-days>${assignedDates.length ? `未安排日期：${assignedDates.map((day) => `${day}日`).join("、")}` : "未安排日期：無"}</small></li></ul>`;
+    return `<h3>本月當值日數及日期</h3><ul>${rows}<li class="schedule-summary-unassigned" data-schedule-unassigned-count><div class="schedule-summary-person-head"><span>未安排</span><strong data-schedule-summary-count>${summary.unassignedCount} 日</strong></div><small data-schedule-summary-days>${assignedDates.length ? `未安排日期：${assignedDates.map((day) => `${day}日`).join("、")}` : "未安排日期：無"}</small></li></ul>`;
   }
 
-  function renderScheduleView({ year, monthIndex, staff, schedules, todayISO, draftAssignments, pending } = {}) {
+  function renderScheduleView({ year, monthIndex, staff, schedules, todayISO, draftAssignments, pending, saveError } = {}) {
     const y = Number(year), month = Number(monthIndex), people = arr(staff), rows = arr(schedules);
     if (!Number.isInteger(y) || !Number.isInteger(month) || month < 0 || month > 11) return '<section class="schedule-view"><p class="empty">月份資料無效</p></section>';
     const monthNumber = month + 1, monthKey = `${y}-${String(monthNumber).padStart(2, "0")}`;
@@ -58,21 +58,12 @@
     const monthLabel = `${y}年${monthNumber}月`;
     const peopleOptions = staffOptions(people);
     const activeIds = new Set(peopleOptions.map((person) => person.id));
-    const workByDate = new Map(), restByDate = new Map();
-    rows.forEach((entry) => {
-      const date = isoDate(pick(entry, ["workDate", "date", "scheduleDate", "dateISO"]));
-      const id = String(pick(entry, ["staffId", "employeeId", "staff_id"]));
-      const status = String(pick(entry, ["status", "type", "shiftType"])).toUpperCase();
-      if (!date.startsWith(`${monthKey}-`) || !activeIds.has(id) || status !== "REST") return;
-      if (!restByDate.has(date)) restByDate.set(date, new Set());
-      restByDate.get(date).add(id);
-    });
+    const workByDate = new Map();
     rows.forEach((entry) => {
       const date = isoDate(pick(entry, ["workDate", "date", "scheduleDate", "dateISO"]));
       const id = String(pick(entry, ["staffId", "employeeId", "staff_id"]));
       const status = String(pick(entry, ["status", "type", "shiftType"])).toUpperCase();
       if (!date.startsWith(`${monthKey}-`) || !activeIds.has(id) || !["WORK", "SHIFT", "當值", "工作"].includes(status)) return;
-      if (restByDate.get(date) && restByDate.get(date).has(id)) return;
       if (!workByDate.has(date)) workByDate.set(date, new Set());
       workByDate.get(date).add(id);
     });
@@ -106,11 +97,11 @@
         ? `<label class="sr-only" for="schedule-${date}">${date} 當值員工</label><select id="schedule-${date}" class="schedule-day-select${colorClass}" data-schedule-day data-schedule-day-date="${date}" aria-label="${date} 選擇當值員工" ${pending ? "disabled" : ""}>${options}</select>`
         : '<span class="schedule-disabled-cell" aria-label="需要兩至三位有效排班員工">—</span>';
       const nameClass = selectedPerson ? `schedule-current-name schedule-person--${selectedPerson.colorIndex}` : "schedule-current-name schedule-current-name--none";
-      cells.push(`<article class="schedule-day${isToday ? " schedule-day--today" : ""}${conflict && !chosen ? " schedule-day--conflict" : ""}" data-schedule-date="${date}" data-schedule-conflict="${conflict ? "true" : "false"}"><header class="schedule-day__header"><time datetime="${date}">${day}</time>${isToday ? '<span class="schedule-today-label">今天</span>' : ""}</header>${conflict && !chosen ? '<p class="schedule-conflict-note" data-schedule-conflict-note>需選一位</p>' : ""}<p class="${nameClass}" data-schedule-current-name>${selectedPerson ? esc(selectedPerson.name) : "休息／未安排"}</p>${selectControl}</article>`);
+      cells.push(`<article class="schedule-day${isToday ? " schedule-day--today" : ""}${conflict && !chosen ? " schedule-day--conflict" : ""}" data-schedule-date="${date}" data-schedule-conflict="${conflict ? "true" : "false"}"><header class="schedule-day__header"><time datetime="${date}">${day}</time>${isToday ? '<span class="schedule-today-label">今天</span>' : ""}</header>${conflict && !chosen ? '<p class="schedule-conflict-note" data-schedule-conflict-note>需選一位</p>' : ""}<p class="${nameClass}" data-schedule-current-name>${selectedPerson ? esc(selectedPerson.name) : "未安排"}</p>${selectControl}</article>`);
     }
     const rosterReady = peopleOptions.length >= 2 && peopleOptions.length <= 3;
     const staffCountNotice = !rosterReady ? '<p class="notice warning">請先在「設定／登出」設定 2–3 位排班員工名稱。</p>' : "";
-    return `<section class="schedule-view"><header class="schedule-view__header"><div><h2>${monthLabel}員工排班</h2><p class="meta">每天直接選擇排班員工姓名；選擇後下方即時更新當值日數和日期。未安排表示當日所有有效員工均休息。</p></div></header>${staffLegend}${staffCountNotice}<form id="scheduleMonthForm" data-schedule-year="${y}" data-schedule-month="${monthNumber}"><div class="schedule-month-grid" role="grid" aria-label="${monthLabel}排班月曆">${cells.join("")}</div><section class="schedule-summary">${renderScheduleSummary(people, selections)}</section><div class="schedule-month-actions"><button class="btn" type="submit" ${!rosterReady || pending ? "disabled" : ""}>${pending ? "正在儲存…" : "儲存本月排班"}</button><p class="meta">一次保存整月選擇；修改前的其他月份資料不會更動。</p></div></form></section>`;
+    return `<section class="schedule-view"><header class="schedule-view__header"><div><h2>${monthLabel}員工排班</h2><p class="meta">每天直接選擇一位當值員工；選擇後下方即時更新當值日數和日期。未安排日期不會寫入排班資料列。</p></div></header>${staffLegend}${staffCountNotice}<form id="scheduleMonthForm" data-schedule-year="${y}" data-schedule-month="${monthNumber}"><div class="schedule-month-grid" role="grid" aria-label="${monthLabel}排班月曆">${cells.join("")}</div><section class="schedule-summary">${renderScheduleSummary(people, selections)}</section><div class="schedule-month-actions"><p class="meta" data-schedule-save-status role="status" aria-live="polite">${pending ? "正在儲存排班…" : saveError ? "排班儲存失敗，請查看錯誤原因。" : ""}</p>${saveError ? `<p class="form-error" role="alert">${esc(saveError)}</p>` : ""}<button class="btn" type="submit" ${!rosterReady || pending ? "disabled" : ""}>${pending ? "正在儲存排班…" : "儲存本月排班"}</button><p class="meta">一次保存整月選擇；修改前的其他月份資料不會更動。</p></div></form></section>`;
   }
 
   return Object.freeze({ renderScheduleView, summarizeScheduleAssignments, renderScheduleSummary });

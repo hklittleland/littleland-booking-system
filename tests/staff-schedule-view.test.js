@@ -14,7 +14,7 @@ test("renders a month calendar with a dropdown for each date and one save button
   assert.match(html, /Alice/);
   assert.match(html, /Bob/);
   assert.doesNotMatch(html, /員工 A|員工 B/);
-  assert.match(html, /未安排表示當日所有有效員工均休息/);
+  assert.match(html, /未安排日期不會寫入排班資料列/);
 });
 
 test("month layout is Sunday-first, keeps the selected month and marks the HKT today", () => {
@@ -57,15 +57,15 @@ test("draft changes recalculate each employee's work-day count and date list", (
   assert.match(summary, /未安排日期：9日/);
 });
 
-test("REST wins over a stale WORK row for the same person and day", () => {
+test("legacy REST rows do not hide the selected WORK assignee", () => {
   const html = render({ schedules: [
     { workDate: "2026-11-05", staffId: "s1", status: "WORK" },
     { workDate: "2026-11-05", staffId: "s1", status: "REST" },
   ] });
   const cell = html.split('data-schedule-date="2026-11-05"')[1].split("</article>")[0];
-  assert.match(cell, /休息／未安排/);
-  assert.doesNotMatch(cell, /schedule-current-name schedule-person--1/);
-  assert.match(html, /data-schedule-summary-staff="s1"[\s\S]*?<strong data-schedule-summary-count>0 日/);
+  assert.match(cell, /schedule-current-name schedule-person--1/);
+  assert.match(cell, /<option value="s1" data-schedule-name="Alice" data-schedule-color-index="1" selected>Alice<\/option>/);
+  assert.match(html, /data-schedule-summary-staff="s1"[\s\S]*?<strong data-schedule-summary-count>1 日/);
 });
 
 test("multiple WORK rows default to unassigned and show a visible conflict warning", () => {

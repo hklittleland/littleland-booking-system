@@ -254,6 +254,11 @@ class FakeSheet {
     const headers = this.values[0];
     this.values.push(headers.map((header) => record[header] === undefined ? '' : record[header]));
   }
+  deleteRow(rowNumber) {
+    if (!Number.isInteger(rowNumber) || rowNumber <= 1 || rowNumber > this.values.length) throw new Error('Invalid mock row deletion');
+    this.values.splice(rowNumber - 1, 1);
+    if (this.hooks.onWrite) this.hooks.onWrite();
+  }
 }
 
 function readInitializer() {

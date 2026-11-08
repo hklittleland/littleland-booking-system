@@ -376,7 +376,7 @@
     const todayISO = hkt.replace(/\//g, "-");
     const selected = store.state.selectedCalendarDate || (todayISO.slice(0,7) === `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}` ? todayISO : `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`);
     const helper = window.LittleLandCalendarView;
-    const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.schedules),roomLocks:arr(d.roomLocks),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
+    const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.staffSchedules || d.schedules),roomLocks:arr(d.roomLocks),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
     const lockItems = arr(d.roomLocks).filter((lock) => String(lock.status || "").toUpperCase() === "ACTIVE");
     const lockList = lockItems.length ? lockItems.map((lock) => `<article class="room-lock-card"><strong>${esc(lock.roomId)}</strong><span>${esc(lock.startDate)} 至 ${esc(lock.endDate)}（退房日不鎖）</span><span>${esc(lock.reason)}</span><button type="button" class="btn danger" data-release-lock="${esc(lock.roomLockId)}">解除鎖房</button></article>`).join("") : '<p class="empty">目前沒有有效鎖房</p>';
     const lockForm = `<section class="card room-lock-panel"><h3>新增員工鎖房</h3><p class="meta">日期區間為 [起始日, 結束日)，退房日不鎖。</p><form id="roomLockForm" class="room-lock-form"><div class="field"><label for="lockRoom">實體房</label><select id="lockRoom" name="roomId" required><option value="">請選擇房間</option>${rooms.map((room) => `<option value="${esc(room)}">${esc(room)}</option>`).join("")}</select></div><div class="field"><label for="lockStart">起始日期</label><input id="lockStart" name="startDate" type="date" required></div><div class="field"><label for="lockEnd">結束日期（不鎖）</label><input id="lockEnd" name="endDate" type="date" required></div><div class="field"><label for="lockReason">原因</label><textarea id="lockReason" name="reason" required maxlength="500"></textarea></div><button type="submit" class="btn">新增鎖房</button></form><h3>有效鎖房</h3>${lockList}</section>`;
@@ -438,7 +438,7 @@
   function schedule() {
     const d = store.state.schedules || {}, date = store.state.scheduleDate || new Date();
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-    const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()),draftAssignments:(store.state.scheduleDrafts||{})[monthKey]||{},pending:!!store.state.scheduleSaving}) : '<p class="empty">排班月曆元件未載入。</p>';
+    const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()),draftAssignments:(store.state.scheduleDrafts||{})[monthKey]||{},pending:!!store.state.scheduleSaving,saveError:store.state.scheduleSaveError||""}) : '<p class="empty">排班月曆元件未載入。</p>';
     return `${head("員工排班", "每月日曆直接選擇已設定的排班員工，再按一次儲存整月。未安排表示當日無人值班。更新只影響本月。")}<section class="card"><div class="calendar-head"><button class="btn secondary" type="button" data-schedule-month-nav="-1">‹ 上月</button><button class="btn secondary" type="button" data-schedule-month-nav="1">下月 ›</button></div>${html}</section>`;
   }
   function newBooking() {
@@ -864,7 +864,7 @@
         mutate("edit", StaffRouter.current().id, { data }, ef);
       };
     }
-    const submitApi = async (action, payload, form, onSuccess) => {
+    const submitApi = async (action, payload, form, onSuccess, successMessage, onError) => {
       if (pendingAction) return;
       const requestBody = Object.assign({}, payload);
       const suppliedIdempotencyKey = String(requestBody.idempotencyKey || "");
@@ -892,8 +892,9 @@
           if (typeof onSuccess === "function") onSuccess();
           if (form) { delete form.dataset.idempotencyFingerprint; delete form.dataset.idempotencyKey; }
           readCache.clear();
-          toast("TEST API 已確認操作。");
+          toast(successMessage || "TEST API 已確認操作。");
         } catch (e) {
+          if (typeof onError === "function") onError(e);
           const handled = handleAuth(e);
           if (handled) repaint = true;
           else if (form && form.isConnected) {
@@ -999,19 +1000,31 @@
       });
       scheduleMonthForm.onsubmit = async (event) => {
         event.preventDefault();
+        if (pendingAction || store.state.scheduleSaving) return;
         const assignments = Array.from(scheduleMonthForm.querySelectorAll("[data-schedule-day]"), (control) => ({ workDate: control.dataset.scheduleDayDate, staffId: control.value || "" }));
         const data = { year, month, assignments };
         const fingerprint = JSON.stringify(data);
+        store.state.scheduleDrafts = store.state.scheduleDrafts || {};
+        store.state.scheduleDrafts[monthKey] = Object.fromEntries(assignments.map((item) => [item.workDate, item.staffId]));
         store.state.scheduleMonthIdempotency = store.state.scheduleMonthIdempotency || {};
         let retry = store.state.scheduleMonthIdempotency[monthKey];
         if (!retry || retry.fingerprint !== fingerprint) {
           retry = { fingerprint, key: uuid() };
           store.state.scheduleMonthIdempotency[monthKey] = retry;
         }
-        await submitApi("scheduleMonthSave", { data, idempotencyKey: retry.key }, scheduleMonthForm, () => {
+        store.state.scheduleSaving = true;
+        store.state.scheduleSaveError = "";
+        paint();
+        const liveForm = app.querySelector("#scheduleMonthForm");
+        await submitApi("scheduleMonthSave", { data, idempotencyKey: retry.key }, liveForm, () => {
           if (store.state.scheduleDrafts) delete store.state.scheduleDrafts[monthKey];
           if (store.state.scheduleMonthIdempotency) delete store.state.scheduleMonthIdempotency[monthKey];
+          store.state.scheduleSaving = false;
+        }, "排班已儲存", (error) => {
+          store.state.scheduleSaveError = String(error && error.message || "排班儲存失敗，請重試。");
         });
+        store.state.scheduleSaving = false;
+        paint();
       };
     }
     const changesView = window.LittleLandBookingChangesView;

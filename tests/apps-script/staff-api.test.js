@@ -1112,7 +1112,7 @@ test("schedule save serializes work/rest per staff/date and logs each mutation",
   assert.equal(r.records("Logs").length,2);
 });
 
-test("scheduleMonthSave validates the whole month, assigns two staff in one mutation, and is idempotent", () => {
+test("scheduleMonthSave validates the whole month, stores one assignee per assigned day, and is idempotent", () => {
   const r = staffRuntime();
   const token = loggedIn(r);
   addSecondStaff(r);
@@ -1125,18 +1125,21 @@ test("scheduleMonthSave validates the whole month, assigns two staff in one muta
   const saved = r.invokeStaff(request);
   assert.equal(saved.success, true, JSON.stringify(saved));
   assert.equal(saved.data.daysSaved, 31);
-  assert.equal(r.records("StaffSchedules").length, 62);
+  assert.equal(r.records("StaffSchedules").length, 2);
   const mayFirst = r.records("StaffSchedules").filter((row) => row.workDate === "2099-05-01");
-  assert.equal(mayFirst.find((row) => row.staffId === "staff-test-1").status, "WORK");
-  assert.equal(mayFirst.find((row) => row.staffId === "staff-test-2").status, "REST");
+  assert.equal(mayFirst.length, 1);
+  assert.equal(mayFirst[0].staffId, "staff-test-1");
+  assert.equal(mayFirst[0].status, "WORK");
   const maySecond = r.records("StaffSchedules").filter((row) => row.workDate === "2099-05-02");
-  assert.equal(maySecond.find((row) => row.staffId === "staff-test-1").status, "REST");
-  assert.equal(maySecond.find((row) => row.staffId === "staff-test-2").status, "WORK");
-  assert.ok(r.records("StaffSchedules").filter((row) => row.workDate === "2099-05-03").every((row) => row.status === "REST"));
+  assert.equal(maySecond.length, 1);
+  assert.equal(maySecond[0].staffId, "staff-test-2");
+  assert.equal(maySecond[0].status, "WORK");
+  assert.equal(r.records("StaffSchedules").some((row) => row.workDate === "2099-05-03"), false);
+  assert.ok(r.records("StaffSchedules").every((row) => row.status === "WORK"));
   assert.equal(r.records("Logs").filter((row) => row.action === "staff.scheduleMonthSave")[0].actorStaffNameSnapshot, "Test Staff");
   const replay = r.invokeStaff(request);
   assert.equal(replay.success, true);
-  assert.equal(r.records("StaffSchedules").length, 62, "replay must not duplicate schedule rows");
+  assert.equal(r.records("StaffSchedules").length, 2, "replay must not duplicate schedule rows");
   assert.equal(r.records("Logs").filter((row) => row.action === "staff.scheduleMonthSave").length, 1);
   assert.equal(r.records("IdempotencyKeys").filter((row) => row.idempotencyKey === request.idempotencyKey).length, 1);
 });
@@ -1186,9 +1189,9 @@ test("scheduleMonthSave supports Yip as a third schedule-only employee without a
   });
   assert.equal(out.success, true, JSON.stringify(out));
   assert.equal(r.records("Staff").length, 2);
-  assert.equal(r.records("StaffSchedules").length, 93);
+  assert.equal(r.records("StaffSchedules").length, 1);
   const yipRows = r.records("StaffSchedules").filter((row) => row.staffId === "SCHEDULE-EMPLOYEE-3");
-  assert.equal(yipRows.length, 31);
+  assert.equal(yipRows.length, 1);
   assert.equal(yipRows.find((row) => row.workDate === "2099-05-01").staffNameSnapshot, "Yip");
   assert.equal(yipRows.find((row) => row.workDate === "2099-05-01").status, "WORK");
   const read = r.invokeStaff({ action: "staff.schedules", token, month: "2099-05" });
@@ -2134,4 +2137,107 @@ test('staff.internalAssignmentUpdate rejects EXT-to-original move when that room
   assert.equal(result.code, 'ROOM_NO_LONGER_AVAILABLE');
   assert.equal(r.records('Bookings')[0].internalAssignment, 'EXT');
   assert.equal(r.records('Bookings')[0].checkoutDate, '2026-11-07');
+});
+
+
+test("scheduleMonthSave stores one WORK row per assigned date and no row for unassigned days", () => {
+  const r = staffRuntime("ADMIN");
+  setScheduleRoster(r, ["Jenny", "Haru"]);
+  const token = loggedIn(r);
+  const assignments = (year, month, selected) => {
+    const count = new Date(year, month, 0).getDate();
+    return Array.from({ length: count }, (_, index) => {
+      const day = index + 1;
+      return {
+        workDate: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+        staffId: selected[day] || "",
+      };
+    });
+  };
+  const first = r.invokeStaff({
+    action: "staff.scheduleMonthSave", token, idempotencyKey: "schedule-2027-11-first",
+    data: { year: 2027, month: 11, assignments: assignments(2027, 11, { 1: "staff-test-1", 2: "staff-test-2" }) },
+  });
+  assert.equal(first.success, true, first.message);
+  assert.equal(first.data.assignedDays, 2);
+  assert.equal(first.data.rowsCreated, 2);
+  let rows = r.records("StaffSchedules");
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((row) => row.status === "WORK"));
+  assert.equal(rows.some((row) => row.status === "REST"), false);
+
+  const second = r.invokeStaff({
+    action: "staff.scheduleMonthSave", token, idempotencyKey: "schedule-2027-11-second",
+    data: { year: 2027, month: 11, assignments: assignments(2027, 11, { 1: "staff-test-2", 3: "staff-test-1" }) },
+  });
+  assert.equal(second.success, true, second.message);
+  assert.equal(second.data.rowsUpdated, 1);
+  assert.equal(second.data.rowsCreated, 1);
+  assert.equal(second.data.rowsDeleted, 1);
+  rows = r.records("StaffSchedules");
+  assert.equal(rows.length, 2);
+  assert.equal(new Set(rows.map((row) => row.workDate)).size, rows.length);
+  assert.ok(rows.every((row) => row.status === "WORK"));
+  assert.deepEqual(rows.map((row) => [row.workDate, row.staffId]).sort(), [
+    ["2027-11-01", "staff-test-2"], ["2027-11-03", "staff-test-1"],
+  ]);
+
+  const calendar = r.invokeStaff({ action: "staff.calendar", token, month: "2027-11" });
+  assert.equal(calendar.success, true, calendar.message);
+  assert.deepEqual(calendar.data.staffSchedules.map((row) => [row.date, row.staffId, row.status]).sort(), [
+    ["2027-11-01", "staff-test-2", "WORK"], ["2027-11-03", "staff-test-1", "WORK"],
+  ]);
+});
+
+test("scheduleMonthSave normalizes Sheet Date values and compacts legacy REST rows only in the selected month", () => {
+  const r = staffRuntime("ADMIN");
+  setScheduleRoster(r, ["Jenny", "Haru"]);
+  const token = loggedIn(r);
+  const day1 = new Date("2027-01-31T16:00:00.000Z"); // 2027-02-01 in Hong Kong
+  for (const row of [
+    { scheduleId: "LEGACY-JENNY", workDate: day1, staffId: "staff-test-1", staffNameSnapshot: "Jenny", status: "WORK" },
+    { scheduleId: "LEGACY-HARU", workDate: day1, staffId: "staff-test-2", staffNameSnapshot: "Haru", status: "REST" },
+    { scheduleId: "LEGACY-OTHER", workDate: day1, staffId: "legacy-third", staffNameSnapshot: "Old Staff", status: "REST" },
+    { scheduleId: "LEGACY-UNASSIGNED", workDate: "2027-02-02", staffId: "staff-test-1", staffNameSnapshot: "Jenny", status: "REST" },
+    { scheduleId: "OTHER-MONTH", workDate: "2027-03-01", staffId: "staff-test-1", staffNameSnapshot: "Jenny", status: "WORK" },
+  ]) r.addRecord("StaffSchedules", row);
+  const assignments = Array.from({ length: 28 }, (_, index) => ({
+    workDate: `2027-02-${String(index + 1).padStart(2, "0")}`,
+    staffId: index === 0 ? "staff-test-2" : "",
+  }));
+  const out = r.invokeStaff({
+    action: "staff.scheduleMonthSave", token, idempotencyKey: "schedule-2027-02-compact",
+    data: { year: 2027, month: 2, assignments },
+  });
+  assert.equal(out.success, true, out.message);
+  assert.equal(out.data.rowsDeleted, 3);
+  const rows = r.records("StaffSchedules");
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((row) => [row.workDate, row.staffId, row.status]).sort(), [
+    ["2027-02-01", "staff-test-2", "WORK"], ["2027-03-01", "staff-test-1", "WORK"],
+  ]);
+  const calendar = r.invokeStaff({ action: "staff.calendar", token, month: "2027-02" });
+  assert.equal(calendar.data.staffSchedules.length, 1);
+  assert.equal(calendar.data.staffSchedules[0].date, "2027-02-01");
+});
+
+test("scheduleMonthSave writes at most 31 WORK rows in a 31-day month", () => {
+  const r = staffRuntime("ADMIN");
+  setScheduleRoster(r, ["Jenny", "Haru"]);
+  const token = loggedIn(r);
+  const assignments = Array.from({ length: 31 }, (_, index) => ({
+    workDate: `2028-03-${String(index + 1).padStart(2, "0")}`,
+    staffId: "staff-test-1",
+  }));
+  const out = r.invokeStaff({
+    action: "staff.scheduleMonthSave", token, idempotencyKey: "schedule-2028-03-all",
+    data: { year: 2028, month: 3, assignments },
+  });
+  assert.equal(out.success, true, out.message);
+  assert.equal(out.data.rowsCreated, 31);
+  assert.equal(out.data.assignedDays, 31);
+  const rows = r.records("StaffSchedules");
+  assert.equal(rows.length, 31);
+  assert.equal(new Set(rows.map((row) => row.workDate)).size, 31);
+  assert.ok(rows.every((row) => row.status === "WORK" && row.staffId === "staff-test-1"));
 });

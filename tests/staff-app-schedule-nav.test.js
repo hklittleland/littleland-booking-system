@@ -64,6 +64,27 @@ test("read caching is short-lived, manually refreshable and invalidated after a 
   assert.match(appSource, /readCacheTtlMs = 15000/);
   assert.match(appSource, /data-refresh-page/);
   assert.match(appSource, /loadPageData\(page, \{ force: true \}\)/);
-  assert.match(appSource, /readCache\.clear\(\);\s*toast\("TEST API 已確認操作。"\)/);
+  assert.match(appSource, /readCache\.clear\(\);\s*toast\(successMessage \|\| "TEST API 已確認操作。"\)/);
   assert.match(appSource, /loadPageData\(StaffRouter\.current\(\)\.page, \{ force: true \}\)/);
+});
+
+test("room calendar maps the backend staffSchedules response to the calendar schedule view", () => {
+  assert.match(appSource, /schedules:arr\(d\.staffSchedules \|\| d\.schedules\)/);
+});
+
+test("monthly save shows pending/success feedback and keeps selections plus the actual API error on failure", () => {
+  const html = renderScheduleView({
+    year: 2026,
+    monthIndex: 10,
+    staff: [{ staffId: "s1", displayName: "Jenny" }, { staffId: "s2", displayName: "Haru" }],
+    schedules: [],
+    pending: true,
+    saveError: "測試 API 寫入失敗",
+  });
+  assert.match(html, /正在儲存排班…/);
+  assert.match(html, /<button class="btn" type="submit" disabled>正在儲存排班…<\/button>/);
+  assert.match(html, /測試 API 寫入失敗/);
+  assert.match(appSource, /store\.state\.scheduleDrafts\[monthKey\] = Object\.fromEntries\(assignments\.map/);
+  assert.match(appSource, /"排班已儲存"/);
+  assert.match(appSource, /scheduleSaveError = String\(error && error\.message/);
 });
