@@ -166,11 +166,8 @@
       const cls = ["day-cell", isToday ? "today" : "", isSelected ? "selected" : ""].filter(Boolean).join(" ");
       cells.push(`<div class="${cls}" data-date="${date}"${isToday ? ' aria-current="date"' : ""}${isSelected ? ' aria-selected="true"' : ' aria-selected="false"'}><span class="day-number">${day}${isToday ? '<span class="today-label">今天</span>' : ""}</span><ul class="day-summaries" aria-label="${esc(date)} 預約摘要">${shown}${more || (!summary.length ? '<li class="empty-summary">—</li>' : "")}</ul></div>`);
     }
-    const pickedSchedules = schedules.filter((s) => s && s.date === selected);
-    const scheduleHtml = pickedSchedules.length ? `<ul class="selected-schedules">${pickedSchedules.map((s) => {
-      const off = String(s.status || "").toUpperCase() === "REST";
-      return `<li class="schedule ${off ? "rest" : "work"}"><strong>${esc(s.displayName || s.staffId || "員工")}</strong><span>${esc(off ? "休息" : (s.shiftTime || "上班"))}</span></li>`;
-    }).join("")}</ul>` : '<p class="schedule-empty">當日沒有員工班表</p>';
+    const pickedSchedules = schedules.filter((s) => s && s.date === selected && String(s.status || "").toUpperCase() === "WORK");
+    const scheduleHtml = pickedSchedules.length ? `<ul class="selected-schedules">${pickedSchedules.map((s) => `<li class="schedule work"><strong>${esc(s.displayName || s.staffId || "員工")}</strong><span>${esc(s.shiftTime || "上班")}</span></li>`).join("")}</ul>` : '<p class="schedule-empty">當日未安排值班員工</p>';
     const roomMatrix = renderRoomMatrix(year, month, days, o.todayISO, bookings, roomIds);
     const extensionOverview = renderExtensionOverview(year, month, o.todayISO, bookings, roomNames);
     return `<section class="staff-calendar" aria-label="${year}年${month + 1}月月曆"><div class="calendar-weekdays" role="row">${WEEKDAYS.map((d) => `<div class="weekday" role="columnheader">${d}</div>`).join("")}</div><div class="month-grid calendar-grid" role="grid" aria-label="${year}年${month + 1}月，星期日起始" data-month="${firstDate.slice(0, 7)}" data-rows="${rows}">${cells.join("")}</div>${roomMatrix}${extensionOverview}<section class="calendar-schedules" aria-labelledby="selected-schedule-title"><h3 id="selected-schedule-title">${esc(selected)} · 員工班表</h3>${scheduleHtml}</section></section>`;

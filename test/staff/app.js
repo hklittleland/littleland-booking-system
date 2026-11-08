@@ -375,7 +375,7 @@
     const todayISO = hkt.replace(/\//g, "-");
     const selected = store.state.selectedCalendarDate || (todayISO.slice(0,7) === `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}` ? todayISO : `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`);
     const helper = window.LittleLandCalendarView;
-    const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.schedules),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
+    const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.staffSchedules || d.schedules),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
     const selectedItems = arr(d.bookings).filter(b => String(b.checkinDate||"") === selected || String(b.checkoutDate||"") === selected || (["CONFIRMED","CHECKED_IN"].includes(statusOf(b)) && String(b.checkinDate||"") <= selected && String(b.checkoutDate||"") > selected));
     const selectedExt = selectedItems.filter(b => String(b.internalAssignment || "").toUpperCase() === "EXT" && String(b.extensionStartDate || "") <= selected && String(b.checkoutDate || "") > selected);
     const extToday = selectedExt.length ? `<section class="ext-selected-list"><h3>EXT 延期虛擬房 · ${selectedExt.length} 張</h3><p>不佔任何實體房；原訂／收費房型維持不變。</p>${selectedExt.map(b => `<button class="ext-month-booking" type="button" data-detail="${esc(fullIdOf(b))}"><span>${esc(get(b,"petNames") || "寵物名稱未載入")}</span><span>原房型：${esc(roomNames[b.roomTypeId] || b.roomTypeId)}</span><span>延期至 ${esc(String(b.checkoutDate || "").slice(0,10))}</span></button>`).join("")}</section>` : "";
@@ -434,7 +434,7 @@
   function schedule() {
     const d = store.state.schedules || {}, date = store.state.scheduleDate || new Date();
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-    const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()),draftAssignments:(store.state.scheduleDrafts||{})[monthKey]||{},pending:!!store.state.scheduleSaving}) : '<p class="empty">排班月曆元件未載入。</p>';
+    const html = window.LittleLandScheduleView ? window.LittleLandScheduleView.renderScheduleView({year:date.getFullYear(),monthIndex:date.getMonth(),staff:arr(d.staff),schedules:arr(d.schedules),todayISO:new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()),draftAssignments:(store.state.scheduleDrafts||{})[monthKey]||{},pending:!!store.state.scheduleSaving,saveError:store.state.scheduleSaveError||""}) : '<p class="empty">排班月曆元件未載入。</p>';
     return `${head("員工排班", "每月日曆直接選擇已設定的排班員工，再按一次儲存整月。未安排表示當日無人值班。更新只影響本月。")}<section class="card"><div class="calendar-head"><button class="btn secondary" type="button" data-schedule-month-nav="-1">‹ 上月</button><button class="btn secondary" type="button" data-schedule-month-nav="1">下月 ›</button></div>${html}</section>`;
   }
   function newBooking() {
@@ -869,7 +869,7 @@
         mutate("edit", StaffRouter.current().id, { data }, ef);
       };
     }
-    const submitApi = async (action, payload, form, onSuccess, successMessage) => {
+    const submitApi = async (action, payload, form, onSuccess, successMessage, onError) => {
       if (pendingAction) return;
       const requestBody = Object.assign({}, payload);
       const suppliedIdempotencyKey = String(requestBody.idempotencyKey || "");
@@ -900,6 +900,7 @@
           toast("TEST API 已確認操作。");
           if (successMessage) toast(successMessage);
         } catch (e) {
+          if (typeof onError === "function") onError(e);
           const handled = handleAuth(e);
           if (handled) repaint = true;
           else if (form && form.isConnected) {
@@ -961,7 +962,7 @@
           const colorIndex = Number(option?.dataset.scheduleColorIndex || 0);
           const name = cell.querySelector("[data-schedule-current-name]");
           if (name) {
-            name.textContent = select.value ? (option?.dataset.scheduleName || option?.textContent || "") : "休息／未安排";
+            name.textContent = select.value ? (option?.dataset.scheduleName || option?.textContent || "") : "未安排";
             name.className = select.value && colorIndex >= 1 && colorIndex <= 3
               ? `schedule-current-name schedule-person--${colorIndex}`
               : "schedule-current-name schedule-current-name--none";
@@ -991,8 +992,10 @@
       });
       scheduleMonthForm.onsubmit = async (event) => {
         event.preventDefault();
-        if (pendingAction) return;
+        if (pendingAction || store.state.scheduleSaving) return;
         const assignments = Array.from(scheduleMonthForm.querySelectorAll("[data-schedule-day]"), (control) => ({ workDate: control.dataset.scheduleDayDate, staffId: control.value || "" }));
+        store.state.scheduleDrafts = store.state.scheduleDrafts || {};
+        store.state.scheduleDrafts[monthKey] = Object.fromEntries(assignments.map((item) => [item.workDate, item.staffId]));
         const data = { year, month, assignments };
         const fingerprint = JSON.stringify(data);
         store.state.scheduleMonthIdempotency = store.state.scheduleMonthIdempotency || {};
@@ -1002,21 +1005,24 @@
           store.state.scheduleMonthIdempotency[monthKey] = retry;
         }
         store.state.scheduleSaving = true;
-        const saveButton = scheduleMonthForm.querySelector('button[type="submit"]');
-        const saveStatus = scheduleMonthForm.querySelector("[data-schedule-save-status]");
-        if (saveButton) { saveButton.disabled = true; saveButton.textContent = "正在儲存排班…"; }
-        if (saveStatus) saveStatus.textContent = "正在儲存排班…";
-        const saved = await submitApi("scheduleMonthSave", { data, idempotencyKey: retry.key }, scheduleMonthForm, () => {
+        store.state.scheduleSaveError = "";
+        paint();
+        const liveForm = app.querySelector("#scheduleMonthForm");
+        if (!liveForm) { store.state.scheduleSaving = false; return; }
+        const liveSaveButton = liveForm.querySelector('button[type="submit"]');
+        const liveSaveStatus = liveForm.querySelector("[data-schedule-save-status]");
+        if (liveSaveButton) liveSaveButton.disabled = true;
+        if (liveSaveStatus) liveSaveStatus.textContent = "正在儲存排班…";
+        const saved = await submitApi("scheduleMonthSave", { data, idempotencyKey: retry.key }, liveForm, () => {
           store.state.scheduleSaving = false;
           if (store.state.scheduleDrafts) delete store.state.scheduleDrafts[monthKey];
           if (store.state.scheduleMonthIdempotency) delete store.state.scheduleMonthIdempotency[monthKey];
-        }, "排班已儲存");
+        }, "排班已儲存", (error) => {
+          store.state.scheduleSaveError = String(error && error.message || "排班儲存失敗，請重試。");
+        });
         store.state.scheduleSaving = false;
-        if (!saved && scheduleMonthForm.isConnected) {
-          const error = scheduleMonthForm.querySelector(".form-error");
-          if (saveStatus) saveStatus.textContent = error ? error.textContent : "儲存失敗，請檢查後重試。";
-          if (saveButton) { saveButton.disabled = false; saveButton.textContent = "儲存本月排班"; }
-        }
+        if (!saved && !store.state.scheduleSaveError) store.state.scheduleSaveError = "排班儲存失敗，請重試。";
+        paint();
       };
     }
     const changesView = window.LittleLandBookingChangesView;
