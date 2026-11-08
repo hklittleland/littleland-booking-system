@@ -175,12 +175,23 @@
     return false;
   }
   function login() {
-    app.innerHTML = `<main class="login-wrap"><section class="login-card"><div class="brand">LittleLand<small>STAFF · TEST 環境</small></div><h1>員工登入</h1><p>登入後才會向 TEST API 讀取後台資料。</p>${errorText ? `<div class="error" role="alert">${esc(errorText)}</div>` : ""}<form id="loginForm"><div class="field"><label for="username">員工帳號</label><input id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="btn" ${busy ? "disabled" : ""}>${busy ? "登入中…" : "登入 TEST 員工後台"}</button></form></section></main>`;
+    app.innerHTML = `<main class="login-wrap"><section class="login-card"><div class="brand">LittleLand<small>STAFF · TEST 環境</small></div><h1>員工登入</h1><p>登入後才會向 TEST API 讀取後台資料。</p>${errorText ? `<div class="error" role="alert">${esc(errorText)}</div>` : ""}<form id="loginForm"><div class="field"><label for="username">員工帳號</label><input id="username" name="username" autocomplete="username" required></div><div class="field"><label for="password">密碼</label><input id="password" name="password" type="password" autocomplete="current-password" required></div><button class="btn" type="submit" ${busy ? "disabled" : ""}>${busy ? '<span class="spinner" aria-hidden="true"></span> 登入中…' : "登入 TEST 員工後台"}</button><p id="loginStatus" class="login-status" role="status" aria-live="polite" ${busy ? "" : "hidden"}>${busy ? "正在連接員工帳戶…" : ""}</p></form></section></main>`;
     document.getElementById("loginForm").onsubmit = async (e) => {
       e.preventDefault();
       if (busy) return;
       busy = true;
       const f = e.currentTarget;
+      app.setAttribute("aria-busy", "true");
+      const loginButton = f.querySelector('button[type="submit"]');
+      const loginStatus = f.querySelector("#loginStatus");
+      if (loginButton) {
+        loginButton.disabled = true;
+        loginButton.innerHTML = '<span class="spinner" aria-hidden="true"></span> 登入中…';
+      }
+      if (loginStatus) {
+        loginStatus.hidden = false;
+        loginStatus.textContent = "正在連接員工帳戶…";
+      }
       try {
         const d = await StaffAPI.request("login", {
           username: f.username.value,
@@ -192,11 +203,13 @@
         if (StaffRouter.current().page !== "dashboard") {
           history.replaceState(null, "", "#/dashboard");
         }
+        if (loginStatus) loginStatus.textContent = "登入成功，正在載入後台資料…";
         await loadPageData("dashboard");
       } catch (x) {
         errorText = x.message;
       } finally {
         busy = false;
+        app.removeAttribute("aria-busy");
         paint();
       }
     };
@@ -375,11 +388,14 @@
     const todayISO = hkt.replace(/\//g, "-");
     const selected = store.state.selectedCalendarDate || (todayISO.slice(0,7) === `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}` ? todayISO : `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`);
     const helper = window.LittleLandCalendarView;
-    const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.staffSchedules || d.schedules),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
+    const monthHtml = helper ? helper.renderCalendarView({year:now.getFullYear(),monthIndex:now.getMonth(),todayISO,selectedDate:selected,bookings:arr(d.bookings),schedules:arr(d.staffSchedules || d.schedules),roomLocks:arr(d.roomLocks),roomIds:rooms,roomNames:roomNames}) : '<div class="empty">月曆元件未載入。</div>';
+    const lockItems = arr(d.roomLocks).filter((lock) => String(lock.status || "").toUpperCase() === "ACTIVE");
+    const lockList = lockItems.length ? lockItems.map((lock) => `<article class="room-lock-card"><strong>${esc(lock.roomId)}</strong><span>${esc(lock.startDate)} 至 ${esc(lock.endDate)}（結束日不鎖）</span><span>${esc(lock.reason)}</span><button type="button" class="btn danger" data-release-lock="${esc(lock.roomLockId)}">解除鎖房</button></article>`).join("") : '<p class="empty">目前沒有有效鎖房</p>';
+    const lockForm = `<section id="roomLockManagement" class="card room-lock-panel" aria-labelledby="roomLockTitle"><h2 id="roomLockTitle">鎖房管理</h2><p class="meta">員工可暫停指定實體房的可用日期；區間為 [起始日, 結束日)，結束日當天重新可用。</p><form id="roomLockForm" class="room-lock-form"><div class="field"><label for="lockRoom">實體房</label><select id="lockRoom" name="roomId" required><option value="">請選擇房間</option>${rooms.map((room) => `<option value="${esc(room)}">${esc(room)}</option>`).join("")}</select></div><div class="field"><label for="lockStart">起始日期</label><input id="lockStart" name="startDate" type="date" required></div><div class="field"><label for="lockEnd">結束日期（該日不鎖）</label><input id="lockEnd" name="endDate" type="date" required></div><div class="field"><label for="lockReason">原因</label><textarea id="lockReason" name="reason" required maxlength="500"></textarea></div><button type="submit" class="btn">新增鎖房</button></form><h3>有效鎖房</h3>${lockList}</section>`;
     const selectedItems = arr(d.bookings).filter(b => String(b.checkinDate||"") === selected || String(b.checkoutDate||"") === selected || (["CONFIRMED","CHECKED_IN"].includes(statusOf(b)) && String(b.checkinDate||"") <= selected && String(b.checkoutDate||"") > selected));
     const selectedExt = selectedItems.filter(b => String(b.internalAssignment || "").toUpperCase() === "EXT" && String(b.extensionStartDate || "") <= selected && String(b.checkoutDate || "") > selected);
     const extToday = selectedExt.length ? `<section class="ext-selected-list"><h3>EXT 延期虛擬房 · ${selectedExt.length} 張</h3><p>不佔任何實體房；原訂／收費房型維持不變。</p>${selectedExt.map(b => `<button class="ext-month-booking" type="button" data-detail="${esc(fullIdOf(b))}"><span>${esc(get(b,"petNames") || "寵物名稱未載入")}</span><span>原房型：${esc(roomNames[b.roomTypeId] || b.roomTypeId)}</span><span>延期至 ${esc(String(b.checkoutDate || "").slice(0,10))}</span></button>`).join("")}</section>` : "";
-    return `${head("房間月曆", "香港時間今日提醒；退房日不佔房。待確認及待付訂金不會顯示為佔房。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-month="-1">‹ 上月</button><h2>${now.getFullYear()}年${now.getMonth()+1}月</h2><button class="btn secondary" data-month="1">下月 ›</button><button class="btn" data-today>今日</button></div>${monthHtml}</section><section class="card"><h2>${esc(selected)} · 當日詳情</h2>${list(selectedItems,"當日沒有入住、退房或在住房間")}${extToday}<h3>在職房間／寵物</h3>${rooms.map(r=>{const b=selectedItems.find(x=>["CONFIRMED","CHECKED_IN"].includes(statusOf(x)) && String(x.checkinDate||"")<=selected && String(x.checkoutDate||"")>selected && (String(x.internalAssignment || "").toUpperCase() !== "EXT" || !/^\d{4}-\d{2}-\d{2}$/.test(String(x.extensionStartDate || "")) || selected < String(x.extensionStartDate)) && parseRooms(x).includes(r)); return `<p>${esc(r)} · ${b?`🐾 ${esc(get(b,"petNames"))} · ${esc(roomNames[b.roomTypeId]||b.roomTypeId)} · ${esc(fullIdOf(b))}`:"空房"}</p>`}).join("")}</section>`;
+    return `${head("房間月曆", "香港時間今日提醒；退房日不佔房。待確認及待付訂金不會顯示為佔房。")}<section class="card"><div class="calendar-head"><button class="btn secondary" data-month="-1">‹ 上月</button><h2>${now.getFullYear()}年${now.getMonth()+1}月</h2><button class="btn secondary" data-month="1">下月 ›</button><button class="btn" data-today>今日</button></div><div class="lock-entry-row"><button type="button" class="btn secondary" data-jump-locks>鎖房／解鎖入口</button></div>${monthHtml}</section>${lockForm}<section class="card"><h2>${esc(selected)} · 當日詳情</h2>${list(selectedItems,"當日沒有入住、退房或在住房間")}${extToday}<h3>在職房間／寵物</h3>${rooms.map(r=>{const b=selectedItems.find(x=>["CONFIRMED","CHECKED_IN"].includes(statusOf(x)) && String(x.checkinDate||"")<=selected && String(x.checkoutDate||"")>selected && (String(x.internalAssignment || "").toUpperCase() !== "EXT" || !/^\d{4}-\d{2}-\d{2}$/.test(String(x.extensionStartDate || "")) || selected < String(x.extensionStartDate)) && parseRooms(x).includes(r)); return `<p>${esc(r)} · ${b?`🐾 ${esc(get(b,"petNames"))} · ${esc(roomNames[b.roomTypeId]||b.roomTypeId)} · ${esc(fullIdOf(b))}`:"空房"}</p>`}).join("")}</section>`;
   }
   function whatsapp(b) {
     const phone = String(b.phone || "").replace(/\D/g, "");
@@ -757,6 +773,7 @@
     const printButton = app.querySelector("[data-print-booking]");
     if (printButton) printButton.onclick = printBooking;
     const todayButton = app.querySelector("[data-today]"); if (todayButton) todayButton.onclick = async () => { const t = new Date(new Date().toLocaleString("en-US", {timeZone:"Asia/Hong_Kong"})); store.state.calendarDate=t; store.state.selectedCalendarDate=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Hong_Kong"}).format(new Date()); await loadPageData("calendar",{force:true}); paint(); };
+    const lockJumpButton = app.querySelector("[data-jump-locks]"); if (lockJumpButton) lockJumpButton.onclick = () => app.querySelector("#roomLockManagement")?.scrollIntoView({ behavior: "smooth", block: "start" });
     app.querySelectorAll("[data-month]").forEach(
       (x) =>
         (x.onclick = async () => {
@@ -924,6 +941,23 @@
       }
       return mutationSucceeded;
     };
+    const roomLockForm = app.querySelector("#roomLockForm");
+    if (roomLockForm) roomLockForm.onsubmit = (event) => {
+      event.preventDefault();
+      const data = { roomId: roomLockForm.elements.roomId.value, startDate: roomLockForm.elements.startDate.value, endDate: roomLockForm.elements.endDate.value, reason: roomLockForm.elements.reason.value.trim() };
+      if (!data.roomId || !data.startDate || !data.endDate || !data.reason || data.endDate <= data.startDate) {
+        let error = roomLockForm.querySelector(".form-error");
+        if (!error) { error = document.createElement("p"); error.className = "form-error"; error.setAttribute("role", "alert"); roomLockForm.prepend(error); }
+        error.textContent = "請選擇房間、有效日期區間並填寫原因（結束日期須晚於起始日期）。";
+        return;
+      }
+      submitApi("roomLockCreate", { data }, roomLockForm);
+    };
+    app.querySelectorAll("[data-release-lock]").forEach((button) => button.onclick = () => {
+      const lock = arr(store.state.calendar?.roomLocks).find((item) => String(item.roomLockId) === button.dataset.releaseLock);
+      if (!lock || !confirm(`確認解除 ${lock.roomId} ${lock.startDate} 至 ${lock.endDate} 鎖房？`)) return;
+      submitApi("roomLockRelease", { data: { roomLockId: lock.roomLockId, releaseReason: "員工於月曆手動解除" }, expectedRecordVersion: lock.recordVersion }, null);
+    });
     const scheduleEmployeesForm = app.querySelector("#scheduleEmployeesForm");
     if (scheduleEmployeesForm) {
       scheduleEmployeesForm.onsubmit = (event) => {
