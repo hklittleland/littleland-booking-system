@@ -316,6 +316,23 @@ function loggedIn(r) {
     password: "pass-test",
   }).data.token;
 }
+test("staff.schedules reads schedule tables without loading the full booking table", () => {
+  const r = staffRuntime();
+  const token = loggedIn(r);
+  const originalRead = r.context.littlelandReadTable_;
+  const reads = [];
+  r.context.littlelandReadTable_ = function (sheetName) {
+    reads.push(sheetName);
+    return originalRead(sheetName);
+  };
+
+  const out = r.invokeStaff({ action: "staff.schedules", token, month: "2099-05" });
+
+  assert.equal(out.success, true);
+  assert.equal(reads.includes("Bookings"), false);
+  assert.ok(reads.includes("StaffSchedules"));
+  assert.ok(reads.includes("ScheduleEmployees"));
+});
 function addStaffPet(r, bookingId, overrides = {}) {
   const record = {
     petId: bookingId + "-PET-01", bookingId, petNumber: 1,

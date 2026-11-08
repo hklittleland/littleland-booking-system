@@ -117,7 +117,9 @@ function littlelandStaffReadAction_(action, body, auth) {
       return row.record;
     });
   }
-  var bookings = readRecords("Bookings");
+  // The schedule screen only needs StaffSchedules and ScheduleEmployees.
+  // Avoid loading the entire booking table for this lightweight read action.
+  var bookings = action === "staff.schedules" ? [] : readRecords("Bookings");
   bookings.forEach(function (booking) {
     booking.checkinDate = littlelandSheetDateOnly_(booking.checkinDate);
     booking.checkoutDate = littlelandSheetDateOnly_(booking.checkoutDate);
@@ -211,10 +213,17 @@ function littlelandStaffReadAction_(action, body, auth) {
     }
     return !roomAvailabilityCache[key];
   }
+  var petsByBooking = null;
   function linkedPets(b) {
-    return getPets().filter(function (p) {
-      return String(p.bookingId) === String(b.bookingId);
-    });
+    if (petsByBooking === null) {
+      petsByBooking = Object.create(null);
+      getPets().forEach(function (pet) {
+        var key = String(pet.bookingId || "");
+        if (!petsByBooking[key]) petsByBooking[key] = [];
+        petsByBooking[key].push(pet);
+      });
+    }
+    return petsByBooking[String(b.bookingId || "")] || [];
   }
   function card(b) {
     var names = linkedPets(b)
