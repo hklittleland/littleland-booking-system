@@ -12,6 +12,7 @@
     availability: "staff.availability", createBooking: "staff.createBooking", schedules: "staff.schedules", scheduleSave: "staff.scheduleSave", scheduleSwap: "staff.scheduleSwap", scheduleMonthSave: "staff.scheduleMonthSave", scheduleEmployeesSave: "staff.scheduleEmployeesSave",
     addSurcharge: "staff.surchargeAdd", reverseSurcharge: "staff.surchargeReverse", refundDeposit: "staff.depositRefund", earlyCheckout: "staff.earlyCheckout", petCountUpdate: "staff.petCountUpdate",
     extendStay: "staff.extendStay", internalAssignmentUpdate: "staff.internalAssignmentUpdate", internalAssignmentNoteUpdate: "staff.internalAssignmentNoteUpdate",
+    roomLockCreate: "staff.roomLockCreate", roomLockRelease: "staff.roomLockRelease",
   });
   const LOGIN_RESPONSE_UNCERTAIN = "登入回應未確認；為避免建立重複 Session，系統不會自動重試。請先確認登入狀態；如仍未能登入，請聯絡管理員檢查員工 Session。";
   async function request(action, payload, token) {

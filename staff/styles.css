@@ -1439,3 +1439,20 @@ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; accent-
   .extension-summary { grid-template-columns: 1fr; }
   .extension-form button { width: 100%; }
 }
+
+/* Staff login feedback and room-lock management. */
+.room-month-legend .legend-locked { background: #eee6fa; color: #6842a2; }
+.room-month-table .room-state--locked { background: #eee6fa; color: #6842a2; }
+.room-lock-panel { min-width: 0; margin-top: 14px; scroll-margin-top: 18px; }
+.room-lock-form { display: grid; min-width: 0; gap: 10px; margin-bottom: 18px; }
+.room-lock-form > .field { min-width: 0; }
+.room-lock-form input, .room-lock-form select, .room-lock-form textarea { width: 100%; min-width: 0; }
+.room-lock-card { display: grid; min-width: 0; gap: 6px; margin: 8px 0; padding: 12px; border: 1px solid #ded4ee; border-left: 4px solid #7650c8; border-radius: 12px; background: #fff; overflow-wrap: anywhere; }
+.room-lock-card .btn, [data-jump-locks] { width: 100%; }
+.login-status { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 24px; margin: 0; color: var(--deep); font-size: 13px; font-weight: 700; }
+.spinner { display: inline-block; width: 16px; height: 16px; flex: 0 0 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -3px; animation: littleland-spin .75s linear infinite; }
+@keyframes littleland-spin { to { transform: rotate(360deg); } }
+@media (min-width: 600px) { .room-lock-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } .room-lock-form > button { grid-column: 1 / -1; } .room-lock-card .btn, [data-jump-locks] { width: auto; } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.5s; } }
+.lock-entry-row { display: flex; justify-content: flex-end; margin: 10px 0; }
+@media (max-width: 480px) { .lock-entry-row { justify-content: stretch; } .lock-entry-row .btn { width: 100%; } }

@@ -29,9 +29,10 @@
   const roomsFor = (b) => array(b.allocatedRoomIds).filter((x) => x != null && String(x).trim()).map(String);
   const speciesIcon = (b) => SPECIES[String(b.species || "").toUpperCase()] || "🐾";
 
-  function renderRoomMatrix(year, month, days, todayISO, bookings, roomIds) {
+  function renderRoomMatrix(year, month, days, todayISO, bookings, roomIds, roomLocks) {
     const dates = Array.from({ length: days }, (_, index) => iso(year, month, index + 1));
     const occupiedByRoomDate = new Map();
+    const lockedByRoomDate = new Map();
     const uncertainDates = new Set();
     const unallocatedBookings = [];
     array(bookings).forEach((booking) => {
@@ -62,6 +63,12 @@
       });
     });
 
+    array(roomLocks).filter((lock) => lock && String(lock.status || "").toUpperCase() === "ACTIVE").forEach((lock) => {
+      const start = String(lock.startDate || "").slice(0, 10), end = String(lock.endDate || "").slice(0, 10), room = String(lock.roomId || "");
+      if (!roomIds.includes(room) || !/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || end <= start) return;
+      dates.forEach((date) => { if (date >= start && date < end) { const key = `${room}|${date}`, list = lockedByRoomDate.get(key) || []; list.push(lock); lockedByRoomDate.set(key, list); } });
+    });
+
     const header = dates.map((date) => `<th scope="col" class="room-month-date${date === todayISO ? " is-today" : ""}" title="${esc(date)}">${Number(date.slice(-2))}</th>`).join("");
     const rows = roomIds.map((room) => {
       const cells = dates.map((date) => {
@@ -69,8 +76,15 @@
           return `<td class="room-state room-state--unknown" title="${esc(date)}：有已確認／入住預約未有有效房號" aria-label="${esc(room)}，${esc(date)}，房態未能確認">?</td>`;
         }
         const occupants = occupiedByRoomDate.get(`${room}|${date}`) || [];
-        if (occupants.length > 1) {
-          return `<td class="room-state room-state--conflict" title="${esc(date)}：${esc(room)} 有多筆佔房預約" aria-label="${esc(room)}，${esc(date)}，房態衝突">!</td>`;
+        const locks = lockedByRoomDate.get(`${room}|${date}`) || [];
+        if (occupants.length > 1 || (occupants.length && locks.length) || locks.length > 1) {
+          const details = locks.map((lock) => `${lock.startDate} 至 ${lock.endDate} · ${lock.reason || "未填原因"}`).join("；");
+          const title = `${room} · ${date} · 房態衝突${details ? ` · 鎖房：${details}` : ""}`;
+          return `<td class="room-state room-state--conflict" title="${esc(title)}" aria-label="${esc(title)}">!</td>`;
+        }
+        if (locks.length) {
+          const lock = locks[0], title = `${room} · ${date} · 鎖房 ${lock.startDate} 至 ${lock.endDate} · ${lock.reason || "未填原因"}`;
+          return `<td class="room-state room-state--locked" title="${esc(title)}" aria-label="${esc(title)}">鎖</td>`;
         }
         if (!occupants.length) {
           return `<td class="room-state room-state--free${date === todayISO ? " is-today" : ""}" title="${esc(room)} · ${esc(date)} · 空房" aria-label="${esc(room)}，${esc(date)}，空房">空</td>`;
@@ -89,7 +103,7 @@
     const warning = unallocatedBookings.length
       ? `<div class="room-month-warning" role="alert"><strong>房態未能完全確認：</strong>以下已確認／入住預約缺少有效日期或實體房號；日期不明時整月以「？」標示，請先核對。<div>${unallocatedBookings.map((booking) => `<button type="button" class="room-warning-link" data-detail="${esc(booking.bookingId || "")}">${esc(booking.bookingId || "預約未編號")} · ${esc(array(booking.petNames).join("、") || "寵物資料未載入")}</button>`).join("")}</div></div>`
       : "";
-    return `<section class="room-month-overview" aria-labelledby="room-month-title"><h3 id="room-month-title">全部實體房 · ${year}年${month + 1}月</h3><p class="room-month-note">每行一間實體房、每欄一日；左右滑動查看整月。只計「已確認」及「入住中」佔房；待確認／待付訂金不佔房。S1–S3 為實體房，SS1／SSR1 為組合名稱，不會另列。</p><div class="room-month-legend" aria-label="房態圖例"><span class="legend-free">空 空房</span><span class="legend-booked">訂 已確認</span><span class="legend-in-house">住 入住中</span><span class="legend-conflict">! 衝突</span><span class="legend-unknown">? 未能確認</span></div>${warning}<div class="room-month-scroll" tabindex="0" aria-label="可左右滑動查看每天的房間狀態"><table class="room-month-table"><thead><tr><th scope="col" class="room-month-room room-month-room--head">實體房</th>${header}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    return `<section class="room-month-overview" aria-labelledby="room-month-title"><h3 id="room-month-title">全部實體房 · ${year}年${month + 1}月</h3><p class="room-month-note">每行一間實體房、每欄一日；左右滑動查看整月。只計「已確認」及「入住中」佔房；待確認／待付訂金不佔房。鎖房起始日包含、結束日不包含。S1–S3 為實體房，SS1／SSR1 為組合名稱，不會另列。</p><div class="room-month-legend" aria-label="房態圖例"><span class="legend-free">空 空房</span><span class="legend-booked">訂 已確認</span><span class="legend-in-house">住 入住中</span><span class="legend-locked">鎖 員工鎖房</span><span class="legend-conflict">! 衝突</span><span class="legend-unknown">? 未能確認</span></div>${warning}<div class="room-month-scroll" tabindex="0" aria-label="可左右滑動查看每天的房間狀態"><table class="room-month-table"><thead><tr><th scope="col" class="room-month-room room-month-room--head">實體房</th>${header}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
   }
 
   function renderExtensionOverview(year, month, todayISO, bookings, roomNames) {
@@ -170,7 +184,7 @@
     const scheduleHtml = pickedSchedules.length ? `<ul class="selected-schedules">${pickedSchedules.map((s) => {
       return `<li class="schedule work"><strong>${esc(s.displayName || s.staffId || "員工")}</strong><span>${esc(s.shiftTime || "上班")}</span></li>`;
     }).join("")}</ul>` : '<p class="schedule-empty">當日沒有員工班表</p>';
-    const roomMatrix = renderRoomMatrix(year, month, days, o.todayISO, bookings, roomIds);
+    const roomMatrix = renderRoomMatrix(year, month, days, o.todayISO, bookings, roomIds, o.roomLocks);
     const extensionOverview = renderExtensionOverview(year, month, o.todayISO, bookings, roomNames);
     return `<section class="staff-calendar" aria-label="${year}年${month + 1}月月曆"><div class="calendar-weekdays" role="row">${WEEKDAYS.map((d) => `<div class="weekday" role="columnheader">${d}</div>`).join("")}</div><div class="month-grid calendar-grid" role="grid" aria-label="${year}年${month + 1}月，星期日起始" data-month="${firstDate.slice(0, 7)}" data-rows="${rows}">${cells.join("")}</div>${roomMatrix}${extensionOverview}<section class="calendar-schedules" aria-labelledby="selected-schedule-title"><h3 id="selected-schedule-title">${esc(selected)} · 員工班表</h3>${scheduleHtml}</section></section>`;
   }
