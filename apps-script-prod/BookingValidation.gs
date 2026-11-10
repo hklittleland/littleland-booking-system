@@ -6,8 +6,8 @@ var LITTLELAND_PRICE_VERSION = '6f002fd9ea921c313ecf90502091f1de051f332c';
 var LITTLELAND_POLICY_VERSION = 'V3.0';
 var LITTLELAND_ROOM_RULE_VERSION = 'V3.0';
 var LITTLELAND_MINIMUM_AGE_MONTHS = Object.freeze({ rabbit: 3, guineaPig: 3, hamster: 2 });
-var LITTLELAND_CHECKIN_TIMES = Object.freeze(['14:30–15:30', '15:30–16:30', '16:30–17:00']);
-var LITTLELAND_CHECKOUT_TIMES = Object.freeze(['14:30–15:30', '15:30–16:30', '16:30–17:00']);
+var LITTLELAND_CHECKIN_TIMES = Object.freeze(['14:30–15:00', '15:30–16:00', '16:00–16:30', '17:45–18:15']);
+var LITTLELAND_CHECKOUT_TIMES = Object.freeze(['14:30–15:00', '15:30–16:00', '16:00–16:30', '17:45–18:15']);
 var LITTLELAND_FORM_KEYS = Object.freeze([
   'checkin', 'checkout', 'checkinTime', 'checkoutTime', 'species', 'roomId', 'quantity', 'pets',
   'parentName', 'phone', 'email', 'emergency1', 'emergency2', 'vet',

@@ -35,7 +35,7 @@
   const YES_NO = Object.freeze(["yes", "no"]);
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const TIME_SLOTS = Object.freeze(["14:30–15:30", "15:30–16:30", "16:30–17:00"]);
+  const TIME_SLOTS = Object.freeze(["14:30–15:00", "15:30–16:00", "16:00–16:30", "17:45–18:15"]);
 
   function speciesDefinition(species) {
     return SPECIES.find((item) => item.id === species) || null;

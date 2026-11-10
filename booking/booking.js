@@ -15,6 +15,7 @@
     guineaPig: { label: '天竺鼠', image: 'assets/species-guinea-pig.webp', fallback: '🐾', minimumAge: 3 },
     hamster: { label: '倉鼠', image: 'assets/species-hamster.webp', fallback: '🐹', minimumAge: 2 }
   };
+  const BOOKING_TIME_SLOTS = Object.freeze(["14:30–15:00", "15:30–16:00", "16:00–16:30", "17:45–18:15"]);
   const ROOMS = {
     rabbit: [
       { id: 'DELUXE_ROOM', name: '豪華房', price: 178, max: 1, icon: '🛏️', image: 'room-178.jpg', note: '舒適小窩' },
@@ -97,6 +98,8 @@
         if (Object.prototype.hasOwnProperty.call(saved, key)) fresh[key] = saved[key];
       }
       fresh.pets = Array.isArray(saved.pets) ? saved.pets.slice(0, 8).map(normalizePet) : [];
+      if (!BOOKING_TIME_SLOTS.includes(fresh.checkinTime)) fresh.checkinTime = '';
+      if (!BOOKING_TIME_SLOTS.includes(fresh.checkoutTime)) fresh.checkoutTime = '';
       if (!Object.prototype.hasOwnProperty.call(SPECIES, fresh.species)) fresh.species = '';
       if (fresh.species === 'hamster') fresh.feeding = '';
       if (typeof fresh.quantity !== 'string' && typeof fresh.quantity !== 'number') fresh.quantity = '1';
@@ -296,7 +299,7 @@
     if (state.form.medicine === 'once' && nights > 0) serviceItems.push({ label: `每日餵藥 1 次（${nights} 晚）`, amount: 80 * nights });
     if (state.form.medicine === 'twice' && nights > 0) serviceItems.push({ label: `每日餵藥 2 次（${nights} 晚）`, amount: 150 * nights });
     if (state.form.earlyCheckin) serviceItems.push({ label: '提早入住（一次性）', amount: 200 });
-    if (state.form.lateCheckout) serviceItems.push({ label: '延遲退房（17:00 後，一次性）', amount: 200 });
+    if (state.form.lateCheckout) serviceItems.push({ label: '延遲退房（18:30 後，一次性）', amount: 200 });
     const serviceFees = serviceItems.reduce((sum, item) => sum + item.amount, 0);
     const totalSurcharges = extraPetFee + weekendFee + serviceFees;
     const estimatedTotal = baseRoomFee + totalSurcharges;
@@ -342,15 +345,15 @@
       <div class="field-grid">
         <div class="field"><label for="checkin">入住日期 <span class="required-mark">*</span></label><div class="input-wrap"><span class="input-icon" aria-hidden="true">📅</span><input type="date" id="checkin" data-field="checkin" min="${checkinMin}" value="${escapeHtml(checkinDate)}" required></div></div>
         <div class="field"><label for="checkout">退房日期 <span class="required-mark">*</span></label><div class="input-wrap"><span class="input-icon" aria-hidden="true">📅</span><input type="date" id="checkout" data-field="checkout" min="${checkoutMin}" value="${escapeHtml(state.form.checkout)}" required></div></div>
-        <div class="field"><label for="checkinTime">入住時段 <span class="required-mark">*</span></label><select id="checkinTime" data-field="checkinTime" required>${selectOptions(['14:30–15:30', '15:30–16:30', '16:30–17:00'], state.form.checkinTime)}</select></div>
-        <div class="field"><label for="checkoutTime">退房時段 <span class="required-mark">*</span></label><select id="checkoutTime" data-field="checkoutTime" required>${selectOptions(['14:30–15:30', '15:30–16:30', '16:30–17:00'], state.form.checkoutTime)}</select></div>
+        <div class="field"><label for="checkinTime">入住時段 <span class="required-mark">*</span></label><select id="checkinTime" data-field="checkinTime" required>${selectOptions(BOOKING_TIME_SLOTS, state.form.checkinTime)}</select></div>
+        <div class="field"><label for="checkoutTime">退房時段 <span class="required-mark">*</span></label><select id="checkoutTime" data-field="checkoutTime" required>${selectOptions(BOOKING_TIME_SLOTS, state.form.checkoutTime)}</select></div>
       </div>
       <div id="weekendSurchargeNotice" class="notice notice-yellow weekend-surcharge-notice" role="status" aria-live="polite" hidden>
         <span class="notice-icon" aria-hidden="true">!</span><div><strong>週末入住附加費提醒</strong><div id="weekendSurchargeMessage"></div></div>
       </div>
       <div class="field-grid" style="margin-top:15px">
         <div class="toggle-line"><div class="toggle-copy"><strong>提早入住安排</strong><small>一次性附加費 HK$200；時間另行確認</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇提早入住"><input type="checkbox" data-field="earlyCheckin" ${state.form.earlyCheckin ? 'checked' : ''}><span></span></label></div>
-        <div class="toggle-line"><div class="toggle-copy"><strong>延遲退房安排</strong><small>17:00 後，一次性附加費 HK$200</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇延遲退房"><input type="checkbox" data-field="lateCheckout" ${state.form.lateCheckout ? 'checked' : ''}><span></span></label></div>
+        <div class="toggle-line"><div class="toggle-copy"><strong>延遲退房安排</strong><small>18:30 後，一次性附加費 HK$200</small></div><span class="mini-fee">+HK$200</span><label class="switch" aria-label="選擇延遲退房"><input type="checkbox" data-field="lateCheckout" ${state.form.lateCheckout ? 'checked' : ''}><span></span></label></div>
       </div>
       <div class="availability-banner" id="availabilityBanner" data-status="unknown"><div class="availability-copy"><span class="availability-pulse" aria-hidden="true"></span><span class="availability-label" id="availabilityLabel">${statusLabel}</span></div><span class="availability-meta" id="availabilityMeta">${datesAreValid() ? `${dateNights()} 晚 · 房型頁將查詢房態` : '選擇有效日期後查詢房態'}</span></div>`;
   }

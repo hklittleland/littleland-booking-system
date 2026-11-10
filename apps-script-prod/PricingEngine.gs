@@ -34,7 +34,7 @@
     MEDICINE_ONCE: Object.freeze({ label: '每日餵藥 1 次', kind: 'perNight', amount: 80, exclusiveGroup: 'medicine' }),
     MEDICINE_TWICE: Object.freeze({ label: '每日餵藥 2 次', kind: 'perNight', amount: 150, exclusiveGroup: 'medicine' }),
     EARLY_CHECKIN: Object.freeze({ label: '提早入住（一次性）', kind: 'fixed', amount: 200 }),
-    LATE_CHECKOUT: Object.freeze({ label: '延遲退房（17:00 後，一次性）', kind: 'fixed', amount: 200 })
+    LATE_CHECKOUT: Object.freeze({ label: '延遲退房（18:30 後，一次性）', kind: 'fixed', amount: 200 })
   });
 
   const ERROR_CODES = Object.freeze({
