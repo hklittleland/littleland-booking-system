@@ -38,6 +38,7 @@ test("late checkout wording says after 18:30 and preserves the HK$200 one-time f
 test("new versioned assets are referenced by both public pages", () => {
   assert.ok(read("booking/index.html").includes("booking.js?v=booking-times-20261110-1"));
   const staff = read("staff/index.html");
+  assert.ok(staff.includes("../booking/pricing.js?v=booking-times-20261110-1"));
   assert.ok(staff.includes("new-booking-form.js?v=staff-times-20261110-1"));
   assert.ok(staff.includes("new-booking-view.js?v=staff-times-20261110-1"));
   assert.ok(staff.includes("app.js?v=staff-times-20261110-1"));
