@@ -333,8 +333,8 @@ function makeForm(context, overrides = {}) {
   const base = Object.assign({
     checkin,
     checkout: addDays(checkin, 2),
-    checkinTime: '14:30–15:30',
-    checkoutTime: '14:30–15:30',
+    checkinTime: '15:00–15:30',
+    checkoutTime: '14:30–15:00',
     species,
     roomId: defaultsBySpecies[species].roomId,
     quantity: 1,

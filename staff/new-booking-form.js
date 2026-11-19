@@ -35,7 +35,14 @@
   const YES_NO = Object.freeze(["yes", "no"]);
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const TIME_SLOTS = Object.freeze(["14:30–15:30", "15:30–16:30", "16:30–17:00"]);
+  const CHECKIN_TIME_SLOTS = Object.freeze(["14:30–15:00", "15:00–15:30", "15:30–16:00", "16:00–16:30", "17:45–18:15"]);
+  const CHECKOUT_TIME_SLOTS = Object.freeze(["14:30–15:00", "15:30–16:00", "16:00–16:30", "17:45–18:15"]);
+  const HEALTH_DETAIL_RULES = Object.freeze([
+    Object.freeze({ answer: "vetVisit", details: "vetDetails", label: "最近看獸醫" }),
+    Object.freeze({ answer: "infectiousDisease", details: "infectiousDetails", label: "傳染病" }),
+    Object.freeze({ answer: "chronicDisease", details: "chronicDetails", label: "慢性疾病" }),
+    Object.freeze({ answer: "medication", details: "medicationDetails", label: "正在服用藥物" }),
+  ]);
 
   function speciesDefinition(species) {
     return SPECIES.find((item) => item.id === species) || null;
@@ -109,11 +116,25 @@
     return null;
   }
 
+  function petHealthDetailsError(pet) {
+    for (const rule of HEALTH_DETAIL_RULES) {
+      if (pet && pet[rule.answer] === "yes" && !String(pet[rule.details] || "").trim()) return `請補充${rule.label}詳情。`;
+    }
+    return null;
+  }
+  function validatePetHealthDetails(pets) {
+    for (let i = 0; i < (Array.isArray(pets) ? pets.length : 0); i += 1) {
+      const error = petHealthDetailsError(pets[i]);
+      if (error) return `第 ${i + 1} 隻寵物${error}`;
+    }
+    return null;
+  }
+
   function validateDraft(draft, options = {}) {
     const today = options.today || hongKongToday();
     const availabilityError = validateAvailabilityInput(draft, today);
     if (availabilityError) return availabilityError;
-    if (!TIME_SLOTS.includes(draft.checkinTime) || !TIME_SLOTS.includes(draft.checkoutTime)) return "請選擇有效的入住及退房時段。";
+    if (!CHECKIN_TIME_SLOTS.includes(draft.checkinTime) || !CHECKOUT_TIME_SLOTS.includes(draft.checkoutTime)) return "請選擇有效的入住及退房時段。";
     const room = roomOptions(draft.species).find((item) => item.id === draft.roomId);
     if (!String(draft.parentName || "").trim()) return "請填寫家長姓名。";
     if (!/^\d{8}$/.test(normalizePhone(draft.phone))) return "請輸入有效的香港 8 位電話號碼。";
@@ -140,10 +161,11 @@
       }
       if (!YES_NO.includes(pet.recentSurgery)) return `${prefix}請回答最近 30 日是否接受過手術。`;
       if (pet.recentSurgery === "yes") return `${prefix}最近 30 日內接受過手術，不可接受一般入住。`;
-      for (const [key, label] of [["vetVisit", "最近看獸醫"], ["infectiousDisease", "傳染病"], ["chronicDisease", "慢性疾病"], ["medication", "正在服用藥物"]]) {
-        if (!YES_NO.includes(pet[key])) return `${prefix}請回答${label}情況。`;
-        if (pet[key] === "yes" && !String(pet[`${key}Details`] || "").trim()) return `${prefix}請補充${label}詳情。`;
+      for (const rule of HEALTH_DETAIL_RULES) {
+        if (!YES_NO.includes(pet[rule.answer])) return `${prefix}請回答${rule.label}情況。`;
       }
+      const detailError = petHealthDetailsError(pet);
+      if (detailError) return `${prefix}${detailError}`;
     }
 
     if (!Array.isArray(draft.terms) || draft.terms.length !== TERMS.length || draft.terms.some((value) => value !== true)) return "提交前必須確認全部六項同意事項。";
@@ -264,7 +286,9 @@
     TERMS,
     FOOD,
     YES_NO,
-    TIME_SLOTS,
+    CHECKIN_TIME_SLOTS,
+    CHECKOUT_TIME_SLOTS,
+    validatePetHealthDetails,
     speciesDefinition,
     roomOptions,
     normalizePhone,

@@ -457,6 +457,10 @@ test("staff.edit rejects pet quantity, species mutation, invalid age, pregnancy 
     { ageValue: 1 },
     { pregnant: "yes" },
     { recentSurgery: "yes" },
+    { vetVisit: "yes", vetDetails: "" },
+    { infectiousDisease: "yes", infectiousDetails: "" },
+    { chronicDisease: "yes", chronicDetails: "" },
+    { medication: "yes", medicationDetails: "" },
   ];
   for (let i = 0; i < cases.length; i++) {
     const r = staffRuntime("ADMIN"), b = addBooking(r, { quantity: 1, species: "rabbit" }), p = addStaffPet(r, b.bookingId);

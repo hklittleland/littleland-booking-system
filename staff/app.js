@@ -15,6 +15,8 @@
     ["new-booking", "新增預約", "+"],
   ];
   const rooms = ["S1", "S2", "S3", "A1", "A2", "A3", "B1", "B2", "C1", "F1"];
+  const CHECKIN_TIME_SLOTS = ["14:30–15:00", "15:00–15:30", "15:30–16:00", "16:00–16:30", "17:45–18:15"];
+  const CHECKOUT_TIME_SLOTS = ["14:30–15:00", "15:30–16:00", "16:00–16:30", "17:45–18:15"];
   let errorText = "",
     busy = false,
     pendingAction = false,
@@ -589,7 +591,8 @@
     const whatsappPanel = window.LittleLandWhatsAppMessages
       ? window.LittleLandWhatsAppMessages.render({ booking: feeDisplay, pets, payments, adjustments, roomNames, allocatedRooms: parseRooms(b), roomConflict: conflict })
       : "";
-    return `${head("Booking Detail", idOf(b))}${conflict ? `<div class="danger-box" role="alert"><strong>房間衝突：</strong>${b.depositStatus === "PAID" || store.state.depositConflictBookingId === String(idOf(b)) ? "訂金已收" : "訂金尚未確認已收"}；目前沒有可用房間。未有房間分配，預約未確認。請員工手動聯絡客人跟進；請勿承諾房間。</div>` : ""}<section class="card"><h2>預約 ${esc(idOf(b))} ${status(s)} ${depositBadge(b)} ${followupBadge(b)}</h2>${kv(
+    const actionsMarkup = `<section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => a === "earlyCheckout" ? `<button class="btn secondary" data-adjust="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>` : `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>`;
+    return `${head("Booking Detail", idOf(b))}${conflict ? `<div class="danger-box" role="alert"><strong>房間衝突：</strong>${b.depositStatus === "PAID" || store.state.depositConflictBookingId === String(idOf(b)) ? "訂金已收" : "訂金尚未確認已收"}；目前沒有可用房間。未有房間分配，預約未確認。請員工手動聯絡客人跟進；請勿承諾房間。</div>` : ""}${actionsMarkup}<section class="card"><h2>預約 ${esc(idOf(b))} ${status(s)} ${depositBadge(b)} ${followupBadge(b)}</h2>${kv(
       b,
       [
         ["提交時間", "createdAt", "submittedAt"],
@@ -693,10 +696,11 @@
         ["已使用按金", "cashDepositUsedAmount"],
         ["應退按金", refund],
       ],
-    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(friendly(get(p, "paidAt")))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section>${extensionMarkup}${bookingChangeControls}${whatsappPanel}<section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(friendly(get(x, "createdAt", "time")))} · ${esc(get(x, "staffName", "actorStaffNameSnapshot", "actorStaffId"))} · ${esc(get(x, "note", "summary"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${escValue(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(friendly(get(x, "createdAt")))} · <strong>${esc(get(x, "actorStaffNameSnapshot", "staffName") || get(x, "actorStaffId") || (x.actorType === "SYSTEM" ? "系統" : "未知操作者"))}</strong> · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section><section class="card"><h2>可用操作</h2><div class="action-grid">${actions.map(([a, t]) => a === "earlyCheckout" ? `<button class="btn secondary" data-adjust="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>` : `<button class="btn secondary" data-action="${a}" ${pendingAction ? "disabled" : ""}>${esc(t)}</button>`).join("")}</div></section>${(() => {
+    )}${payments.map((p) => `<p>${esc(get(p, "paymentType"))} · ${esc(amount(p.amount))} · ${esc(friendly(get(p, "paidAt")))} · ${esc(get(p, "paymentStatus"))}</p>`).join("") || "<p>沒有付款紀錄</p>"}</section>${extensionMarkup}${bookingChangeControls}${whatsappPanel}<section class="card"><h2>最後聯絡及跟進歷史</h2><p>${esc(friendly(get(b, "lastContactedAt")))} · ${esc(get(b, "lastContactedBy"))}<br>${esc(get(b, "followUpNote"))}</p>${history.map((x) => `<p>${esc(friendly(get(x, "createdAt", "time")))} · ${esc(get(x, "staffName", "actorStaffNameSnapshot", "actorStaffId"))} · ${esc(get(x, "note", "summary"))}</p>`).join("") || "<p>沒有跟進歷史</p>"}<form id="followForm" class="field"><label for="followNote">新增跟進備註</label><textarea id="followNote" name="note" required>${escValue(store.state.followupDraft || "")}</textarea><button class="btn" ${pendingAction ? "disabled" : ""}>新增跟進</button></form></section><section class="card"><h2>操作 Logs</h2>${logs.map((x) => `<p>${esc(friendly(get(x, "createdAt")))} · <strong>${esc(get(x, "actorStaffNameSnapshot", "staffName") || get(x, "actorStaffId") || (x.actorType === "SYSTEM" ? "系統" : "未知操作者"))}</strong> · ${esc(get(x, "action"))} · ${esc(get(x, "summary"))}</p>`).join("") || '<div class="empty">沒有 Logs</div>'}</section>${(() => {
       const draft = store.state.editDraft || {}, fieldValue = (key, fallback) => draft[key] !== undefined ? draft[key] : (fallback == null ? "" : fallback);
       const textField = (label, key, fallback, type = "text") => `<label>${esc(label)}</label><input name="${esc(key)}" type="${type}" value="${escValue(fieldValue(key, fallback))}">`;
       const selectField = (label, key, value, options) => `<label>${esc(label)}</label><select name="${esc(key)}">${options.map(([v, title]) => `<option value="${escValue(v)}" ${String(fieldValue(key, value)) === String(v) ? "selected" : ""}>${esc(title)}</option>`).join("")}</select>`;
+      const bookingTimeOptions = (current, slots) => { const legacy = current && !slots.includes(current); const values = legacy ? [current, ...slots] : slots; return values.map((time) => [time, legacy && time === current ? `${time}（原有時段）` : time]); };
       const yesNo = [["yes","是"],["no","否"]];
       const petFields = pets.map((pet, i) => {
         const pd = draft.pets && draft.pets[i] || {}, pv = (key) => pd[key] !== undefined ? pd[key] : (pet[key] == null ? "" : pet[key]);
@@ -715,7 +719,7 @@
           : "";
         return `<article class="pet edit-pet"><h3>寵物 ${i + 1} · ${esc(get(pet,"name","petName"))}</h3>${pinput("name","名稱")}${pinput("breed","品種")}${pinput("ageValue","年齡數值","number")}${pselect("ageUnit","年齡單位",[["month","月"],["year","歲"]],"month")}${pselect("sex","性別",[["male","男孩子"],["female","女孩子"]],"female")}${!hamster ? pselect("sterilized","絕育",yesNo,false) : ""}${pregnancyField}${pselect("recentSurgery30Days","最近 30 日手術",yesNo,false)}${pselect("vetVisit","最近看獸醫",yesNo,false)}${pinput("vetDetails","獸醫詳情")}${pselect("infectiousDisease","傳染病",yesNo,false)}${pinput("infectiousDetails","傳染病詳情")}${pselect("chronicDisease","慢性疾病",yesNo,false)}${pinput("chronicDetails","慢性疾病詳情")}${pselect("medication","正在服藥",yesNo,false)}${pinput("medicationDetails","藥物詳情")}${pinput("specialCare","特殊照顧")}${!hamster ? pselect("fleaTreatment","一個月內杜蝨",yesNo,false) : ""}</article>`;
       }).join("");
-      return `<section class="card"><h2>更新資料</h2><form id="editForm" class="field">${textField("家長姓名","parentName",b.parentName || b.customerName || "")}${textField("電話","phone",b.phone,"tel")}${textField("Email","email",b.email,"email")}${textField("緊急聯絡人 1","emergency1",b.emergency1)}${textField("緊急聯絡人 2","emergency2",b.emergency2)}${textField("指定獸醫／診所","vet",b.vet)}${selectField("入住時間","checkinTime",b.checkinTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${selectField("退房時間","checkoutTime",b.checkoutTime,["14:30–15:30","15:30–16:30","16:30–17:00"].map(x=>[x,x]))}${textField("主糧","foodMain",b.foodMain)}${textField("牧草","hay",b.hay)}${textField("餵食","feeding",b.feeding)}${selectField("蔬菜","vegetables",StaffEditFormUtils.toVegetablesOption(b.vegetables),[["","—"],["是","是"],["否","否"]])}<h3>寵物資料</h3>${petFields}<button class="btn" ${pendingAction ? "disabled" : ""}>更新資料</button></form></section>`;
+      return `<section class="card"><h2>更新資料</h2><form id="editForm" class="field">${textField("家長姓名","parentName",b.parentName || b.customerName || "")}${textField("電話","phone",b.phone,"tel")}${textField("Email","email",b.email,"email")}${textField("緊急聯絡人 1","emergency1",b.emergency1)}${textField("緊急聯絡人 2","emergency2",b.emergency2)}${textField("指定獸醫／診所","vet",b.vet)}${selectField("入住時間","checkinTime",b.checkinTime,bookingTimeOptions(b.checkinTime,CHECKIN_TIME_SLOTS))}${selectField("退房時間","checkoutTime",b.checkoutTime,bookingTimeOptions(b.checkoutTime,CHECKOUT_TIME_SLOTS))}${textField("主糧","foodMain",b.foodMain)}${textField("牧草","hay",b.hay)}${textField("餵食","feeding",b.feeding)}${selectField("蔬菜","vegetables",StaffEditFormUtils.toVegetablesOption(b.vegetables),[["","—"],["是","是"],["否","否"]])}<h3>寵物資料</h3>${petFields}<button class="btn" ${pendingAction ? "disabled" : ""}>更新資料</button></form></section>`;
     })()}`;
   }
   function settings() {
@@ -860,6 +864,10 @@
         e.preventDefault();
         const data = readEdit();
         store.state.editDraft = data;
+        const healthError = window.LittleLandStaffBookingForm && window.LittleLandStaffBookingForm.validatePetHealthDetails
+          ? window.LittleLandStaffBookingForm.validatePetHealthDetails(data.pets)
+          : null;
+        if (healthError) { toast(healthError); return; }
         if (!confirm("確認更新聯絡、飲食／時間及現有寵物資料？寵物數量、種類、狀態、房間、價格及付款資料不會更改。")) return;
         mutate("edit", StaffRouter.current().id, { data }, ef);
       };

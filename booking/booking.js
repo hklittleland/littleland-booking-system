@@ -10,6 +10,8 @@
     unknown: '暫時無法確認'
   });
   const PRICE_VERSION = '6f002fd9ea921c313ecf90502091f1de051f332c';
+  const CHECKIN_TIME_SLOTS = Object.freeze(['14:30–15:00', '15:00–15:30', '15:30–16:00', '16:00–16:30', '17:45–18:15']);
+  const CHECKOUT_TIME_SLOTS = Object.freeze(['14:30–15:00', '15:30–16:00', '16:00–16:30', '17:45–18:15']);
   const SPECIES = {
     rabbit: { label: '兔子', image: 'assets/species-rabbit.webp', fallback: '🐇', minimumAge: 3 },
     guineaPig: { label: '天竺鼠', image: 'assets/species-guinea-pig.webp', fallback: '🐾', minimumAge: 3 },
@@ -102,6 +104,8 @@
       if (typeof fresh.quantity !== 'string' && typeof fresh.quantity !== 'number') fresh.quantity = '1';
       fresh.quantity = String(fresh.quantity);
       if (!['none', 'once', 'twice'].includes(fresh.medicine)) fresh.medicine = 'none';
+      if (!CHECKIN_TIME_SLOTS.includes(fresh.checkinTime)) fresh.checkinTime = '';
+      if (!CHECKOUT_TIME_SLOTS.includes(fresh.checkoutTime)) fresh.checkoutTime = '';
       return fresh;
     } catch (_) {
       return fresh;
@@ -342,8 +346,8 @@
       <div class="field-grid">
         <div class="field"><label for="checkin">入住日期 <span class="required-mark">*</span></label><div class="input-wrap"><span class="input-icon" aria-hidden="true">📅</span><input type="date" id="checkin" data-field="checkin" min="${checkinMin}" value="${escapeHtml(checkinDate)}" required></div></div>
         <div class="field"><label for="checkout">退房日期 <span class="required-mark">*</span></label><div class="input-wrap"><span class="input-icon" aria-hidden="true">📅</span><input type="date" id="checkout" data-field="checkout" min="${checkoutMin}" value="${escapeHtml(state.form.checkout)}" required></div></div>
-        <div class="field"><label for="checkinTime">入住時段 <span class="required-mark">*</span></label><select id="checkinTime" data-field="checkinTime" required>${selectOptions(['14:30–15:30', '15:30–16:30', '16:30–17:00'], state.form.checkinTime)}</select></div>
-        <div class="field"><label for="checkoutTime">退房時段 <span class="required-mark">*</span></label><select id="checkoutTime" data-field="checkoutTime" required>${selectOptions(['14:30–15:30', '15:30–16:30', '16:30–17:00'], state.form.checkoutTime)}</select></div>
+        <div class="field"><label for="checkinTime">入住時段 <span class="required-mark">*</span></label><select id="checkinTime" data-field="checkinTime" required>${selectOptions(CHECKIN_TIME_SLOTS, state.form.checkinTime)}</select></div>
+        <div class="field"><label for="checkoutTime">退房時段 <span class="required-mark">*</span></label><select id="checkoutTime" data-field="checkoutTime" required>${selectOptions(CHECKOUT_TIME_SLOTS, state.form.checkoutTime)}</select></div>
       </div>
       <div id="weekendSurchargeNotice" class="notice notice-yellow weekend-surcharge-notice" role="status" aria-live="polite" hidden>
         <span class="notice-icon" aria-hidden="true">!</span><div><strong>週末入住附加費提醒</strong><div id="weekendSurchargeMessage"></div></div>
@@ -637,8 +641,8 @@
     if (!checkout) return { message: '請選擇有效的退房日期。', target: '#checkout' };
     if (checkin < today) return { message: '入住日期不可早於今日。', target: '#checkin' };
     if (checkout <= checkin) return { message: '退房日期必須晚於入住日期，最少入住一晚。', target: '#checkout' };
-    if (!state.form.checkinTime) return { message: '請選擇入住時段。', target: '#checkinTime' };
-    if (!state.form.checkoutTime) return { message: '請選擇退房時段。', target: '#checkoutTime' };
+    if (!CHECKIN_TIME_SLOTS.includes(state.form.checkinTime)) return { message: '請選擇有效的入住時段。', target: '#checkinTime' };
+    if (!CHECKOUT_TIME_SLOTS.includes(state.form.checkoutTime)) return { message: '請選擇有效的退房時段。', target: '#checkoutTime' };
     return null;
   }
 

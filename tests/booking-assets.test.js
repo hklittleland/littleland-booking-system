@@ -28,7 +28,7 @@ test('booking brand mark shows the complete original logo inside a rounded-squar
   assert.deepEqual([...logo.subarray(0, 2)], [0xff, 0xd8]);
 });
 test('public guest page loads the TEST API client before the booking application', () => {
-  assert.match(html, /api-client\.js\?v=20261101-flowfix1[\s\S]*?booking\.js\?v=20261101-flowfix1/);
+  assert.match(html, /api-client\.js\?v=20261101-flowfix1[\s\S]*?booking\.js\?v=checkin-slots-20261119-1/);
   assert.match(html, /styles\.css\?v=20261101-rounded-square1/);
   assert.ok(fs.existsSync(path.join(bookingRoot, 'api-client.js')));
   assert.match(fs.readFileSync(path.join(bookingRoot, 'api-client.js'), 'utf8'), /availability/);

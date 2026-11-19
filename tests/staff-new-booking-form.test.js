@@ -7,14 +7,15 @@ const path = require("node:path");
 const Form = require("../staff/new-booking-form.js");
 
 const ROOT = path.resolve(__dirname, "..");
-const TIMES = ["14:30–15:30", "15:30–16:30", "16:30–17:00"];
+const CHECKIN_TIMES = ["14:30–15:00", "15:00–15:30", "15:30–16:00", "16:00–16:30", "17:45–18:15"];
+const CHECKOUT_TIMES = ["14:30–15:00", "15:30–16:00", "16:00–16:30", "17:45–18:15"];
 
 function rabbitDraft(overrides = {}) {
   return {
     checkin: "2026-12-04",
     checkout: "2026-12-05",
-    checkinTime: TIMES[0],
-    checkoutTime: TIMES[1],
+    checkinTime: CHECKIN_TIMES[0],
+    checkoutTime: CHECKOUT_TIMES[1],
     species: "rabbit",
     roomId: "DELUXE_ROOM",
     quantity: 1,
@@ -57,8 +58,9 @@ function rabbitDraft(overrides = {}) {
   };
 }
 
-test("Staff form uses the accepted time slots and normalizes Hong Kong phone formats", () => {
-  assert.deepEqual(Form.TIME_SLOTS, TIMES);
+test("Staff form uses separate accepted check-in/check-out slots and normalizes Hong Kong phone formats", () => {
+  assert.deepEqual(Form.CHECKIN_TIME_SLOTS, CHECKIN_TIMES);
+  assert.deepEqual(Form.CHECKOUT_TIME_SLOTS, CHECKOUT_TIMES);
   assert.equal(Form.normalizePhone("+852 9123 4567"), "91234567");
   assert.equal(Form.normalizePhone("00852-9123-4567"), "91234567");
   assert.equal(Form.normalizePhone("91234567"), "91234567");
@@ -91,7 +93,7 @@ test("Staff payload exactly matches canonical validator contract and omits male 
   assert.equal(version && version[1], Form.PRICE_VERSION);
   assert.deepEqual(Object.keys(request).sort(), ["clientQuote", "form", "idempotencyKey", "terms"]);
   assert.equal(request.form.phone, "91234567");
-  assert.equal(request.form.checkinTime, TIMES[0]);
+  assert.equal(request.form.checkinTime, CHECKIN_TIMES[0]);
   assert.deepEqual(request.terms, Array(6).fill(true));
   assert.equal("pregnant" in request.form.pets[0], false);
   assert.equal("ageInMonths" in request.form.pets[0], false);
