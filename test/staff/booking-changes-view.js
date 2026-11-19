@@ -61,10 +61,10 @@
       (hamster ? "" : yesNo("絕育", prefix + "sterilized", true)) +
       (hamster ? "" : '<div data-pregnancy-wrap hidden>' + yesNo("懷孕", prefix + "pregnant", true) + '</div>') +
       yesNo("最近 30 日是否接受過手術？", prefix + "recentSurgery", true) +
-      yesNo("最近看獸醫？", prefix + "vetVisit", true) + detailsField("看獸醫詳情（如選是必填）", prefix + "vetDetails", prefix + "vetVisit") +
-      yesNo("有傳染病？", prefix + "infectiousDisease", true) + detailsField("傳染病詳情（如選是必填）", prefix + "infectiousDetails", prefix + "infectiousDisease") +
-      yesNo("有慢性疾病？", prefix + "chronicDisease", true) + detailsField("慢性疾病詳情（如選是必填）", prefix + "chronicDetails", prefix + "chronicDisease") +
-      yesNo("正在服藥？", prefix + "medication", true) + detailsField("藥物詳情（如選是必填）", prefix + "medicationDetails", prefix + "medication") +
+      yesNo("最近看獸醫？", prefix + "vetVisit", true) + detailsField("看獸醫詳情（選填；如有資料可補充）", prefix + "vetDetails", prefix + "vetVisit") +
+      yesNo("有傳染病？", prefix + "infectiousDisease", true) + detailsField("傳染病詳情（選填；如有資料可補充）", prefix + "infectiousDetails", prefix + "infectiousDisease") +
+      yesNo("有慢性疾病？", prefix + "chronicDisease", true) + detailsField("慢性疾病詳情（選填；如有資料可補充）", prefix + "chronicDetails", prefix + "chronicDisease") +
+      yesNo("正在服藥？", prefix + "medication", true) + detailsField("藥物詳情（選填；如有資料可補充）", prefix + "medicationDetails", prefix + "medication") +
       '<label>特殊照顧</label><textarea name="' + prefix + 'specialCare" rows="2"></textarea>' +
       (hamster ? "" : yesNo("一個月內有杜蝨處理？", prefix + "fleaTreatment", true)) +
       '</fieldset>';
@@ -308,7 +308,7 @@
           var select = fieldset.querySelector('[name="' + prefix + pair[0] + '"]');
           var input = fieldset.querySelector('[name="' + prefix + pair[1] + '"]');
           if (!select) return;
-          function refreshDetails() { if (input) input.required = select.value === "yes"; }
+          function refreshDetails() { if (input) input.required = false; }
           select.addEventListener("change", refreshDetails);
           refreshDetails();
         });

@@ -74,22 +74,35 @@ test("TEST Staff and guest forms expose the exact separate time windows", () => 
   assert.match(guest, /CHECKOUT_TIME_SLOTS = Object\.freeze\(\['14:30–15:00', '15:30–16:00', '16:00–16:30', '17:45–18:15'\]\)/);
 });
 
-test("past Staff check-in dates fail validation while Hong Kong today is allowed", () => {
-  const availability = { checkin: "2026-11-18", checkout: "2026-11-20", species: "rabbit", roomId: "DELUXE_ROOM", quantity: 1 };
-  assert.match(Form.validateAvailabilityInput(availability, "2026-11-19"), /不可早於香港今日日期/);
-  assert.equal(Form.validateDraft(rabbitDraft({ checkin: "2026-11-18" }), { today: "2026-11-19" }), "入住日期不可早於香港今日日期。");
-  assert.equal(Form.validateDraft(rabbitDraft({ checkin: "2026-11-19" }), { today: "2026-11-19" }), null);
-  assert.match(read("test/staff/new-booking-view.js"), /min="\$\{Form\.hongKongToday\(\)\}"/);
+test("Staff accepts past check-in dates but requires a valid date range and manual review", () => {
+  const past = rabbitDraft({ checkin: "2026-11-18", checkout: "2026-11-20" });
+  assert.equal(Form.validateAvailabilityInput(past, "2026-11-19"), null);
+  assert.equal(Form.validateDraft(past, { today: "2026-11-19" }), null);
+  assert.match(Form.validateDraft(rabbitDraft({ checkin: "2026-11-20", checkout: "2026-11-20" }), { today: "2026-11-19" }), /退房日期/);
+  const view = read("test/staff/new-booking-view.js");
+  assert.doesNotMatch(view, /min="\$\{Form\.hongKongToday\(\)\}"/);
+  const guard = view.indexOf('if (draft.checkin < Form.hongKongToday())');
+  const manualState = view.indexOf('status: "MANUAL_REVIEW"', guard);
+  const manualReturn = view.indexOf("return false;", manualState);
+  const apiRequest = view.indexOf('context.api.request("availability"', manualReturn);
+  assert.ok(guard >= 0 && manualState > guard && manualReturn > manualState && apiRequest > manualReturn);
+  assert.match(view, /入住日期已過去，系統不會查詢即時房態或分配房間/);
+  assert.match(view, /入住日期已過去.*確定繼續/);
 });
 
-test("each positive health answer requires its matching details field before Staff submit", () => {
+test("Staff may leave health narratives blank while positive answers remain flagged for review", () => {
   for (const [answer, details] of HEALTH_FIELDS) {
     const pet = { ...rabbitDraft().pets[0], [answer]: "yes", [details]: "" };
-    const invalid = Form.validateDraft(rabbitDraft({ pets: [pet] }), { today: "2026-11-19" });
-    assert.match(invalid, /請補充.*詳情/, `${answer} must require ${details}`);
-    pet[details] = "Synthetic QA detail";
-    assert.equal(Form.validateDraft(rabbitDraft({ pets: [pet] }), { today: "2026-11-19" }), null, `${details} should satisfy ${answer}`);
+    assert.equal(Form.validateDraft(rabbitDraft({ pets: [pet] }), { today: "2026-11-19" }), null, `${answer} should not require narrative`);
   }
+  const view = read("test/staff/new-booking-view.js");
+  assert.match(view, /原因可留空，建立後仍由員工跟進/);
+  assert.match(view, /選填；如有資料可補充/);
+  assert.doesNotMatch(view, /回答是時必填/);
+  assert.match(view, /needsReview = details\.some\(\(\[key\]\) => pet\[key\] === "yes"\)/);
+  const changes = read("test/staff/booking-changes-view.js");
+  assert.match(changes, /詳情（選填；如有資料可補充）/);
+  assert.match(changes, /input\.required = false/);
 });
 
 test("Booking Detail available actions render before booking data", () => {
@@ -98,13 +111,13 @@ test("Booking Detail available actions render before booking data", () => {
   const actionInsertion = app.indexOf("${actionsMarkup}", detailStart);
   const bookingData = app.indexOf('<h2>預約 ${esc(idOf(b))}', detailStart);
   assert.ok(detailStart >= 0 && actionInsertion > detailStart && actionInsertion < bookingData);
-  assert.ok(app.includes('<h2>可用操作</h2>'));
+  assert.ok(app.includes("<h2>可用操作</h2>"));
 });
 
-test("Staff edit form validates health details before confirmation or API mutation", () => {
+test("Staff edit form allows blank health narratives but still submits through the authenticated mutation", () => {
   const app = read("test/staff/app.js");
-  const guard = app.indexOf("validatePetHealthDetails(data.pets)");
-  const confirm = app.indexOf('if (!confirm("確認更新聯絡', guard);
+  assert.equal(app.includes("validatePetHealthDetails(data.pets)"), false);
+  const confirm = app.indexOf('if (!confirm("確認更新聯絡');
   const mutation = app.indexOf('mutate("edit", StaffRouter.current().id', confirm);
-  assert.ok(guard >= 0 && confirm > guard && mutation > confirm);
+  assert.ok(confirm >= 0 && mutation > confirm);
 });

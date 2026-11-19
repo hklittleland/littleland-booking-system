@@ -104,32 +104,14 @@
     };
   }
 
-  function validateAvailabilityInput(draft, today = hongKongToday()) {
+  function validateAvailabilityInput(draft) {
     const input = availabilityInput(draft);
     if (!validIsoDate(input.checkin) || !validIsoDate(input.checkout)) return "請先選擇有效入住及退房日期。";
-    if (input.checkin < today) return "入住日期不可早於香港今日日期。";
     if (input.checkout <= input.checkin) return "退房日期必須晚於入住日期，最少入住一晚。";
     if (!speciesDefinition(input.species)) return "請選擇有效的寵物種類。";
     const room = roomOptions(input.species).find((item) => item.id === input.roomTypeId);
     if (!room) return "請選擇該寵物種類適用的房型。";
     if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > room.maxPets) return "寵物數量必須符合房型入住上限。";
-    return null;
-  }
-
-  function petHealthDetailsError(pet) {
-    for (const rule of HEALTH_DETAIL_RULES) {
-      if (pet && pet[rule.answer] === "yes" && !String(pet[rule.details] || "").trim()) {
-        return `請補充${rule.label}詳情。`;
-      }
-    }
-    return null;
-  }
-
-  function validatePetHealthDetails(pets) {
-    for (let i = 0; i < (Array.isArray(pets) ? pets.length : 0); i += 1) {
-      const error = petHealthDetailsError(pets[i]);
-      if (error) return `第 ${i + 1} 隻寵物${error}`;
-    }
     return null;
   }
 
@@ -167,8 +149,6 @@
       for (const rule of HEALTH_DETAIL_RULES) {
         if (!YES_NO.includes(pet[rule.answer])) return `${prefix}請回答${rule.label}情況。`;
       }
-      const detailError = petHealthDetailsError(pet);
-      if (detailError) return `${prefix}${detailError}`;
     }
 
     if (!Array.isArray(draft.terms) || draft.terms.length !== TERMS.length || draft.terms.some((value) => value !== true)) return "提交前必須確認全部六項同意事項。";
@@ -297,7 +277,6 @@
     hongKongToday,
     availabilityInput,
     validateAvailabilityInput,
-    validatePetHealthDetails,
     validateDraft,
     selectedServices,
     calculateQuote,
