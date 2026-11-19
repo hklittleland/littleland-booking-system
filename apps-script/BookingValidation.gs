@@ -24,7 +24,8 @@ var LITTLELAND_CLIENT_QUOTE_KEYS = Object.freeze([
   'serviceFees', 'totalSurcharges', 'estimatedTotal', 'depositAmount', 'remainingBalance', 'cashDeposit'
 ]);
 
-function littlelandValidateBookingRequest_(request) {
+function littlelandValidateBookingRequest_(request, options) {
+  options = options || {};
   littlelandRequire_(littlelandIsObject_(request), 'VALIDATION_FAILED', '請求資料格式不正確。', false);
   littlelandRequire_(
     littlelandExactKeys_(request, ['idempotencyKey', 'form', 'terms', 'clientQuote']),
@@ -61,7 +62,7 @@ function littlelandValidateBookingRequest_(request) {
   littlelandRequire_(Boolean(roomDefinition), 'ROOM_INVALID_ALLOCATION', '指定物種與房型組合無效。', false);
   littlelandRequire_(quantity <= roomDefinition.maxPets, 'PET_QTY_EXCEEDS_LIMIT', '寵物數量超過此房型入住上限。', false);
 
-  littlelandValidateDateRange_(form.checkin, form.checkout, new Date());
+  littlelandValidateDateRange_(form.checkin, form.checkout, new Date(), options.allowPastCheckin === true);
   littlelandRequire_(
     LITTLELAND_CHECKIN_TIMES.indexOf(form.checkinTime) !== -1 &&
       LITTLELAND_CHECKOUT_TIMES.indexOf(form.checkoutTime) !== -1,
@@ -70,7 +71,7 @@ function littlelandValidateBookingRequest_(request) {
     false
   );
 
-  var normalizedForm = littlelandNormalizeForm_(form, species, roomId, quantity);
+  var normalizedForm = littlelandNormalizeForm_(form, species, roomId, quantity, options);
   var terms = request.terms;
   littlelandRequire_(
     Array.isArray(terms) && terms.length === 6 && terms.every(function (value) { return value === true; }),
@@ -93,7 +94,7 @@ function littlelandValidateBookingRequest_(request) {
   };
 }
 
-function littlelandNormalizeForm_(form, species, roomId, quantity) {
+function littlelandNormalizeForm_(form, species, roomId, quantity, options) {
   var normalized = {};
   LITTLELAND_FORM_KEYS.forEach(function (key) {
     if (Object.prototype.hasOwnProperty.call(form, key)) normalized[key] = form[key];
@@ -139,12 +140,13 @@ function littlelandNormalizeForm_(form, species, roomId, quantity) {
     false
   );
   normalized.pets = form.pets.map(function (pet, index) {
-    return littlelandNormalizePet_(pet, species, index + 1);
+    return littlelandNormalizePet_(pet, species, index + 1, options);
   });
   return normalized;
 }
 
-function littlelandNormalizePet_(pet, species, petNumber) {
+function littlelandNormalizePet_(pet, species, petNumber, options) {
+  options = options || {};
   littlelandRequire_(littlelandIsObject_(pet), 'VALIDATION_FAILED', '寵物資料格式不正確。', false);
   littlelandRequire_(littlelandKeysAllowed_(pet, LITTLELAND_PET_KEYS), 'VALIDATION_FAILED', '寵物資料含不支援欄位。', false);
   var name = littlelandTrimString_(pet.name);
@@ -227,7 +229,7 @@ function littlelandNormalizePet_(pet, species, petNumber) {
   healthPairs.forEach(function (pair) {
     var answer = littlelandRequireYesNo_(pet[pair[0]], '請回答' + pair[2] + '情況。');
     var details = littlelandTrimString_(pet[pair[1]]);
-    if (answer === 'yes' && details === '') {
+    if (answer === 'yes' && details === '' && options.requireHealthDetails !== false) {
       throw littlelandApiError_('VALIDATION_FAILED', '請補充' + pair[2] + '詳情。', false);
     }
     normalized[pair[0]] = answer;
@@ -269,11 +271,13 @@ function littlelandValidateFood_(form, species) {
   littlelandRequire_(optionalVegetables.indexOf(littlelandTrimString_(form.vegetables)) !== -1, 'VALIDATION_FAILED', '新鮮蔬菜選項不正確。', false);
 }
 
-function littlelandValidateDateRange_(checkin, checkout, now) {
+function littlelandValidateDateRange_(checkin, checkout, now, allowPastCheckin) {
   littlelandRequire_(littlelandIsIsoDate_(checkin) && littlelandIsIsoDate_(checkout), 'DATE_INVALID_FORMAT', '日期必須使用有效的 YYYY-MM-DD 格式。', false);
   littlelandRequire_(checkout > checkin, 'DATE_CHECKOUT_NOT_AFTER_CHECKIN', '退房日期必須晚於入住日期，最少入住一晚。', false);
   var today = littlelandHongKongDate_(now || new Date());
-  littlelandRequire_(checkin >= today, 'DATE_CHECKIN_IN_PAST', '入住日期不可早於香港今日日期。', false);
+  if (allowPastCheckin !== true) {
+    littlelandRequire_(checkin >= today, 'DATE_CHECKIN_IN_PAST', '入住日期不可早於香港今日日期。', false);
+  }
 }
 
 function littlelandIsIsoDate_(value) {

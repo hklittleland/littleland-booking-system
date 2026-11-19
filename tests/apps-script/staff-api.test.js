@@ -450,6 +450,17 @@ test("staff.edit recomputes health review from corrected declaration", () => {
   assert.equal(r.records("Pets")[0].healthReviewStatus, "");
 });
 
+test("staff.edit accepts an unanswered health narrative but retains the required review marker", () => {
+  const r = staffRuntime("ADMIN"), b = addBooking(r, { quantity: 1, species: "rabbit" }), p = addStaffPet(r, b.bookingId);
+  const body = editPetRequest(r, b, p, { vetVisit: "yes", vetDetails: "" });
+  const out = r.invokeStaff(body);
+  assert.equal(out.success, true, JSON.stringify(out));
+  const saved = r.records("Pets")[0];
+  assert.equal(saved.vetVisit, "yes");
+  assert.equal(saved.vetDetails, "");
+  assert.equal(saved.healthReviewStatus, "HEALTH_REVIEW_REQUIRED");
+});
+
 test("staff.edit rejects pet quantity, species mutation, invalid age, pregnancy and recent surgery", () => {
   const cases = [
     { pets: [] },
@@ -457,10 +468,6 @@ test("staff.edit rejects pet quantity, species mutation, invalid age, pregnancy 
     { ageValue: 1 },
     { pregnant: "yes" },
     { recentSurgery: "yes" },
-    { vetVisit: "yes", vetDetails: "" },
-    { infectiousDisease: "yes", infectiousDetails: "" },
-    { chronicDisease: "yes", chronicDetails: "" },
-    { medication: "yes", medicationDetails: "" },
   ];
   for (let i = 0; i < cases.length; i++) {
     const r = staffRuntime("ADMIN"), b = addBooking(r, { quantity: 1, species: "rabbit" }), p = addStaffPet(r, b.bookingId);
@@ -1123,6 +1130,26 @@ test("staff.createBooking validates and reprices, remains pending with empty all
   assert.equal(r.records("IdempotencyKeys")[0].state,"COMPLETED");
 });
 
+test("staff.createBooking permits a past date and blank health narrative but marks health review", () => {
+  const r = staffRuntime(), token = loggedIn(r);
+  const payload = makePayload(r, {
+    checkin: "2026-11-18",
+    checkout: "2026-11-20",
+    pets: [{ vetVisit: "yes", vetDetails: "" }],
+  }, { idempotencyKey: "staff-create-historical-optional-health" });
+  const out = r.invokeStaff({ action: "staff.createBooking", token, request: payload });
+  assert.equal(out.success, true, JSON.stringify(out));
+  const booking = r.records("Bookings")[0];
+  assert.equal(booking.checkinDate, "2026-11-18");
+  assert.equal(booking.checkoutDate, "2026-11-20");
+  assert.equal(booking.bookingStatus, "PENDING_CONFIRMATION");
+  assert.equal(booking.allocatedRoomIdsJson, "[]");
+  const pet = r.records("Pets")[0];
+  assert.equal(pet.vetVisit, "yes");
+  assert.equal(pet.vetDetails, "");
+  assert.equal(pet.healthReviewStatus, "HEALTH_REVIEW_REQUIRED");
+});
+
 test("schedule save serializes work/rest per staff/date and logs each mutation", () => {
   const r=staffRuntime(),token=loggedIn(r),staff=r.records("Staff")[0];
   const base={action:"staff.scheduleSave",token,idempotencyKey:"schedule-save-01",data:{workDate:"2099-05-01",staffId:staff.staffId,status:"REST"}};
@@ -1426,7 +1453,7 @@ test("pet addition before deposit recalculates all canonical totals and required
     expectedRecordVersion: 1,
     expectedStatus: "PENDING_CONFIRMATION",
     idempotencyKey: "v31-pet-add-before-deposit",
-    data: { removePetIds: [], newPets: [validNewRabbit("Hazel")], reason: "客人增加一隻兔兔" },
+    data: { removePetIds: [], newPets: [Object.assign(validNewRabbit("Hazel"), { infectiousDisease: "yes" })], reason: "客人增加一隻兔兔" },
   };
   const result = r.invokeStaff(request);
   assert.equal(result.success, true, JSON.stringify(result));
@@ -1440,7 +1467,10 @@ test("pet addition before deposit recalculates all canonical totals and required
   assert.equal(Number(updated.cashDepositAmount), 2000);
   assert.equal(updated.allocatedRoomIdsJson, "[]", "pending booking must not receive physical allocation");
   assert.equal(r.records("Pets").filter((pet) => pet.petStatus !== "REMOVED").length, 2);
-  assert.equal(r.records("Pets").find((pet) => pet.name === "Hazel").healthReviewStatus, "");
+  const addedPet = r.records("Pets").find((pet) => pet.name === "Hazel");
+  assert.equal(addedPet.infectiousDisease, "yes");
+  assert.equal(addedPet.infectiousDetails, "");
+  assert.equal(addedPet.healthReviewStatus, "HEALTH_REVIEW_REQUIRED");
   assert.equal(r.records("Logs").at(-1).actorStaffNameSnapshot, "Test Staff");
   assert.equal(result.data.remainingBalance, 450);
   assert.equal(result.data.creditDue, 0);

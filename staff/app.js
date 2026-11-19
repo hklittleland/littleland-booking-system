@@ -864,10 +864,6 @@
         e.preventDefault();
         const data = readEdit();
         store.state.editDraft = data;
-        const healthError = window.LittleLandStaffBookingForm && window.LittleLandStaffBookingForm.validatePetHealthDetails
-          ? window.LittleLandStaffBookingForm.validatePetHealthDetails(data.pets)
-          : null;
-        if (healthError) { toast(healthError); return; }
         if (!confirm("確認更新聯絡、飲食／時間及現有寵物資料？寵物數量、種類、狀態、房間、價格及付款資料不會更改。")) return;
         mutate("edit", StaffRouter.current().id, { data }, ef);
       };

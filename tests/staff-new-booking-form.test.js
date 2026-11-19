@@ -140,9 +140,10 @@ test("hamster payload excludes sterilization, pregnancy, flea, hay, feeding and 
   assert.equal(request.form.vegetables, "");
 });
 
-test("Staff form rejects invalid limits, dates, minimum ages, recent surgery, pregnancy and incomplete consent", () => {
+test("Staff form accepts historical dates but rejects invalid ranges, limits, minimum ages, surgery, pregnancy and incomplete consent", () => {
   const today = "2026-11-01";
-  assert.match(Form.validateDraft(rabbitDraft({ checkin: "2026-10-31" }), { today }), /早於/);
+  assert.equal(Form.validateAvailabilityInput(rabbitDraft({ checkin: "2026-10-31" }), today), null);
+  assert.equal(Form.validateDraft(rabbitDraft({ checkin: "2026-10-31" }), { today }), null);
   assert.match(Form.validateDraft(rabbitDraft({ checkout: "2026-12-04" }), { today }), /退房日期/);
   assert.match(Form.validateDraft(rabbitDraft({ quantity: 2 }), { today }), /入住上限/);
   assert.match(Form.validateDraft(rabbitDraft({ pets: [{ ...rabbitDraft().pets[0], ageValue: 2, ageUnit: "month" }] }), { today }), /最低入住年齡/);

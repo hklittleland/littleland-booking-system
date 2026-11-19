@@ -1025,7 +1025,7 @@ function littlelandStaffMutate_(action, body, auth, requestId) {
         LITTLELAND_PET_KEYS.forEach(function (field) {
           if (Object.prototype.hasOwnProperty.call(pet, field)) petInput[field] = pet[field];
         });
-        var normalized = littlelandNormalizePet_(petInput, b.species, Number(byPetId[id].petNumber));
+        var normalized = littlelandNormalizePet_(petInput, b.species, Number(byPetId[id].petNumber), { requireHealthDetails: false });
         var petUpdate = {};
         Object.keys(petFieldMap).forEach(function (field) {
           var storedField = petFieldMap[field];
@@ -1313,7 +1313,7 @@ function littlelandStaffFinish_(claim,action,body,auth,requestId,now,data,entity
 }
 function littlelandStaffCreateBooking_(body,auth,requestId){
   var request=body.request||body.data||{};
-  var validated=littlelandValidateBookingRequest_(request), hash=littlelandPayloadHash_(validated), key=validated.idempotencyKey;
+  var validated=littlelandValidateBookingRequest_(request, { allowPastCheckin: true, requireHealthDetails: false }), hash=littlelandPayloadHash_(validated), key=validated.idempotencyKey;
   var existing=littlelandReadTable_("IdempotencyKeys").rows.filter(function(x){return String(x.record.idempotencyKey)===key;});
   if(existing.length){littlelandRequire_(existing.length===1,"IDEMPOTENCY_RECONCILIATION_REQUIRED","操作 key 存在多筆紀錄。",false);var e=existing[0].record;
     littlelandRequire_(e.operation==="CREATE_BOOKING"&&e.payloadHash===hash,"DUPLICATE_REQUEST","操作 key 已用於不同資料。",false);
@@ -1688,7 +1688,7 @@ function littlelandStaffAdjustmentMutation_(action, body, auth, requestId) {
       return Math.max(maxValue, Number(row.record.petNumber) || 0);
     }, 0);
     var normalizedNewPets = newPetInputs.map(function (petInput, index) {
-      return littlelandNormalizePet_(petInput, String(b.species), maxPetNumber + index + 1);
+      return littlelandNormalizePet_(petInput, String(b.species), maxPetNumber + index + 1, { requireHealthDetails: false });
     });
     var pricingForm = {
       species: String(b.species),
