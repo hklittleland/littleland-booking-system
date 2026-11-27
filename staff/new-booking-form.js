@@ -35,7 +35,7 @@
   const YES_NO = Object.freeze(["yes", "no"]);
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
-  const TIME_SLOTS = Object.freeze(["14:30–15:30", "15:30–16:30", "16:30–17:00"]);
+  const TIME_SLOTS = Object.freeze(["14:30–15:00", "15:30–16:00", "16:00–16:30", "17:45–18:15"]);
 
   function speciesDefinition(species) {
     return SPECIES.find((item) => item.id === species) || null;
@@ -97,10 +97,10 @@
     };
   }
 
-  function validateAvailabilityInput(draft, today = hongKongToday()) {
+  function validateAvailabilityInput(draft, today = hongKongToday(), options = {}) {
     const input = availabilityInput(draft);
     if (!validIsoDate(input.checkin) || !validIsoDate(input.checkout)) return "請先選擇有效入住及退房日期。";
-    if (input.checkin < today) return "入住日期不可早於香港今日日期。";
+    if (!options.allowPastDates && input.checkin < today) return "入住日期不可早於香港今日日期。";
     if (input.checkout <= input.checkin) return "退房日期必須晚於入住日期，最少入住一晚。";
     if (!speciesDefinition(input.species)) return "請選擇有效的寵物種類。";
     const room = roomOptions(input.species).find((item) => item.id === input.roomTypeId);
@@ -111,7 +111,7 @@
 
   function validateDraft(draft, options = {}) {
     const today = options.today || hongKongToday();
-    const availabilityError = validateAvailabilityInput(draft, today);
+    const availabilityError = validateAvailabilityInput(draft, today, options);
     if (availabilityError) return availabilityError;
     if (!TIME_SLOTS.includes(draft.checkinTime) || !TIME_SLOTS.includes(draft.checkoutTime)) return "請選擇有效的入住及退房時段。";
     const room = roomOptions(draft.species).find((item) => item.id === draft.roomId);
@@ -142,7 +142,7 @@
       if (pet.recentSurgery === "yes") return `${prefix}最近 30 日內接受過手術，不可接受一般入住。`;
       for (const [key, label] of [["vetVisit", "最近看獸醫"], ["infectiousDisease", "傳染病"], ["chronicDisease", "慢性疾病"], ["medication", "正在服用藥物"]]) {
         if (!YES_NO.includes(pet[key])) return `${prefix}請回答${label}情況。`;
-        if (pet[key] === "yes" && !String(pet[`${key}Details`] || "").trim()) return `${prefix}請補充${label}詳情。`;
+        if (!options.allowBlankHealthDetails && pet[key] === "yes" && !String(pet[`${key}Details`] || "").trim()) return `${prefix}請補充${label}詳情。`;
       }
     }
 
@@ -222,8 +222,8 @@
     return result;
   }
 
-  function buildRequest(draft, idempotencyKey, quote = calculateQuote(draft)) {
-    const error = validateDraft(draft);
+  function buildRequest(draft, idempotencyKey, quote = calculateQuote(draft), options = {}) {
+    const error = validateDraft(draft, options);
     if (error) throw Object.assign(new Error(error), { code: "VALIDATION_FAILED" });
     const form = {
       checkin: String(draft.checkin),
